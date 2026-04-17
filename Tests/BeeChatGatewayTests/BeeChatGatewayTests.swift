@@ -252,9 +252,9 @@ final class KeychainTokenStoreTests: XCTestCase {
         
         try testStore.deleteAll()
         
-        // Note: Keychain deleteAll may not immediately reflect in the same process
-        // on some macOS versions. This test verifies the delete call doesn't throw.
-        XCTAssertNoThrow(try testStore.deleteAll())
+        // Verify BOTH are gone
+        XCTAssertNil(try testStore.getGatewayToken(), "Gateway token should be deleted")
+        XCTAssertNil(try testStore.getDeviceToken(), "Device token should be deleted")
     }
     
     func testTokenUpdate() throws {

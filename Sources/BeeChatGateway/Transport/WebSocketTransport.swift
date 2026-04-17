@@ -4,16 +4,18 @@ public class WebSocketTransport: NSObject, URLSessionWebSocketDelegate {
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
     
+    // Callback for close events
+    public var onClose: ((Int, String?) -> Void)?
+    
     public override init() {
         super.init()
-        self.session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
+        self.session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     }
     
-    public func connect(url: URL) -> URLSessionWebSocketTask {
+    public func connect(url: URL) {
         let task = session.webSocketTask(with: url)
         self.task = task
         task.resume()
-        return task
     }
     
     public func send(_ message: String) async throws {
@@ -32,5 +34,11 @@ public class WebSocketTransport: NSObject, URLSessionWebSocketDelegate {
     public func disconnect() {
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
+    }
+    
+    public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        let code = Int(closeCode.rawValue)
+        let reasonString = reason != nil ? String(data: reason!, encoding: .utf8) : nil
+        onClose?(code, reasonString)
     }
 }

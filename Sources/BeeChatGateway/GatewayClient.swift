@@ -40,14 +40,16 @@ public actor GatewayClient {
     
     private var state: ConnectionState = .disconnected
     private var retryCount = 0
-    private var maxPayload: Int = 1048576
+    private var _maxPayload: Int = 1048576
     private var currentDeviceToken: String?
     private var challengeNonce: String?
     
     private var eventContinuation: AsyncStream<(event: String, payload: [String: AnyCodable]?)>.Continuation?
     
+    private var nextRequestId: Int = 0
+
     public var connectionState: ConnectionState { state }
-    public var gatewayMaxPayload: Int { maxPayload }
+    public var maxPayload: Int { _maxPayload }
     
     public var onStatusChange: ((ConnectionState) -> Void)?
     public var onDeviceToken: ((String) -> Void)?
@@ -66,6 +68,8 @@ public actor GatewayClient {
     }
     
     public func disconnect() async {
+        eventContinuation?.finish()
+        eventContinuation = nil
         transport.disconnect()
         await pendingRequests.clearAll(reason: "Client disconnected")
         updateState(.disconnected)
@@ -76,7 +80,8 @@ public actor GatewayClient {
             throw NSError(domain: "GatewayClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not connected"])
         }
         
-        let id = "bc-\(UUID().uuidString)"
+        let id = "bc-\(nextRequestId)"
+        nextRequestId += 1
         let frame = RequestFrame(id: id, method: method, params: params)
         
         return try await withCheckedThrowingContinuation { continuation in
@@ -114,7 +119,12 @@ public actor GatewayClient {
             return
         }
         
-        _ = transport.connect(url: url)
+        transport.connect(url: url)
+        
+        // Handle close events from transport
+        transport.onClose = { [weak self] code, reason in
+            Task { await self?.handleClose(code: code, reason: reason) }
+        }
         
         Task {
             do {
@@ -141,18 +151,17 @@ public actor GatewayClient {
         guard let data = text.data(using: .utf8) else { return }
         
         do {
-            let frame = try JSONDecoder().decode(FrameType.self, from: data) // Peek type
-            // Since FrameType is just a string, we need to decode the full frame based on type
-            // Use a wrapper or decode to [String: AnyCodable] first
             let raw = try JSONDecoder().decode([String: AnyCodable].self, from: data)
             let type = raw["type"]?.value as? String
             
             switch type {
             case "event":
-                let eventFrame = try JSONDecoder().decode(EventFrame.self, from: data)
+                var eventFrame = try JSONDecoder().decode(EventFrame.self, from: data)
+                eventFrame.rawData = data
                 await handleEvent(eventFrame)
             case "res":
-                let resFrame = try JSONDecoder().decode(ResponseFrame.self, from: data)
+                var resFrame = try JSONDecoder().decode(ResponseFrame.self, from: data)
+                resFrame.rawData = data
                 await handleResponse(resFrame)
             default:
                 break
@@ -183,12 +192,11 @@ public actor GatewayClient {
     private func handleHelloOk(_ frame: ResponseFrame) async {
         // In a real implementation, the 'connect' call response is the HelloOk object
         // For this simplified version, we treat the response payload as HelloOk
-        guard let payload = frame.payload,
-              let data = try? JSONEncoder().encode(payload) else { return }
+        guard let data = frame.rawData else { return }
         
         do {
             let helloOk = try JSONDecoder().decode(HelloOk.self, from: data)
-            self.maxPayload = helloOk.policy.maxPayload
+            self._maxPayload = helloOk.policy.maxPayload
             
             if let deviceToken = helloOk.auth?.deviceToken {
                 self.currentDeviceToken = deviceToken
@@ -267,8 +275,6 @@ public actor GatewayClient {
     }
     
     private func handleTransportError(_ error: Error) async {
-        // Simplified: check if fatal
-        // In real version, we'd check URLSessionWebSocketTask.CloseCode
         if retryCount < config.maxRetries {
             let delay = backoff.delay(forAttempt: retryCount)
             retryCount += 1
@@ -277,6 +283,14 @@ public actor GatewayClient {
             await performConnect()
         } else {
             updateState(.error)
+        }
+    }
+
+    private func handleClose(code: Int, reason: String?) async {
+        if code == 1008 || (code >= 4000 && code <= 4999) {
+            updateState(.error)
+        } else {
+            await handleTransportError(NSError(domain: "WebSocketTransport", code: code, userInfo: [NSLocalizedDescriptionKey: reason ?? "Connection closed"]))
         }
     }
     
