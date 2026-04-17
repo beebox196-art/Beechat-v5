@@ -19,6 +19,9 @@ public actor SyncBridge {
     private var streamingBuffer: [String: String] = [:]
     public private(set) var currentStreamingSessionKey: String?
     
+    private var eventProcessingTask: Task<Void, Never>?
+    private var reconnectWatchTask: Task<Void, Never>?
+
     public init(config: SyncBridgeConfiguration) {
         self.config = config
         let gateway = config.gatewayClient
@@ -53,7 +56,7 @@ public actor SyncBridge {
         _ = try await fetchSessions()
         
         // Start event processing loop
-        Task {
+        eventProcessingTask = Task {
             let stream = await config.gatewayClient.eventStream()
             for await event in stream {
                 await eventRouter?.route(event: event.event, payload: event.payload)
@@ -61,7 +64,7 @@ public actor SyncBridge {
         }
         
         // Reconciliation on reconnect
-        Task {
+        reconnectWatchTask = Task {
             for await state in connectionStateStream() {
                 if state == .connected {
                     try? await reconciler.reconcile(activeSessionKey: currentStreamingSessionKey)
@@ -71,6 +74,11 @@ public actor SyncBridge {
     }
     
     public func stop() async {
+        eventProcessingTask?.cancel()
+        reconnectWatchTask?.cancel()
+        eventProcessingTask = nil
+        reconnectWatchTask = nil
+        
         await config.gatewayClient.disconnect()
         
         // Cleanup state

@@ -15,14 +15,19 @@ public struct SessionObserver {
                 try Session.fetchAll(db)
             }
             
-            let cancellable = observation.start(in: dbManager.writer) { error in
-                print("Session observation error: \(error)")
-            } onChange: { sessions in
-                continuation.yield(sessions)
-            }
-            
-            continuation.onTermination = { _ in
-                cancellable.cancel()
+            do {
+                let writer = try dbManager.writer
+                let cancellable = observation.start(in: writer) { error in
+                    print("Session observation error: \(error)")
+                } onChange: { sessions in
+                    continuation.yield(sessions)
+                }
+                
+                continuation.onTermination = { _ in
+                    cancellable.cancel()
+                }
+            } catch {
+                print("Session observer failed to access DB writer: \(error)")
             }
         }
     }

@@ -1,6 +1,16 @@
 import Foundation
 import GRDB
 
+public enum DatabaseManagerError: Error, LocalizedError {
+    case notOpen
+    
+    public var errorDescription: String? {
+        switch self {
+        case .notOpen: return "Database is not open. Call openDatabase(at:) first."
+        }
+    }
+}
+
 public class DatabaseManager {
     public static let shared = DatabaseManager()
     private var dbPool: DatabasePool?
@@ -26,29 +36,33 @@ public class DatabaseManager {
     }
     
     public var reader: DatabaseReader {
-        guard let pool = dbPool else {
-            fatalError("Database not open")
+        get throws {
+            guard let pool = dbPool else {
+                throw DatabaseManagerError.notOpen
+            }
+            return pool
         }
-        return pool
     }
     
     public var writer: DatabaseWriter {
-        guard let pool = dbPool else {
-            fatalError("Database not open")
+        get throws {
+            guard let pool = dbPool else {
+                throw DatabaseManagerError.notOpen
+            }
+            return pool
         }
-        return pool
     }
     
     public func write<T>(_ updates: (Database) throws -> T) throws -> T {
         guard let pool = dbPool else {
-            fatalError("Database not open")
+            throw DatabaseManagerError.notOpen
         }
         return try pool.write(updates)
     }
     
     public func read<T>(_ updates: (Database) throws -> T) throws -> T {
         guard let pool = dbPool else {
-            fatalError("Database not open")
+            throw DatabaseManagerError.notOpen
         }
         return try pool.read(updates)
     }

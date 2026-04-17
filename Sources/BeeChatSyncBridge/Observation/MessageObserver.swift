@@ -15,14 +15,19 @@ public struct MessageObserver {
                 try Message.filter(Column("sessionId") == sessionKey).fetchAll(db)
             }
             
-            let cancellable = observation.start(in: dbManager.writer) { error in
-                print("Message observation error: \(error)")
-            } onChange: { messages in
-                continuation.yield(messages)
-            }
-            
-            continuation.onTermination = { _ in
-                cancellable.cancel()
+            do {
+                let writer = try dbManager.writer
+                let cancellable = observation.start(in: writer) { error in
+                    print("Message observation error: \(error)")
+                } onChange: { messages in
+                    continuation.yield(messages)
+                }
+                
+                continuation.onTermination = { _ in
+                    cancellable.cancel()
+                }
+            } catch {
+                print("Message observer failed to access DB writer: \(error)")
             }
         }
     }

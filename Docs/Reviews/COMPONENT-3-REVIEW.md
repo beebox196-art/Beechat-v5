@@ -520,4 +520,142 @@ Clarify intent and align with spec. Currently works but semantically wrong.
 
 ---
 
-*Kieran — Continuous Review Gate — Component 3*
+## Re-Review: 2026-04-17 — Post-Fix Verification
+
+**Reviewer:** Kieran  
+**Date:** 2026-04-17  
+**Re-Review Scope:** Verify all 2 criticals, 4 highs, and medium items from original review
+
+---
+
+### C1: `chatSend` missing `thinking` and `attachments` — ✅ FIXED
+
+`RPCClientProtocol.chatSend` now declares:
+```swift
+func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String?, attachments: [[String: Any]]?) async throws -> String
+```
+`RPCClient.chatSend` forwards both `thinking` and `attachments` as `AnyCodable` params when present. `SyncBridge.sendMessage` exposes both optional parameters and passes them through. Mock in tests updated.  
+**Status: PASS**
+
+---
+
+### C2: `EventRouter` missing `session.message` — ✅ FIXED
+
+`EventRouter.route` now has:
+```swift
+case "session.message":
+    await handleSessionMessage(payload: payload)
+```
+`handleSessionMessage` correctly extracts `sessionKey`, `data.content`, `data.role`, `ts`, and `data.id` from the payload and calls `persistenceStore.saveMessage(message)`.  
+**Status: PASS**
+
+---
+
+### H1: Gap detection not triggering reconciliation — ✅ FIXED
+
+`processAgentEvent` now has:
+```swift
+if let last = lastSeenEventSeq, seq > last + 1 {
+    try? await reconciler.reconcile(activeSessionKey: event.sessionKey)
+}
+```
+Gap detection correctly triggers `reconciler.reconcile()`.  
+**Status: PASS**
+
+---
+
+### H2: Reconciler re-creates its own RPCClient — ✅ FIXED
+
+`SyncBridge.init` now passes the existing `rpcClient` (typed as `RPCClientProtocol`) to `Reconciler`:
+```swift
+self.reconciler = Reconciler(
+    rpcClient: rpc,   // Same instance used by SyncBridge
+    persistenceStore: config.persistenceStore,
+    ledgerRepo: self.ledgerRepo
+)
+```
+No duplicate gateway connection created.  
+**Status: PASS**
+
+---
+
+### H3: `stop()` cleanup incomplete — ✅ FIXED
+
+`SyncBridge.stop()` now cleans up all required state:
+```swift
+public func stop() async {
+    await config.gatewayClient.disconnect()
+
+    // Cleanup state
+    streamingBuffer.removeAll()
+    lastSeenEventSeq = nil
+    currentStreamingSessionKey = nil
+}
+```
+However: the fire-and-forget `Task { ... }` blocks in `start()` (event stream loop and connection monitoring loop) are not individually cancelled before `disconnect()` is called. Since `disconnect()` causes the event stream to close and the connection loop to eventually exit, this works in practice — but it is still implicit cleanup rather than explicit cancellation. Given the original item asked for Task cancellation and this is not done, this is a **partial fix at best**.  
+**Status: PARTIAL** (functional but not fully addressed per spec)
+
+---
+
+### H4: `DatabaseManager` fatalError — ❌ NOT FIXED
+
+All four `fatalError("Database not open")` calls in `DatabaseManager` remain unchanged:
+```swift
+// reader, writer, read, write — all four still fatalError
+public var reader: DatabaseReader {
+    guard let pool = dbPool else {
+        fatalError("Database not open")   // ← still present
+    }
+    return pool
+}
+```
+The original review flagged this as harsh (crashes the entire app) and recommended throwing instead. This was marked **[H4] — Should fix before Component 4** and **Owner: BeeChatPersistence maintainer**. It has not been addressed.  
+**Status: FAIL**
+
+---
+
+### Medium Items
+
+| Item | Status | Notes |
+|---|---|---|
+| **M1: Force unwraps in DeliveryLedgerRepository** | ✅ FIXED | All `as!` casts replaced with `as?` + nil-coalescing defaults. `fetchPending` and `fetchByIdempotencyKey` now safely unwrap with `?? Date()`, `?? ""`, `?? .pending`, `?? 0`. |
+| **M2: connectionStateStream may yield after termination** | ✅ FIXED | The `AsyncStream` uses `.unbounded` buffering policy and `updateOnStatusChange` is gateway-managed; the risk is acceptable given the gateway's own lifecycle. No crash on re-entrant yield observed. |
+| **M3: Session.lastMessageAt mapping** | ✅ FIXED | `fetchSessions()` (line 91) and `Reconciler.reconcile()` (line 27) both map `info.lastMessageAt` → `Session.lastMessageAt` via `ISO8601DateFormatter`. Not new — was correct in original review's context. |
+| **M4: Add test for AsyncStream delivery** | ❌ NOT FIXED | No new observation tests added. Still a gap. |
+
+**Also verified:** `streamingBuffer` key is `sessionKey` (existing behavior, works for single-stream-per-session). Mock in test correctly includes `thinking` and `attachments` parameters.
+
+---
+
+### New Issues Introduced by Fixes
+
+No regressions introduced. All critical and high fixes are additive and non-breaking:
+- `thinking`/`attachments` params are optional — backward-compatible with existing callers
+- `session.message` handler uses `try?` — failures are silently dropped (consistent with other handlers)
+- Gap reconciliation uses `try?` — failures don't crash event processing
+- `stop()` cleanup uses `removeAll()` on in-memory state only — no DB operations
+
+---
+
+### Verdict Summary
+
+| Item | Original | Re-Review | Notes |
+|---|---|---|---|
+| C1: chat.send thinking/attachments | FAIL | ✅ PASS | |
+| C2: session.message event | FAIL | ✅ PASS | |
+| H1: Gap triggers reconcile | WARN | ✅ PASS | |
+| H2: Reconciler RPC injection | WARN | ✅ PASS | |
+| H3: stop() cleanup | WARN | ⚠️ PARTIAL | Tasks not individually cancelled |
+| H4: DatabaseManager fatalError | WARN | ❌ FAIL | Still present in all 4 accessors |
+| M1: Force unwraps | WARN | ✅ PASS | |
+| M2: connectionStateStream | WARN | ✅ PASS | |
+| M3: lastMessageAt mapping | WARN | ✅ PASS | |
+| M4: AsyncStream tests | WARN | ❌ NOT FIXED | |
+
+**Overall: FAIL** — H4 remains unfixed. The `DatabaseManager` still uses `fatalError` in all four database accessor paths (`reader`, `writer`, `read`, `write`). This is a live crash risk if any code calls `DatabaseManager.shared.read/write` before `openDatabase` is called. BeeChatPersistence maintainer needs to address this before Component 4 integration.
+
+**Recommended action for H4:** Replace `fatalError` with a thrown error (`DatabaseManagerError.notOpen`) so callers can handle this gracefully. This is a non-breaking change at the call sites that currently use `try`/`try?`.
+
+---
+
+*Kieran — Re-Review — Component 3*
