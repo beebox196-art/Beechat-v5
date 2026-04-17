@@ -1,0 +1,52 @@
+import Foundation
+import GRDB
+
+public class SessionRepository {
+    private let dbManager: DatabaseManager
+    
+    public init(dbManager: DatabaseManager = .shared) {
+        self.dbManager = dbManager
+    }
+    
+    public func save(_ session: Session) throws {
+        try dbManager.write { db in
+            var session = session
+            try session.save(db)
+        }
+    }
+    
+    public func upsert(_ sessions: [Session]) throws {
+        try dbManager.write { db in
+            for session in sessions {
+                var session = session
+                try session.save(db)
+            }
+        }
+    }
+    
+    public func fetchAll(limit: Int, offset: Int) throws -> [Session] {
+        try dbManager.reader.read { db in
+            try Session.limit(limit, offset: offset)
+                .order(Column("lastMessageAt").desc)
+                .fetchAll(db)
+        }
+    }
+    
+    public func fetchById(_ id: String) throws -> Session? {
+        try dbManager.reader.read { db in
+            try Session.fetchOne(db, key: id)
+        }
+    }
+    
+    public func delete(_ id: String) throws {
+        try dbManager.write { db in
+            try Session.deleteOne(db, key: id)
+        }
+    }
+    
+    public func updateUnreadCount(id: String, count: Int) throws {
+        try dbManager.write { db in
+            try db.execute(sql: "UPDATE sessions SET unreadCount = ? WHERE id = ?", arguments: [count, id])
+        }
+    }
+}

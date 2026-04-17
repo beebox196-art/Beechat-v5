@@ -1,0 +1,100 @@
+import Foundation
+import GRDB
+
+public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
+    private let dbManager: DatabaseManager
+    private let sessionRepo: SessionRepository
+    private let messageRepo: MessageRepository
+    private let attachmentRepo: AttachmentRepository
+    
+    public init(dbManager: DatabaseManager = .shared) {
+        self.dbManager = dbManager
+        self.sessionRepo = SessionRepository(dbManager: dbManager)
+        self.messageRepo = MessageRepository(dbManager: dbManager)
+        self.attachmentRepo = AttachmentRepository(dbManager: dbManager)
+    }
+    
+    public func openDatabase(at path: String) throws {
+        try dbManager.openDatabase(at: path)
+    }
+    
+    public func closeDatabase() {
+        dbManager.closeDatabase()
+    }
+    
+    // MARK: - Session operations
+    public func saveSession(_ session: Session) throws {
+        try sessionRepo.save(session)
+    }
+    
+    public func fetchSessions(limit: Int, offset: Int) throws -> [Session] {
+        try sessionRepo.fetchAll(limit: limit, offset: offset)
+    }
+    
+    public func fetchSession(id: String) throws -> Session? {
+        try sessionRepo.fetchById(id)
+    }
+    
+    public func deleteSession(id: String) throws {
+        try sessionRepo.delete(id)
+    }
+    
+    public func updateUnreadCount(sessionId: String, count: Int) throws {
+        try sessionRepo.updateUnreadCount(id: sessionId, count: count)
+    }
+    
+    public func upsertSessions(_ sessions: [Session]) throws {
+        try sessionRepo.upsert(sessions)
+    }
+    
+    // MARK: - Message operations
+    public func saveMessage(_ message: Message) throws {
+        try messageRepo.save(message)
+    }
+    
+    public func fetchMessages(sessionId: String, limit: Int, before: Date?) throws -> [Message] {
+        try messageRepo.fetchBySession(sessionId: sessionId, limit: limit, before: before)
+    }
+    
+    public func fetchMessage(id: String) throws -> Message? {
+        try messageRepo.fetchById(id)
+    }
+    
+    public func deleteMessage(id: String) throws {
+        try messageRepo.delete(id)
+    }
+    
+    public func markAsRead(messageIds: [String]) throws {
+        try messageRepo.markAsRead(ids: messageIds)
+    }
+    
+    public func upsertMessages(_ messages: [Message]) throws {
+        try messageRepo.upsert(messages)
+    }
+    
+    // MARK: - Attachment operations
+    public func saveAttachment(_ attachment: Attachment) throws {
+        try attachmentRepo.save(attachment)
+    }
+    
+    public func fetchAttachments(messageId: String) throws -> [Attachment] {
+        try attachmentRepo.fetchByMessage(messageId: messageId)
+    }
+    
+    // MARK: - GatewayEventConsumer
+    public func handleSessionList(_ sessions: [Session]) throws {
+        try upsertSessions(sessions)
+    }
+    
+    public func handleNewMessage(_ message: Message) throws {
+        try saveMessage(message)
+    }
+    
+    public func handleMessageUpdate(_ message: Message) throws {
+        try saveMessage(message)
+    }
+    
+    public func handleSessionUpdate(_ session: Session) throws {
+        try saveSession(session)
+    }
+}

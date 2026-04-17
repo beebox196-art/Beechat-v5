@@ -1,0 +1,37 @@
+# Build artifacts
+.build/
+build/
+DerivedData/
+
+# Xcode
+*.xcworkspace
+!default.xcworkspace
+*.xcodeproj/project.xcworkspace
+*.xcodeproj/xcshareddata/
+*.app
+*.ipa
+*.dSYM/
+
+# Swift Package Manager
+Package.resolved
+.swiftpm/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+*.swp
+*~
+.idea/
+.vscode/
+
+# Environment
+.env
+.env.local
+
+# Secrets
+*.pem
+*.key
+*credentials*
