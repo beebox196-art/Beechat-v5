@@ -39,15 +39,15 @@ public struct DeliveryLedgerRepository {
                 let updatedAt = formatter.date(from: updatedAtStr) ?? Date()
                 
                 return DeliveryLedgerEntry(
-                    id: UUID(uuidString: row["id"] as! String)!,
-                    sessionKey: row["sessionKey"] as! String,
-                    idempotencyKey: row["idempotencyKey"] as! String,
-                    content: row["content"] as! String,
-                    status: DeliveryLedgerEntry.DeliveryStatus(rawValue: row["status"] as! String)!,
+                    id: UUID(uuidString: row["id"] as? String ?? "") ?? UUID(),
+                    sessionKey: row["sessionKey"] as? String ?? "",
+                    idempotencyKey: row["idempotencyKey"] as? String ?? "",
+                    content: row["content"] as? String ?? "",
+                    status: DeliveryLedgerEntry.DeliveryStatus(rawValue: row["status"] as? String ?? "pending") ?? .pending,
                     runId: row["runId"] as? String,
                     createdAt: createdAt,
                     updatedAt: updatedAt,
-                    retryCount: Int(row["retryCount"] as! Int64)
+                    retryCount: Int(row["retryCount"] as? Int64 ?? 0)
                 )
             }
         }
@@ -64,15 +64,15 @@ public struct DeliveryLedgerRepository {
             let updatedAt = formatter.date(from: updatedAtStr) ?? Date()
             
             return DeliveryLedgerEntry(
-                id: UUID(uuidString: row["id"] as! String)!,
-                sessionKey: row["sessionKey"] as! String,
-                idempotencyKey: row["idempotencyKey"] as! String,
-                content: row["content"] as! String,
-                status: DeliveryLedgerEntry.DeliveryStatus(rawValue: row["status"] as! String)!,
+                id: UUID(uuidString: row["id"] as? String ?? "") ?? UUID(),
+                sessionKey: row["sessionKey"] as? String ?? "",
+                idempotencyKey: row["idempotencyKey"] as? String ?? "",
+                content: row["content"] as? String ?? "",
+                status: DeliveryLedgerEntry.DeliveryStatus(rawValue: row["status"] as? String ?? "pending") ?? .pending,
                 runId: row["runId"] as? String,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
-                retryCount: Int(row["retryCount"] as! Int64)
+                retryCount: Int(row["retryCount"] as? Int64 ?? 0)
             )
         }
     }

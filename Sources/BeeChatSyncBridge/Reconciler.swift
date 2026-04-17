@@ -18,12 +18,13 @@ public struct Reconciler {
         // 1. Refresh sessions list
         let sessions = try await rpcClient.sessionsList()
         let sessionModels = sessions.map { info in
-            Session(
+            let lastMsgDate = info.lastMessageAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+            return Session(
                 id: info.key,
                 agentId: info.key, // Mapping key to agentId for v1
                 channel: info.channel,
                 title: info.label,
-                lastMessageAt: nil, // In a real app, parse info.lastMessageAt
+                lastMessageAt: lastMsgDate,
                 updatedAt: Date()
             )
         }

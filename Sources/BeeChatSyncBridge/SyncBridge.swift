@@ -4,7 +4,7 @@ import BeeChatPersistence
 import GRDB
 
 public actor SyncBridge {
-    private let config: SyncBridgeConfiguration
+    let config: SyncBridgeConfiguration
     private let rpcClient: RPCClientProtocol
     private var eventRouter: EventRouter?
 
@@ -22,13 +22,14 @@ public actor SyncBridge {
     public init(config: SyncBridgeConfiguration) {
         self.config = config
         let gateway = config.gatewayClient
-        self.rpcClient = RPCClient(gateway: gateway)
+        let rpc = RPCClient(gateway: gateway)
+        self.rpcClient = rpc
         self.ledgerRepo = DeliveryLedgerRepository(dbManager: DatabaseManager.shared)
         
         self.reconciler = Reconciler(
-            rpcClient: RPCClient(gateway: gateway),
+            rpcClient: rpc,
             persistenceStore: config.persistenceStore,
-            ledgerRepo: DeliveryLedgerRepository(dbManager: DatabaseManager.shared)
+            ledgerRepo: self.ledgerRepo
         )
         
         self.sessionObserver = SessionObserver(dbManager: DatabaseManager.shared)
@@ -71,16 +72,23 @@ public actor SyncBridge {
     
     public func stop() async {
         await config.gatewayClient.disconnect()
+        
+        // Cleanup state
+        streamingBuffer.removeAll()
+        lastSeenEventSeq = nil
+        currentStreamingSessionKey = nil
     }
     
     public func fetchSessions() async throws -> [Session] {
         let infos = try await rpcClient.sessionsList()
         let sessions = infos.map { info in
-            Session(
+            let lastMsgDate = info.lastMessageAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+            return Session(
                 id: info.key,
                 agentId: info.key,
                 channel: info.channel,
                 title: info.label,
+                lastMessageAt: lastMsgDate,
                 updatedAt: Date()
             )
         }
@@ -104,7 +112,7 @@ public actor SyncBridge {
         return messages
     }
     
-    public func sendMessage(sessionKey: String, text: String) async throws -> String {
+    public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [[String: Any]]? = nil) async throws -> String {
         let idempotencyKey = UUID().uuidString
         let entry = DeliveryLedgerEntry(
             id: UUID(),
@@ -119,7 +127,7 @@ public actor SyncBridge {
         try ledgerRepo.save(entry)
         
         do {
-            let runId = try await rpcClient.chatSend(sessionKey: sessionKey, message: text, idempotencyKey: idempotencyKey)
+            let runId = try await rpcClient.chatSend(sessionKey: sessionKey, message: text, idempotencyKey: idempotencyKey, thinking: thinking, attachments: attachments)
             try ledgerRepo.updateStatus(idempotencyKey: idempotencyKey, status: .sent, runId: runId)
             return runId
         } catch {
@@ -145,7 +153,7 @@ public actor SyncBridge {
     }
     
     public func connectionStateStream() -> AsyncStream<ConnectionState> {
-        AsyncStream { continuation in
+        AsyncStream(ConnectionState.self, bufferingPolicy: .unbounded) { continuation in
             Task {
                 await config.gatewayClient.updateOnStatusChange { state in
                     continuation.yield(state)
@@ -165,6 +173,12 @@ public actor SyncBridge {
         // Seq tracking
         if let seq = event.seq {
             if let last = lastSeenEventSeq, seq <= last { return }
+            
+            if let last = lastSeenEventSeq, seq > last + 1 {
+                // Gap detected
+                try? await reconciler.reconcile(activeSessionKey: event.sessionKey)
+            }
+            
             lastSeenEventSeq = seq
         }
         

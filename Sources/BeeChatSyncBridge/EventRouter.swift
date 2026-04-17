@@ -13,6 +13,8 @@ public struct EventRouter {
         switch event {
         case "agent":
             await handleAgentEvent(payload: payload)
+        case "session.message":
+            await handleSessionMessage(payload: payload)
         case "health":
             await handleHealthEvent(payload: payload)
         case "sessions.changed":
@@ -22,6 +24,30 @@ public struct EventRouter {
         default:
             print("Unknown event received: \(event)")
         }
+    }
+    
+    private func handleSessionMessage(payload: [String: AnyCodable]?) async {
+        guard let payload = payload else { return }
+        
+        guard let sessionKey = payload["sessionKey"]?.value as? String,
+              let dataDict = payload["data"]?.value as? [String: Any],
+              let content = dataDict["content"] as? String,
+              let role = dataDict["role"] as? String else {
+            return
+        }
+        
+        let ts = payload["ts"]?.value as? Int64 ?? 0
+        let messageId = dataDict["id"] as? String ?? UUID().uuidString
+        
+        let message = Message(
+            id: messageId,
+            sessionId: sessionKey,
+            role: role,
+            content: content,
+            timestamp: Date(timeIntervalSince1970: Double(ts / 1000))
+        )
+        
+        try? await syncBridge.config.persistenceStore.saveMessage(message)
     }
     
     private func handleAgentEvent(payload: [String: AnyCodable]?) async {

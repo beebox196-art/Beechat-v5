@@ -6,7 +6,7 @@ public protocol RPCClientProtocol {
     func sessionsList() async throws -> [SessionInfo]
     func sessionsSubscribe() async throws
     func chatHistory(sessionKey: String, limit: Int?) async throws -> [ChatMessagePayload]
-    func chatSend(sessionKey: String, message: String, idempotencyKey: String) async throws -> String
+    func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String?, attachments: [[String: Any]]?) async throws -> String
     func chatAbort(sessionKey: String) async throws -> Bool
 }
 
@@ -69,12 +69,20 @@ public struct RPCClient: RPCClientProtocol {
         }
     }
     
-    public func chatSend(sessionKey: String, message: String, idempotencyKey: String) async throws -> String {
-        let params: [String: AnyCodable] = [
+    public func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [[String: Any]]? = nil) async throws -> String {
+        var params: [String: AnyCodable] = [
             "sessionKey": AnyCodable(sessionKey),
             "message": AnyCodable(message),
             "idempotencyKey": AnyCodable(idempotencyKey)
         ]
+        
+        if let thinking = thinking {
+            params["thinking"] = AnyCodable(thinking)
+        }
+        
+        if let attachments = attachments {
+            params["attachments"] = AnyCodable(attachments)
+        }
         
         let response = try await gateway.call(method: "chat.send", params: params)
         guard let runId = response["runId"]?.value as? String else {

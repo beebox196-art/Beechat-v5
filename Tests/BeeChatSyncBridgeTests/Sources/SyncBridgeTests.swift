@@ -21,7 +21,7 @@ final class MockRPCClient: RPCClientProtocol {
         return try chatHistoryHandler?(sessionKey) ?? []
     }
     
-    func chatSend(sessionKey: String, message: String, idempotencyKey: String) async throws -> String { return "run-id" }
+    func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [[String: Any]]? = nil) async throws -> String { return "run-id" }
     func chatAbort(sessionKey: String) async throws -> Bool { return true }
 }
 
