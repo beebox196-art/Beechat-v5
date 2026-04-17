@@ -1,6 +1,7 @@
 public enum GatewayEvent: String, Codable, Sendable {
-    // Real-time transcript streaming (delta/final/error states)
-    case chat
+    // Real-time agent/streaming events (delta/final/error states)
+    // This is the primary transcript event — NOT "chat" as previously assumed
+    case agent
     
     // Session list invalidation — triggers sessions.list refresh
     case sessionsChanged = "sessions.changed"
@@ -10,6 +11,9 @@ public enum GatewayEvent: String, Codable, Sendable {
     
     // Tool call/result updates (for subscribed sessions)
     case sessionTool = "session.tool"
+    
+    // Health/status events
+    case health
     
     // User presence updates
     case presence
@@ -22,8 +26,4 @@ public enum GatewayEvent: String, Codable, Sendable {
     
     // Error event
     case error
-    
-    // NOTE: state.snapshot and session.update do NOT exist in the current
-    // OpenClaw protocol. Initial state comes from hello-ok.snapshot.
-    // Session invalidation comes from sessions.changed.
 }

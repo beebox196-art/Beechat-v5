@@ -84,30 +84,55 @@ public enum GatewayEvent: String, Codable, Sendable {
 
 ## Event Handling Rules
 
-### `chat` Event
-The primary real-time transcript event. Payload contains a `state` field:
+### `agent` Event (NOT `chat`)
+**CRITICAL: The primary real-time event is `agent`, NOT `chat`.**
+Validated against live OpenClaw gateway on 2026-04-17. The `agent` event replaces what was previously assumed to be `chat`.
+
+The payload contains streaming data with a `stream` field and a `data` object:
 
 ```swift
-enum ChatEventState: String, Codable {
-    case delta   // Streaming chunk — ephemeral, do NOT persist as message row
-    case final   // Completed message — persist as durable row
-    case error   // Generation failed — update delivery state
+enum AgentStreamType: String, Codable {
+    case item   // A tool call, text block, or other transcript item
+    case text    // Streaming text content (delta)
+    case final   // Completion marker
 }
 
-struct ChatEventPayload: Codable {
+struct AgentEventPayload: Codable {
     let runId: String
+    let stream: String          // "item", "text", or other stream types
+    let data: AgentEventData   // Polymorphic — shape depends on stream type
     let sessionKey: String
     let seq: Int?
-    let state: ChatEventState
-    let message: ChatMessage?
-    let errorMessage: String?
+    let ts: Int64              // Unix milliseconds
+}
+```
+
+**Live captured example (tool call update):**
+```json
+{
+  "runId": "2cd1e889-...",
+  "stream": "item",
+  "data": {
+    "itemId": "tool:ollama_call_...",
+    "phase": "update",
+    "kind": "tool",
+    "title": "exec run node script...",
+    "status": "running",
+    "name": "exec",
+    "toolCallId": "ollama_call_..."
+  },
+  "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+  "seq": 566,
+  "ts": 1776440726273
 }
 ```
 
 **Handling:**
-- `delta`: Update in-memory streaming buffer only (NOT to DB). Emit to UI via delegate.
-- `final`: Upsert message to DB. Clear streaming buffer for that runId.
-- `error`: Mark delivery ledger entry as failed. Clear streaming buffer.
+- `stream: "item"` with `kind: "tool"` → tool call tracking (store as message metadata or skip for v1)
+- `stream: "text"` → streaming text content (ephemeral delta buffer, NOT persisted as message row)
+- `stream: "item"` with `kind: "text"` and `phase: "delta"` → same as `text` stream
+- `stream: "item"` with `phase: "final"` → persist as durable message row
+- The `data` field is polymorphic — decode based on `stream` and `kind` fields
 
 ### `sessions.changed` Event
 Invalidates the session list cache.

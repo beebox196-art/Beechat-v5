@@ -1,0 +1,1861 @@
+[
+  {
+    "type": "event",
+    "event": "connect.challenge",
+    "payload": {
+      "nonce": "89553ef6-86cd-4a64-8b8f-eb6a3625c4f1",
+      "ts": 1776440726203
+    }
+  },
+  {
+    "type": "res",
+    "id": "probe-1",
+    "ok": true,
+    "payload": {
+      "type": "hello-ok",
+      "protocol": 3,
+      "server": {
+        "version": "2026.4.15",
+        "connId": "35d83979-5d53-4b95-842c-03acaaf0d916"
+      },
+      "features": {
+        "methods": [
+          "health",
+          "doctor.memory.status",
+          "doctor.memory.dreamDiary",
+          "doctor.memory.backfillDreamDiary",
+          "doctor.memory.resetDreamDiary",
+          "doctor.memory.resetGroundedShortTerm",
+          "doctor.memory.repairDreamingArtifacts",
+          "doctor.memory.dedupeDreamDiary",
+          "logs.tail",
+          "channels.status",
+          "channels.logout",
+          "status",
+          "usage.status",
+          "usage.cost",
+          "tts.status",
+          "tts.providers",
+          "tts.enable",
+          "tts.disable",
+          "tts.convert",
+          "tts.setProvider",
+          "config.get",
+          "config.set",
+          "config.apply",
+          "config.patch",
+          "config.schema",
+          "config.schema.lookup",
+          "exec.approvals.get",
+          "exec.approvals.set",
+          "exec.approvals.node.get",
+          "exec.approvals.node.set",
+          "exec.approval.get",
+          "exec.approval.list",
+          "exec.approval.request",
+          "exec.approval.waitDecision",
+          "exec.approval.resolve",
+          "plugin.approval.list",
+          "plugin.approval.request",
+          "plugin.approval.waitDecision",
+          "plugin.approval.resolve",
+          "wizard.start",
+          "wizard.next",
+          "wizard.cancel",
+          "wizard.status",
+          "talk.config",
+          "talk.speak",
+          "talk.mode",
+          "commands.list",
+          "models.list",
+          "models.authStatus",
+          "tools.catalog",
+          "tools.effective",
+          "agents.list",
+          "agents.create",
+          "agents.update",
+          "agents.delete",
+          "agents.files.list",
+          "agents.files.get",
+          "agents.files.set",
+          "skills.status",
+          "skills.search",
+          "skills.detail",
+          "skills.bins",
+          "skills.install",
+          "skills.update",
+          "update.run",
+          "voicewake.get",
+          "voicewake.set",
+          "secrets.reload",
+          "secrets.resolve",
+          "sessions.list",
+          "sessions.subscribe",
+          "sessions.unsubscribe",
+          "sessions.messages.subscribe",
+          "sessions.messages.unsubscribe",
+          "sessions.preview",
+          "sessions.compaction.list",
+          "sessions.compaction.get",
+          "sessions.compaction.branch",
+          "sessions.compaction.restore",
+          "sessions.create",
+          "sessions.send",
+          "sessions.abort",
+          "sessions.patch",
+          "sessions.reset",
+          "sessions.delete",
+          "sessions.compact",
+          "last-heartbeat",
+          "set-heartbeats",
+          "wake",
+          "node.pair.request",
+          "node.pair.list",
+          "node.pair.approve",
+          "node.pair.reject",
+          "node.pair.verify",
+          "device.pair.list",
+          "device.pair.approve",
+          "device.pair.reject",
+          "device.pair.remove",
+          "device.token.rotate",
+          "device.token.revoke",
+          "node.rename",
+          "node.list",
+          "node.describe",
+          "node.pending.drain",
+          "node.pending.enqueue",
+          "node.invoke",
+          "node.pending.pull",
+          "node.pending.ack",
+          "node.invoke.result",
+          "node.event",
+          "node.canvas.capability.refresh",
+          "cron.list",
+          "cron.status",
+          "cron.add",
+          "cron.update",
+          "cron.remove",
+          "cron.run",
+          "cron.runs",
+          "gateway.identity.get",
+          "system-presence",
+          "system-event",
+          "message.action",
+          "send",
+          "agent",
+          "agent.identity.get",
+          "agent.wait",
+          "chat.history",
+          "chat.abort",
+          "chat.send",
+          "wiki.status",
+          "wiki.importRuns",
+          "wiki.importInsights",
+          "wiki.palace",
+          "wiki.init",
+          "wiki.doctor",
+          "wiki.compile",
+          "wiki.ingest",
+          "wiki.lint",
+          "wiki.bridge.import",
+          "wiki.unsafeLocal.import",
+          "wiki.search",
+          "wiki.apply",
+          "wiki.get",
+          "wiki.obsidian.status",
+          "wiki.obsidian.search",
+          "wiki.obsidian.open",
+          "wiki.obsidian.command",
+          "wiki.obsidian.daily"
+        ],
+        "events": [
+          "connect.challenge",
+          "agent",
+          "chat",
+          "session.message",
+          "session.tool",
+          "sessions.changed",
+          "presence",
+          "tick",
+          "talk.mode",
+          "shutdown",
+          "health",
+          "heartbeat",
+          "cron",
+          "node.pair.requested",
+          "node.pair.resolved",
+          "node.invoke.request",
+          "device.pair.requested",
+          "device.pair.resolved",
+          "voicewake.changed",
+          "exec.approval.requested",
+          "exec.approval.resolved",
+          "plugin.approval.requested",
+          "plugin.approval.resolved",
+          "update.available"
+        ]
+      },
+      "snapshot": {
+        "presence": [
+          {
+            "host": "Openclaws-Mac-mini.local",
+            "ip": "192.168.0.123",
+            "version": "2026.4.15",
+            "platform": "macos 26.3.1",
+            "deviceFamily": "Mac",
+            "mode": "gateway",
+            "reason": "self",
+            "text": "Gateway: Openclaws-Mac-mini.local (192.168.0.123) \u00b7 app 2026.4.15 \u00b7 mode gateway \u00b7 reason self",
+            "ts": 1776440726215
+          },
+          {
+            "host": "cli",
+            "version": "1.0.0",
+            "platform": "macos",
+            "mode": "webchat",
+            "roles": [
+              "operator"
+            ],
+            "reason": "connect",
+            "ts": 1776440726208,
+            "text": "Node: cli \u00b7 mode webchat"
+          }
+        ],
+        "health": {
+          "ok": true,
+          "ts": 1776440688914,
+          "durationMs": 1755,
+          "channels": {
+            "discord": {
+              "configured": true,
+              "running": false,
+              "lastStartAt": null,
+              "lastStopAt": null,
+              "lastError": null,
+              "tokenSource": "none",
+              "probe": {
+                "ok": true,
+                "status": null,
+                "error": null,
+                "elapsedMs": 1380,
+                "bot": {
+                  "id": "1476183950765330442",
+                  "username": "BeeBox196"
+                },
+                "application": {
+                  "id": "1476183950765330442",
+                  "flags": 11051008,
+                  "intents": {
+                    "presence": "limited",
+                    "guildMembers": "limited",
+                    "messageContent": "limited"
+                  }
+                }
+              },
+              "lastProbeAt": 1776440688539,
+              "accountId": "default",
+              "accounts": {
+                "default": {
+                  "configured": true,
+                  "running": false,
+                  "lastStartAt": null,
+                  "lastStopAt": null,
+                  "lastError": null,
+                  "tokenSource": "none",
+                  "probe": {
+                    "ok": true,
+                    "status": null,
+                    "error": null,
+                    "elapsedMs": 1380,
+                    "bot": {
+                      "id": "1476183950765330442",
+                      "username": "BeeBox196"
+                    },
+                    "application": {
+                      "id": "1476183950765330442",
+                      "flags": 11051008,
+                      "intents": {
+                        "presence": "limited",
+                        "guildMembers": "limited",
+                        "messageContent": "limited"
+                      }
+                    }
+                  },
+                  "lastProbeAt": 1776440688539,
+                  "accountId": "default"
+                }
+              }
+            },
+            "telegram": {
+              "configured": true,
+              "running": false,
+              "lastStartAt": null,
+              "lastStopAt": null,
+              "lastError": null,
+              "tokenSource": "none",
+              "probe": {
+                "ok": true,
+                "status": null,
+                "error": null,
+                "elapsedMs": 375,
+                "bot": {
+                  "id": 8311325305,
+                  "username": "BeeBox196_bot",
+                  "canJoinGroups": true,
+                  "canReadAllGroupMessages": true,
+                  "supportsInlineQueries": false
+                },
+                "webhook": {
+                  "url": "",
+                  "hasCustomCert": false
+                }
+              },
+              "lastProbeAt": 1776440688914,
+              "mode": null,
+              "accountId": "default",
+              "accounts": {
+                "default": {
+                  "configured": true,
+                  "running": false,
+                  "lastStartAt": null,
+                  "lastStopAt": null,
+                  "lastError": null,
+                  "tokenSource": "none",
+                  "probe": {
+                    "ok": true,
+                    "status": null,
+                    "error": null,
+                    "elapsedMs": 375,
+                    "bot": {
+                      "id": 8311325305,
+                      "username": "BeeBox196_bot",
+                      "canJoinGroups": true,
+                      "canReadAllGroupMessages": true,
+                      "supportsInlineQueries": false
+                    },
+                    "webhook": {
+                      "url": "",
+                      "hasCustomCert": false
+                    }
+                  },
+                  "lastProbeAt": 1776440688914,
+                  "mode": null,
+                  "accountId": "default"
+                }
+              }
+            }
+          },
+          "channelOrder": [
+            "discord",
+            "telegram"
+          ],
+          "channelLabels": {
+            "discord": "Discord",
+            "telegram": "Telegram"
+          },
+          "heartbeatSeconds": 1800,
+          "defaultAgentId": "main",
+          "agents": [
+            {
+              "agentId": "main",
+              "name": "Bee - Chief of Staff",
+              "isDefault": true,
+              "heartbeat": {
+                "enabled": true,
+                "every": "30m",
+                "everyMs": 1800000,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/main/sessions/sessions.json",
+                "count": 118,
+                "recent": [
+                  {
+                    "key": "agent:main:telegram:group:-1003830552971:topic:1185",
+                    "updatedAt": 1776440186760,
+                    "age": 500348
+                  },
+                  {
+                    "key": "agent:main:cron:a62c853a-9f1e-4ab4-aeaf-21bf873f1e95",
+                    "updatedAt": 1776440053879,
+                    "age": 633229
+                  },
+                  {
+                    "key": "agent:main:cron:a62c853a-9f1e-4ab4-aeaf-21bf873f1e95:run:cc97be16-1ad7-4b3e-b253-90d53e5ce0a7",
+                    "updatedAt": 1776440053879,
+                    "age": 633229
+                  },
+                  {
+                    "key": "agent:main:main",
+                    "updatedAt": 1776439976050,
+                    "age": 711058
+                  },
+                  {
+                    "key": "agent:main:cron:a62c853a-9f1e-4ab4-aeaf-21bf873f1e95:run:67c1e3bc-7b35-4654-88f9-4dfe82820785",
+                    "updatedAt": 1776439153857,
+                    "age": 1533251
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "claude",
+              "name": "Claude Code",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/claude/sessions/sessions.json",
+                "count": 0,
+                "recent": []
+              }
+            },
+            {
+              "agentId": "neo",
+              "name": "Neo - Data Master",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/neo/sessions/sessions.json",
+                "count": 45,
+                "recent": [
+                  {
+                    "key": "agent:neo:subagent:69310e45-b5e9-4c00-81ff-dc4b02884ad2",
+                    "updatedAt": 1776356277020,
+                    "age": 84410106
+                  },
+                  {
+                    "key": "agent:neo:subagent:539d1a18-7f28-4305-b93c-8d2417a56baf",
+                    "updatedAt": 1776339836789,
+                    "age": 100850337
+                  },
+                  {
+                    "key": "agent:neo:subagent:46802b51-f9b4-48e2-84f0-6274db9d0b92",
+                    "updatedAt": 1776335852022,
+                    "age": 104835104
+                  },
+                  {
+                    "key": "agent:neo:subagent:b619be15-24cc-4616-ba62-c79004667450",
+                    "updatedAt": 1776334668471,
+                    "age": 106018655
+                  },
+                  {
+                    "key": "agent:neo:subagent:f6887327-eeba-423a-81a3-56538a697380",
+                    "updatedAt": 1776325506931,
+                    "age": 115180195
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "mel",
+              "name": "Mel - Creative Director",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/mel/sessions/sessions.json",
+                "count": 11,
+                "recent": [
+                  {
+                    "key": "agent:mel:subagent:31481288-7ca9-4258-9eca-3ca16abcb7ff",
+                    "updatedAt": 1776354931656,
+                    "age": 85755474
+                  },
+                  {
+                    "key": "agent:mel:subagent:c637c1ee-402c-417c-b7ad-43c23378ee56",
+                    "updatedAt": 1776335563367,
+                    "age": 105123763
+                  },
+                  {
+                    "key": "agent:mel:subagent:8c2a1d88-02d6-4514-b270-201989689eaf",
+                    "updatedAt": 1775979378383,
+                    "age": 461308747
+                  },
+                  {
+                    "key": "agent:mel:subagent:3a3daf49-0bdd-4761-940a-8f03688e7c46",
+                    "updatedAt": 1775978220591,
+                    "age": 462466539
+                  },
+                  {
+                    "key": "agent:mel:subagent:f52f4d1f-3574-4ebb-aad0-ddddf404e30d",
+                    "updatedAt": 1775938312563,
+                    "age": 502374567
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "charles",
+              "name": "Charles - Legal & Finance",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/charles/sessions/sessions.json",
+                "count": 6,
+                "recent": [
+                  {
+                    "key": "agent:charles:subagent:820ec5d7-e7a8-471c-a559-4747e83a5a82",
+                    "updatedAt": 1776355536677,
+                    "age": 85150454
+                  },
+                  {
+                    "key": "agent:charles:subagent:863d7dbd-382c-477a-a490-529c5be43f67",
+                    "updatedAt": 1776338048803,
+                    "age": 102638328
+                  },
+                  {
+                    "key": "agent:charles:subagent:9b224d1d-f2f7-4b1f-bcfc-465130f76102",
+                    "updatedAt": 1776335639648,
+                    "age": 105047483
+                  },
+                  {
+                    "key": "agent:charles:subagent:849159b2-de3e-41e8-95c6-cbc98301a88b",
+                    "updatedAt": 1776244424405,
+                    "age": 196262726
+                  },
+                  {
+                    "key": "agent:charles:subagent:b5df4de5-1283-477b-a37f-3c2b58a886db",
+                    "updatedAt": 1776241440944,
+                    "age": 199246187
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "q",
+              "name": "Q - Senior Developer",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/q/sessions/sessions.json",
+                "count": 74,
+                "recent": [
+                  {
+                    "key": "agent:q:subagent:0fab8883-db6e-4673-9e6a-a47b5b798094",
+                    "updatedAt": 1776436484044,
+                    "age": 4203095
+                  },
+                  {
+                    "key": "agent:q:subagent:0d6548ed-c85e-4696-b910-5dd471fbde63",
+                    "updatedAt": 1776436384781,
+                    "age": 4302358
+                  },
+                  {
+                    "key": "agent:q:subagent:ac0ebecb-2dcf-4736-b3f6-e63be62f63e8",
+                    "updatedAt": 1776435884632,
+                    "age": 4802507
+                  },
+                  {
+                    "key": "agent:q:subagent:9090b6a9-a459-41f4-8717-f7530d34bed9",
+                    "updatedAt": 1776435152248,
+                    "age": 5534891
+                  },
+                  {
+                    "key": "agent:q:subagent:b779cd77-f29a-4bb8-a5e6-fae4e27d76de",
+                    "updatedAt": 1776429919400,
+                    "age": 10767739
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "gav",
+              "name": "Gav - Research & Morale",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/gav/sessions/sessions.json",
+                "count": 38,
+                "recent": [
+                  {
+                    "key": "agent:gav:subagent:84d39d42-4992-440e-a321-c257de88df7e",
+                    "updatedAt": 1776439320092,
+                    "age": 1367052
+                  },
+                  {
+                    "key": "agent:gav:subagent:e7c11399-04a0-434f-958f-12b3eb946da5",
+                    "updatedAt": 1776424719816,
+                    "age": 15967328
+                  },
+                  {
+                    "key": "agent:gav:subagent:2a47a349-2288-47a4-8689-5756630b6543",
+                    "updatedAt": 1776355231886,
+                    "age": 85455258
+                  },
+                  {
+                    "key": "agent:gav:subagent:daa13775-755d-41b8-83ca-1ef50edee3b2",
+                    "updatedAt": 1776346812414,
+                    "age": 93874730
+                  },
+                  {
+                    "key": "agent:gav:subagent:bd51b09e-eb4b-4a0c-af1e-5d0423f9658a",
+                    "updatedAt": 1776335523795,
+                    "age": 105163349
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "kieran",
+              "name": "Kieran - Strategic Advisor",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/kieran/sessions/sessions.json",
+                "count": 121,
+                "recent": [
+                  {
+                    "key": "agent:kieran:subagent:9bdf8b86-bf3b-46a6-8a39-ee19f8b8a098",
+                    "updatedAt": 1776436670476,
+                    "age": 4016681
+                  },
+                  {
+                    "key": "agent:kieran:subagent:a03baffb-a7c1-4898-a342-543a37feb586",
+                    "updatedAt": 1776436143034,
+                    "age": 4544123
+                  },
+                  {
+                    "key": "agent:kieran:subagent:63a14291-1f94-483b-abcf-8abee029697e",
+                    "updatedAt": 1776435659617,
+                    "age": 5027540
+                  },
+                  {
+                    "key": "agent:kieran:subagent:951ab36e-bec5-4f3a-96be-c23c685f031d",
+                    "updatedAt": 1776430944014,
+                    "age": 9743143
+                  },
+                  {
+                    "key": "agent:kieran:subagent:02fee8ed-7fe2-41d0-af8e-6b945902e4f1",
+                    "updatedAt": 1776428935299,
+                    "age": 11751858
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "sag",
+              "name": "Sag - Voice Specialist",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/sag/sessions/sessions.json",
+                "count": 1,
+                "recent": [
+                  {
+                    "key": "agent:sag:subagent:b9e9dd28-d75f-46fb-9d17-bb2fb02d63b7",
+                    "updatedAt": 1776355045815,
+                    "age": 85641343
+                  }
+                ]
+              }
+            },
+            {
+              "agentId": "luna",
+              "name": "Luna - Operations Manager",
+              "isDefault": false,
+              "heartbeat": {
+                "enabled": false,
+                "every": "disabled",
+                "everyMs": null,
+                "prompt": "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.",
+                "target": "none",
+                "model": "ollama/gemma4:e4b",
+                "ackMaxChars": 300
+              },
+              "sessions": {
+                "path": "/Users/openclaw/.openclaw/agents/luna/sessions/sessions.json",
+                "count": 9,
+                "recent": [
+                  {
+                    "key": "agent:luna:cron:a7c15aac-b1ce-4813-b71f-9b3954ee9c75",
+                    "updatedAt": 1776412800022,
+                    "age": 27887137
+                  },
+                  {
+                    "key": "agent:luna:cron:a7c15aac-b1ce-4813-b71f-9b3954ee9c75:run:43b3688f-bf69-4d1f-8eec-447cb1301667",
+                    "updatedAt": 1776412800022,
+                    "age": 27887137
+                  },
+                  {
+                    "key": "agent:luna:cron:9de4b834-090d-4cc1-b32f-7fae433b7d90",
+                    "updatedAt": 1776405600232,
+                    "age": 35086927
+                  },
+                  {
+                    "key": "agent:luna:cron:9de4b834-090d-4cc1-b32f-7fae433b7d90:run:af0ae7f7-21b1-4b27-ba23-696bf342a3fc",
+                    "updatedAt": 1776405600232,
+                    "age": 35086927
+                  },
+                  {
+                    "key": "agent:luna:cron:4f217d7b-733a-4924-9dbd-e16f952764ac",
+                    "updatedAt": 1776402000158,
+                    "age": 38687001
+                  }
+                ]
+              }
+            }
+          ],
+          "sessions": {
+            "path": "/Users/openclaw/.openclaw/agents/main/sessions/sessions.json",
+            "count": 118,
+            "recent": [
+              {
+                "key": "agent:main:telegram:group:-1003830552971:topic:1185",
+                "updatedAt": 1776440186760,
+                "age": 500348
+              },
+              {
+                "key": "agent:main:cron:a62c853a-9f1e-4ab4-aeaf-21bf873f1e95",
+                "updatedAt": 1776440053879,
+                "age": 633229
+              },
+              {
+                "key": "agent:main:cron:a62c853a-9f1e-4ab4-aeaf-21bf873f1e95:run:cc97be16-1ad7-4b3e-b253-90d53e5ce0a7",
+                "updatedAt": 1776440053879,
+                "age": 633229
+              },
+              {
+                "key": "agent:main:main",
+                "updatedAt": 1776439976050,
+                "age": 711058
+              },
+              {
+                "key": "agent:main:cron:a62c853a-9f1e-4ab4-aeaf-21bf873f1e95:run:67c1e3bc-7b35-4654-88f9-4dfe82820785",
+                "updatedAt": 1776439153857,
+                "age": 1533251
+              }
+            ]
+          }
+        },
+        "stateVersion": {
+          "presence": 208,
+          "health": 368
+        },
+        "uptimeMs": 17761267,
+        "sessionDefaults": {
+          "defaultAgentId": "main",
+          "mainKey": "main",
+          "mainSessionKey": "agent:main:main",
+          "scope": "per-sender"
+        }
+      },
+      "canvasHostUrl": "http://127.0.0.1:18789/__openclaw__/cap/Zm6Oy3dl4BaGsE4z5MjC2qDM",
+      "policy": {
+        "maxPayload": 26214400,
+        "maxBufferedBytes": 52428800,
+        "tickIntervalMs": 30000
+      }
+    }
+  },
+  {
+    "type": "res",
+    "id": "probe-2",
+    "ok": false,
+    "error": {
+      "code": "INVALID_REQUEST",
+      "message": "missing scope: operator.read"
+    }
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 566,
+      "ts": 1776440726273
+    },
+    "seq": 11195
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "error\": null,\n              \"elapsedMs\": 1380,\n              \"bot\": {\n                \"id\": \"1476183950765330442\",\n                \"username\": \"BeeBox196\"\n              },\n              \"application\": {\n                \"id\": \"1476183950765330442\",\n                \"flags\": 11051008,\n                \"intents\": {\n                  \"presence\": \"limited\",\n                  \"guildMembers\": \"limited\",\n                  \"messageContent\": \"limited\"\n                }\n              }\n            },\n            \"lastProbeAt\": 1776440688539,\n            \"accountId\": \"default\",\n            \"accounts\": {\n              \"default\": {\n                \"configured\": true,\n                \"running\": false,\n                \"lastStartAt\": null,\n                \"lastStopAt\": null,\n                \"lastError\": null,\n                \"tokenSource\": \"none\",\n                \"probe\": {\n                  \"ok\": true,\n                  \"status\": null,\n                  \"error\": null,\n                  \"elapsedMs\": 1380,\n                  \"bot\": {\n                    \"id\": \"1476183950765330442\",\n                    \"username\": \"BeeBox196\"\n                  },\n                  \"application\": {\n                    \"id\": \"1476183950765330442\",\n                    \"flags\": 11051008,\n                    \"intents\": {\n                      \"presence\": \"limited\",\n                      \"guildMembers\": \"limited\",\n                      \"messageContent\": \"limited\"\n                    }\n                  }\n                },\n                \"lastProbeAt\": 1776440688539,\n                \"accountId\": \"default\"\n              }\n            }\n          },\n          \"telegram\": {\n            \"configured\": true,\n            \"running\": false,\n            \"lastStartAt\": null,\n            \"lastStopAt\": null,\n            \"lastError\": null,\n            \"tokenS\n\n[CONNECTED! Requesting sessions.list]\n\n--- type=res event= ---\n{\n  \"type\": \"res\",\n  \"id\": \"probe-2\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"INVALID_REQUEST\",\n    \""
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 567,
+      "ts": 1776440726273
+    },
+    "seq": 11196
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "error\": null,\n              \"elapsedMs\": 1380,\n              \"bot\": {\n                \"id\": \"1476183950765330442\",\n                \"username\": \"BeeBox196\"\n              },\n              \"application\": {\n                \"id\": \"1476183950765330442\",\n                \"flags\": 11051008,\n                \"intents\": {\n                  \"presence\": \"limited\",\n                  \"guildMembers\": \"limited\",\n                  \"messageContent\": \"limited\"\n                }\n              }\n            },\n            \"lastProbeAt\": 1776440688539,\n            \"accountId\": \"default\",\n            \"accounts\": {\n              \"default\": {\n                \"configured\": true,\n                \"running\": false,\n                \"lastStartAt\": null,\n                \"lastStopAt\": null,\n                \"lastError\": null,\n                \"tokenSource\": \"none\",\n                \"probe\": {\n                  \"ok\": true,\n                  \"status\": null,\n                  \"error\": null,\n                  \"elapsedMs\": 1380,\n                  \"bot\": {\n                    \"id\": \"1476183950765330442\",\n                    \"username\": \"BeeBox196\"\n                  },\n                  \"application\": {\n                    \"id\": \"1476183950765330442\",\n                    \"flags\": 11051008,\n                    \"intents\": {\n                      \"presence\": \"limited\",\n                      \"guildMembers\": \"limited\",\n                      \"messageContent\": \"limited\"\n                    }\n                  }\n                },\n                \"lastProbeAt\": 1776440688539,\n                \"accountId\": \"default\"\n              }\n            }\n          },\n          \"telegram\": {\n            \"configured\": true,\n            \"running\": false,\n            \"lastStartAt\": null,\n            \"lastStopAt\": null,\n            \"lastError\": null,\n            \"tokenS\n\n[CONNECTED! Requesting sessions.list]\n\n--- type=res event= ---\n{\n  \"type\": \"res\",\n  \"id\": \"probe-2\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"INVALID_REQUEST\",\n    \"",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 568,
+      "ts": 1776440726273
+    },
+    "seq": 11197
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 570,
+      "ts": 1776440726273
+    },
+    "seq": 11198
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "30442\",\n                \"username\": \"BeeBox196\"\n              },\n              \"application\": {\n                \"id\": \"1476183950765330442\",\n                \"flags\": 11051008,\n                \"intents\": {\n                  \"presence\": \"limited\",\n                  \"guildMembers\": \"limited\",\n                  \"messageContent\": \"limited\"\n                }\n              }\n            },\n            \"lastProbeAt\": 1776440688539,\n            \"accountId\": \"default\",\n            \"accounts\": {\n              \"default\": {\n                \"configured\": true,\n                \"running\": false,\n                \"lastStartAt\": null,\n                \"lastStopAt\": null,\n                \"lastError\": null,\n                \"tokenSource\": \"none\",\n                \"probe\": {\n                  \"ok\": true,\n                  \"status\": null,\n                  \"error\": null,\n                  \"elapsedMs\": 1380,\n                  \"bot\": {\n                    \"id\": \"1476183950765330442\",\n                    \"username\": \"BeeBox196\"\n                  },\n                  \"application\": {\n                    \"id\": \"1476183950765330442\",\n                    \"flags\": 11051008,\n                    \"intents\": {\n                      \"presence\": \"limited\",\n                      \"guildMembers\": \"limited\",\n                      \"messageContent\": \"limited\"\n                    }\n                  }\n                },\n                \"lastProbeAt\": 1776440688539,\n                \"accountId\": \"default\"\n              }\n            }\n          },\n          \"telegram\": {\n            \"configured\": true,\n            \"running\": false,\n            \"lastStartAt\": null,\n            \"lastStopAt\": null,\n            \"lastError\": null,\n            \"tokenS\n\n[CONNECTED! Requesting sessions.list]\n\n--- type=res event= ---\n{\n  \"type\": \"res\",\n  \"id\": \"probe-2\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"INVALID_REQUEST\",\n    \"message\": \"missing scope: operator.read\"\n  }\n}\n\n[Got 0 sessions]\nNo sessions - listening for events for 5s"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 571,
+      "ts": 1776440726273
+    },
+    "seq": 11199
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "30442\",\n                \"username\": \"BeeBox196\"\n              },\n              \"application\": {\n                \"id\": \"1476183950765330442\",\n                \"flags\": 11051008,\n                \"intents\": {\n                  \"presence\": \"limited\",\n                  \"guildMembers\": \"limited\",\n                  \"messageContent\": \"limited\"\n                }\n              }\n            },\n            \"lastProbeAt\": 1776440688539,\n            \"accountId\": \"default\",\n            \"accounts\": {\n              \"default\": {\n                \"configured\": true,\n                \"running\": false,\n                \"lastStartAt\": null,\n                \"lastStopAt\": null,\n                \"lastError\": null,\n                \"tokenSource\": \"none\",\n                \"probe\": {\n                  \"ok\": true,\n                  \"status\": null,\n                  \"error\": null,\n                  \"elapsedMs\": 1380,\n                  \"bot\": {\n                    \"id\": \"1476183950765330442\",\n                    \"username\": \"BeeBox196\"\n                  },\n                  \"application\": {\n                    \"id\": \"1476183950765330442\",\n                    \"flags\": 11051008,\n                    \"intents\": {\n                      \"presence\": \"limited\",\n                      \"guildMembers\": \"limited\",\n                      \"messageContent\": \"limited\"\n                    }\n                  }\n                },\n                \"lastProbeAt\": 1776440688539,\n                \"accountId\": \"default\"\n              }\n            }\n          },\n          \"telegram\": {\n            \"configured\": true,\n            \"running\": false,\n            \"lastStartAt\": null,\n            \"lastStopAt\": null,\n            \"lastError\": null,\n            \"tokenS\n\n[CONNECTED! Requesting sessions.list]\n\n--- type=res event= ---\n{\n  \"type\": \"res\",\n  \"id\": \"probe-2\",\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"INVALID_REQUEST\",\n    \"message\": \"missing scope: operator.read\"\n  }\n}\n\n[Got 0 sessions]\nNo sessions - listening for events for 5s",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 572,
+      "ts": 1776440726273
+    },
+    "seq": 11200
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 574,
+      "ts": 1776440726275
+    },
+    "seq": 11201
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "tStartAt\\\": null,\\n            \\\"lastStopAt\\\": null,\\n            \\\"lastError\\\": null,\\n            \\\"tokenS\\n\\n[CONNECTED! Requesting sessions.list]\\n\\n--- type=res event= ---\\n{\\n  \\\"type\\\": \\\"res\\\",\\n  \\\"id\\\": \\\"probe-2\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"INVALID_REQUEST\\\",\\n    \\\"\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 568,\n    \"ts\": 1776440726273\n  },\n  \"seq\": 11197\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 570,\n    \"ts\": 1776440726273\n  },\n  \"seq\": 11198\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"command\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \"30442\\\",\\n                \\\"username\\\": \\\"BeeBox196\\\"\\n              },\\n              \\\"appl"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 575,
+      "ts": 1776440726275
+    },
+    "seq": 11202
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "tStartAt\\\": null,\\n            \\\"lastStopAt\\\": null,\\n            \\\"lastError\\\": null,\\n            \\\"tokenS\\n\\n[CONNECTED! Requesting sessions.list]\\n\\n--- type=res event= ---\\n{\\n  \\\"type\\\": \\\"res\\\",\\n  \\\"id\\\": \\\"probe-2\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"INVALID_REQUEST\\\",\\n    \\\"\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 568,\n    \"ts\": 1776440726273\n  },\n  \"seq\": 11197\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 570,\n    \"ts\": 1776440726273\n  },\n  \"seq\": 11198\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"command\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \"30442\\\",\\n                \\\"username\\\": \\\"BeeBox196\\\"\\n              },\\n              \\\"appl",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 576,
+      "ts": 1776440726275
+    },
+    "seq": 11203
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 578,
+      "ts": 1776440726275
+    },
+    "seq": 11204
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\"\\n                }\\n              }\\n            },\\n            \\\"lastProbeAt\\\": 1776440688539,\\n            \\\"accountId\\\": \\\"default\\\",\\n            \\\"accounts\\\": {\\n              \\\"default\\\": {\\n                \\\"configured\\\": true,\\n                \\\"running\\\": false,\\n                \\\"lastStartAt\\\": null,\\n                \\\"lastStopAt\\\": null,\\n                \\\"lastError\\\": null,\\n                \\\"tokenSource\\\": \\\"none\\\",\\n                \\\"probe\\\": {\\n                  \\\"ok\\\": true,\\n                  \\\"status\\\": null,\\n                  \\\"error\\\": null,\\n                  \\\"elapsedMs\\\": 1380,\\n                  \\\"bot\\\": {\\n                    \\\"id\\\": \\\"1476183950765330442\\\",\\n                    \\\"username\\\": \\\"BeeBox196\\\"\\n                  },\\n                  \\\"application\\\": {\\n                    \\\"id\\\": \\\"1476183950765330442\\\",\\n                    \\\"flags\\\": 11051008,\\n                    \\\"intents\\\": {\\n                      \\\"presence\\\": \\\"limited\\\",\\n                      \\\"guildMembers\\\": \\\"limited\\\",\\n                      \\\"messageContent\\\": \\\"limited\\\"\\n                    }\\n                  }\\n                },\\n                \\\"lastProbeAt\\\": 1776440688539,\\n                \\\"accountId\\\": \\\"default\\\"\\n              }\\n            }\\n          },\\n          \\\"telegram\\\": {\\n            \\\"configured\\\": true,\\n            \\\"running\\\": false,\\n            \\\"lastStartAt\\\": null,\\n            \\\"lastStopAt\\\": null,\\n            \\\"lastError\\\": null,\\n            \\\"tokenS\\n\\n[CONNECTED! Requesting sessions.list]\\n\\n--- type=res event= ---\\n{\\n  \\\"type\\\": \\\"res\\\",\\n  \\\"id\\\": \\\"probe-2\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"INVALID_REQUEST\\\",\\n    \\\"message\\\": \\\"missing scope: operator.read\\\"\\n  }\\n}\\n\\n[Got 0 sessions]\\nNo sessions - listening for events for 5s\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 572,\n    \"ts\": 1776440726273\n  },\n  \"seq\": 11200\n}"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 579,
+      "ts": 1776440726275
+    },
+    "seq": 11205
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\"\\n                }\\n              }\\n            },\\n            \\\"lastProbeAt\\\": 1776440688539,\\n            \\\"accountId\\\": \\\"default\\\",\\n            \\\"accounts\\\": {\\n              \\\"default\\\": {\\n                \\\"configured\\\": true,\\n                \\\"running\\\": false,\\n                \\\"lastStartAt\\\": null,\\n                \\\"lastStopAt\\\": null,\\n                \\\"lastError\\\": null,\\n                \\\"tokenSource\\\": \\\"none\\\",\\n                \\\"probe\\\": {\\n                  \\\"ok\\\": true,\\n                  \\\"status\\\": null,\\n                  \\\"error\\\": null,\\n                  \\\"elapsedMs\\\": 1380,\\n                  \\\"bot\\\": {\\n                    \\\"id\\\": \\\"1476183950765330442\\\",\\n                    \\\"username\\\": \\\"BeeBox196\\\"\\n                  },\\n                  \\\"application\\\": {\\n                    \\\"id\\\": \\\"1476183950765330442\\\",\\n                    \\\"flags\\\": 11051008,\\n                    \\\"intents\\\": {\\n                      \\\"presence\\\": \\\"limited\\\",\\n                      \\\"guildMembers\\\": \\\"limited\\\",\\n                      \\\"messageContent\\\": \\\"limited\\\"\\n                    }\\n                  }\\n                },\\n                \\\"lastProbeAt\\\": 1776440688539,\\n                \\\"accountId\\\": \\\"default\\\"\\n              }\\n            }\\n          },\\n          \\\"telegram\\\": {\\n            \\\"configured\\\": true,\\n            \\\"running\\\": false,\\n            \\\"lastStartAt\\\": null,\\n            \\\"lastStopAt\\\": null,\\n            \\\"lastError\\\": null,\\n            \\\"tokenS\\n\\n[CONNECTED! Requesting sessions.list]\\n\\n--- type=res event= ---\\n{\\n  \\\"type\\\": \\\"res\\\",\\n  \\\"id\\\": \\\"probe-2\\\",\\n  \\\"ok\\\": false,\\n  \\\"error\\\": {\\n    \\\"code\\\": \\\"INVALID_REQUEST\\\",\\n    \\\"message\\\": \\\"missing scope: operator.read\\\"\\n  }\\n}\\n\\n[Got 0 sessions]\\nNo sessions - listening for events for 5s\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 572,\n    \"ts\": 1776440726273\n  },\n  \"seq\": 11200\n}",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 580,
+      "ts": 1776440726275
+    },
+    "seq": 11206
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 582,
+      "ts": 1776440726276
+    },
+    "seq": 11207
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 570,\\n    \\\"ts\\\": 1776440726273\\n  },\\n  \\\"seq\\\": 11198\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"command\\\",\\n      \\\"title\\\": \\\"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"progressText\\\": \\\"30442\\\\\\\",\\\\n                \\\\\\\"username\\\\\\\": \\\\\\\"BeeBox196\\\\\\\"\\\\n              },\\\\n              \\\\\\\"appl\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 576,\n    \"ts\": 1776440726275\n  },\n  \"seq\": 11203\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 578,\n    \"ts\": 1776440726275\n  },\n  \"seq\": 11204\n}"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 583,
+      "ts": 1776440726276
+    },
+    "seq": 11208
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 570,\\n    \\\"ts\\\": 1776440726273\\n  },\\n  \\\"seq\\\": 11198\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"command\\\",\\n      \\\"title\\\": \\\"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"progressText\\\": \\\"30442\\\\\\\",\\\\n                \\\\\\\"username\\\\\\\": \\\\\\\"BeeBox196\\\\\\\"\\\\n              },\\\\n              \\\\\\\"appl\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 576,\n    \"ts\": 1776440726275\n  },\n  \"seq\": 11203\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 578,\n    \"ts\": 1776440726275\n  },\n  \"seq\": 11204\n}",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 584,
+      "ts": 1776440726276
+    },
+    "seq": 11209
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 586,
+      "ts": 1776440726277
+    },
+    "seq": 11210
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\\\\\"tokenSource\\\\\\\": \\\\\\\"none\\\\\\\",\\\\n                \\\\\\\"probe\\\\\\\": {\\\\n                  \\\\\\\"ok\\\\\\\": true,\\\\n                  \\\\\\\"status\\\\\\\": null,\\\\n                  \\\\\\\"error\\\\\\\": null,\\\\n                  \\\\\\\"elapsedMs\\\\\\\": 1380,\\\\n                  \\\\\\\"bot\\\\\\\": {\\\\n                    \\\\\\\"id\\\\\\\": \\\\\\\"1476183950765330442\\\\\\\",\\\\n                    \\\\\\\"username\\\\\\\": \\\\\\\"BeeBox196\\\\\\\"\\\\n                  },\\\\n                  \\\\\\\"application\\\\\\\": {\\\\n                    \\\\\\\"id\\\\\\\": \\\\\\\"1476183950765330442\\\\\\\",\\\\n                    \\\\\\\"flags\\\\\\\": 11051008,\\\\n                    \\\\\\\"intents\\\\\\\": {\\\\n                      \\\\\\\"presence\\\\\\\": \\\\\\\"limited\\\\\\\",\\\\n                      \\\\\\\"guildMembers\\\\\\\": \\\\\\\"limited\\\\\\\",\\\\n                      \\\\\\\"messageContent\\\\\\\": \\\\\\\"limited\\\\\\\"\\\\n                    }\\\\n                  }\\\\n                },\\\\n                \\\\\\\"lastProbeAt\\\\\\\": 1776440688539,\\\\n                \\\\\\\"accountId\\\\\\\": \\\\\\\"default\\\\\\\"\\\\n              }\\\\n            }\\\\n          },\\\\n          \\\\\\\"telegram\\\\\\\": {\\\\n            \\\\\\\"configured\\\\\\\": true,\\\\n            \\\\\\\"running\\\\\\\": false,\\\\n            \\\\\\\"lastStartAt\\\\\\\": null,\\\\n            \\\\\\\"lastStopAt\\\\\\\": null,\\\\n            \\\\\\\"lastError\\\\\\\": null,\\\\n            \\\\\\\"tokenS\\\\n\\\\n[CONNECTED! Requesting sessions.list]\\\\n\\\\n--- type=res event= ---\\\\n{\\\\n  \\\\\\\"type\\\\\\\": \\\\\\\"res\\\\\\\",\\\\n  \\\\\\\"id\\\\\\\": \\\\\\\"probe-2\\\\\\\",\\\\n  \\\\\\\"ok\\\\\\\": false,\\\\n  \\\\\\\"error\\\\\\\": {\\\\n    \\\\\\\"code\\\\\\\": \\\\\\\"INVALID_REQUEST\\\\\\\",\\\\n    \\\\\\\"message\\\\\\\": \\\\\\\"missing scope: operator.read\\\\\\\"\\\\n  }\\\\n}\\\\n\\\\n[Got 0 sessions]\\\\nNo sessions - listening for events for 5s\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 572,\\n    \\\"ts\\\": 1776440726273\\n  },\\n  \\\"seq\\\": 11200\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 580,\n    \"ts\": 1776440726275\n  },\n  \"seq\": 11206\n}"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 587,
+      "ts": 1776440726277
+    },
+    "seq": 11211
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\\\\\"tokenSource\\\\\\\": \\\\\\\"none\\\\\\\",\\\\n                \\\\\\\"probe\\\\\\\": {\\\\n                  \\\\\\\"ok\\\\\\\": true,\\\\n                  \\\\\\\"status\\\\\\\": null,\\\\n                  \\\\\\\"error\\\\\\\": null,\\\\n                  \\\\\\\"elapsedMs\\\\\\\": 1380,\\\\n                  \\\\\\\"bot\\\\\\\": {\\\\n                    \\\\\\\"id\\\\\\\": \\\\\\\"1476183950765330442\\\\\\\",\\\\n                    \\\\\\\"username\\\\\\\": \\\\\\\"BeeBox196\\\\\\\"\\\\n                  },\\\\n                  \\\\\\\"application\\\\\\\": {\\\\n                    \\\\\\\"id\\\\\\\": \\\\\\\"1476183950765330442\\\\\\\",\\\\n                    \\\\\\\"flags\\\\\\\": 11051008,\\\\n                    \\\\\\\"intents\\\\\\\": {\\\\n                      \\\\\\\"presence\\\\\\\": \\\\\\\"limited\\\\\\\",\\\\n                      \\\\\\\"guildMembers\\\\\\\": \\\\\\\"limited\\\\\\\",\\\\n                      \\\\\\\"messageContent\\\\\\\": \\\\\\\"limited\\\\\\\"\\\\n                    }\\\\n                  }\\\\n                },\\\\n                \\\\\\\"lastProbeAt\\\\\\\": 1776440688539,\\\\n                \\\\\\\"accountId\\\\\\\": \\\\\\\"default\\\\\\\"\\\\n              }\\\\n            }\\\\n          },\\\\n          \\\\\\\"telegram\\\\\\\": {\\\\n            \\\\\\\"configured\\\\\\\": true,\\\\n            \\\\\\\"running\\\\\\\": false,\\\\n            \\\\\\\"lastStartAt\\\\\\\": null,\\\\n            \\\\\\\"lastStopAt\\\\\\\": null,\\\\n            \\\\\\\"lastError\\\\\\\": null,\\\\n            \\\\\\\"tokenS\\\\n\\\\n[CONNECTED! Requesting sessions.list]\\\\n\\\\n--- type=res event= ---\\\\n{\\\\n  \\\\\\\"type\\\\\\\": \\\\\\\"res\\\\\\\",\\\\n  \\\\\\\"id\\\\\\\": \\\\\\\"probe-2\\\\\\\",\\\\n  \\\\\\\"ok\\\\\\\": false,\\\\n  \\\\\\\"error\\\\\\\": {\\\\n    \\\\\\\"code\\\\\\\": \\\\\\\"INVALID_REQUEST\\\\\\\",\\\\n    \\\\\\\"message\\\\\\\": \\\\\\\"missing scope: operator.read\\\\\\\"\\\\n  }\\\\n}\\\\n\\\\n[Got 0 sessions]\\\\nNo sessions - listening for events for 5s\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 572,\\n    \\\"ts\\\": 1776440726273\\n  },\\n  \\\"seq\\\": 11200\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 580,\n    \"ts\": 1776440726275\n  },\n  \"seq\": 11206\n}",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 588,
+      "ts": 1776440726277
+    },
+    "seq": 11212
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 590,
+      "ts": 1776440726277
+    },
+    "seq": 11213
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": ",\\\\n    \\\\\\\"stream\\\\\\\": \\\\\\\"item\\\\\\\",\\\\n    \\\\\\\"data\\\\\\\": {\\\\n      \\\\\\\"itemId\\\\\\\": \\\\\\\"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"phase\\\\\\\": \\\\\\\"update\\\\\\\",\\\\n      \\\\\\\"kind\\\\\\\": \\\\\\\"command\\\\\\\",\\\\n      \\\\\\\"title\\\\\\\": \\\\\\\"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"status\\\\\\\": \\\\\\\"running\\\\\\\",\\\\n      \\\\\\\"name\\\\\\\": \\\\\\\"exec\\\\\\\",\\\\n      \\\\\\\"meta\\\\\\\": \\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"toolCallId\\\\\\\": \\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"progressText\\\\\\\": \\\\\\\"30442\\\\\\\\\\\\\\\",\\\\\\\\n                \\\\\\\\\\\\\\\"username\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"BeeBox196\\\\\\\\\\\\\\\"\\\\\\\\n              },\\\\\\\\n              \\\\\\\\\\\\\\\"appl\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 576,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11203\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 578,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11204\\n}\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 583,\n    \"ts\": 1776440726276\n  },\n  \"seq\": 11208\n}"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 591,
+      "ts": 1776440726277
+    },
+    "seq": 11214
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": ",\\\\n    \\\\\\\"stream\\\\\\\": \\\\\\\"item\\\\\\\",\\\\n    \\\\\\\"data\\\\\\\": {\\\\n      \\\\\\\"itemId\\\\\\\": \\\\\\\"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"phase\\\\\\\": \\\\\\\"update\\\\\\\",\\\\n      \\\\\\\"kind\\\\\\\": \\\\\\\"command\\\\\\\",\\\\n      \\\\\\\"title\\\\\\\": \\\\\\\"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"status\\\\\\\": \\\\\\\"running\\\\\\\",\\\\n      \\\\\\\"name\\\\\\\": \\\\\\\"exec\\\\\\\",\\\\n      \\\\\\\"meta\\\\\\\": \\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"toolCallId\\\\\\\": \\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"progressText\\\\\\\": \\\\\\\"30442\\\\\\\\\\\\\\\",\\\\\\\\n                \\\\\\\\\\\\\\\"username\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"BeeBox196\\\\\\\\\\\\\\\"\\\\\\\\n              },\\\\\\\\n              \\\\\\\\\\\\\\\"appl\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 576,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11203\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 578,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11204\\n}\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 583,\n    \"ts\": 1776440726276\n  },\n  \"seq\": 11208\n}",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 592,
+      "ts": 1776440726277
+    },
+    "seq": 11215
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 594,
+      "ts": 1776440726281
+    },
+    "seq": 11216
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 576,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11203\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 578,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11204\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 584,\n    \"ts\": 1776440726276\n  },\n  \"seq\": 11209\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 586,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11210\n}\n\n--- type=event event=agent ---"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 595,
+      "ts": 1776440726281
+    },
+    "seq": 11217
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 576,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11203\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 578,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11204\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 584,\n    \"ts\": 1776440726276\n  },\n  \"seq\": 11209\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 586,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11210\n}\n\n--- type=event event=agent ---",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 596,
+      "ts": 1776440726282
+    },
+    "seq": 11218
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 598,
+      "ts": 1776440726282
+    },
+    "seq": 11219
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "85\\\",\\n    \\\"seq\\\": 580,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11206\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 588,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11212\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 590,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11213\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"command\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \",\\\\\\\\n    \\\\\\\\\\\\\\\"stream\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"item\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"data\\\\\\\\\\\\\\\": {\\\\\\\\n      \\\\\\\\\\\\\\\"itemId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"phase\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"update\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"kind\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"command\\\\\\\\\\\\\\\",\\\\\\\\n"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 599,
+      "ts": 1776440726283
+    },
+    "seq": 11220
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "85\\\",\\n    \\\"seq\\\": 580,\\n    \\\"ts\\\": 1776440726275\\n  },\\n  \\\"seq\\\": 11206\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 588,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11212\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 590,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11213\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"command\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \",\\\\\\\\n    \\\\\\\\\\\\\\\"stream\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"item\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"data\\\\\\\\\\\\\\\": {\\\\\\\\n      \\\\\\\\\\\\\\\"itemId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"phase\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"update\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"kind\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"command\\\\\\\\\\\\\\\",\\\\\\\\n",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 600,
+      "ts": 1776440726283
+    },
+    "seq": 11221
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 602,
+      "ts": 1776440726283
+    },
+    "seq": 11222
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\\n  \\\\\\\"payload\\\\\\\": {\\\\n    \\\\\\\"runId\\\\\\\": \\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\\\\\",\\\\n    \\\\\\\"stream\\\\\\\": \\\\\\\"item\\\\\\\",\\\\n    \\\\\\\"data\\\\\\\": {\\\\n      \\\\\\\"itemId\\\\\\\": \\\\\\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"phase\\\\\\\": \\\\\\\"update\\\\\\\",\\\\n      \\\\\\\"kind\\\\\\\": \\\\\\\"tool\\\\\\\",\\\\n      \\\\\\\"title\\\\\\\": \\\\\\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"status\\\\\\\": \\\\\\\"running\\\\\\\",\\\\n      \\\\\\\"name\\\\\\\": \\\\\\\"exec\\\\\\\",\\\\n      \\\\\\\"meta\\\\\\\": \\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"toolCallId\\\\\\\": \\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 578,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726275\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11204\\\\n}\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 583,\\n    \\\"ts\\\": 1776440726276\\n  },\\n  \\\"seq\\\": 11208\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 592,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11215\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 594,\n    \"ts\": 1776440726281\n  },\n  \"seq\": 11216\n}"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 603,
+      "ts": 1776440726283
+    },
+    "seq": 11223
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\\n  \\\\\\\"payload\\\\\\\": {\\\\n    \\\\\\\"runId\\\\\\\": \\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\\\\\",\\\\n    \\\\\\\"stream\\\\\\\": \\\\\\\"item\\\\\\\",\\\\n    \\\\\\\"data\\\\\\\": {\\\\n      \\\\\\\"itemId\\\\\\\": \\\\\\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"phase\\\\\\\": \\\\\\\"update\\\\\\\",\\\\n      \\\\\\\"kind\\\\\\\": \\\\\\\"tool\\\\\\\",\\\\n      \\\\\\\"title\\\\\\\": \\\\\\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"status\\\\\\\": \\\\\\\"running\\\\\\\",\\\\n      \\\\\\\"name\\\\\\\": \\\\\\\"exec\\\\\\\",\\\\n      \\\\\\\"meta\\\\\\\": \\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"toolCallId\\\\\\\": \\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 578,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726275\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11204\\\\n}\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 583,\\n    \\\"ts\\\": 1776440726276\\n  },\\n  \\\"seq\\\": 11208\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 592,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11215\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 594,\n    \"ts\": 1776440726281\n  },\n  \"seq\": 11216\n}",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 604,
+      "ts": 1776440726283
+    },
+    "seq": 11224
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 606,
+      "ts": 1776440726283
+    },
+    "seq": 11225
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\"runId\\\\\\\": \\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\\\\\",\\\\n    \\\\\\\"stream\\\\\\\": \\\\\\\"item\\\\\\\",\\\\n    \\\\\\\"data\\\\\\\": {\\\\n      \\\\\\\"itemId\\\\\\\": \\\\\\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"phase\\\\\\\": \\\\\\\"update\\\\\\\",\\\\n      \\\\\\\"kind\\\\\\\": \\\\\\\"tool\\\\\\\",\\\\n      \\\\\\\"title\\\\\\\": \\\\\\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"status\\\\\\\": \\\\\\\"running\\\\\\\",\\\\n      \\\\\\\"name\\\\\\\": \\\\\\\"exec\\\\\\\",\\\\n      \\\\\\\"meta\\\\\\\": \\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"toolCallId\\\\\\\": \\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 578,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726275\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11204\\\\n}\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 583,\\n    \\\"ts\\\": 1776440726276\\n  },\\n  \\\"seq\\\": 11208\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 592,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11215\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 594,\n    \"ts\": 1776440726281\n  },\n  \"seq\": 11216\n}\n\n--- type=event event=agent ---"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 607,
+      "ts": 1776440726283
+    },
+    "seq": 11226
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\"runId\\\\\\\": \\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\\\\\",\\\\n    \\\\\\\"stream\\\\\\\": \\\\\\\"item\\\\\\\",\\\\n    \\\\\\\"data\\\\\\\": {\\\\n      \\\\\\\"itemId\\\\\\\": \\\\\\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"phase\\\\\\\": \\\\\\\"update\\\\\\\",\\\\n      \\\\\\\"kind\\\\\\\": \\\\\\\"tool\\\\\\\",\\\\n      \\\\\\\"title\\\\\\\": \\\\\\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"status\\\\\\\": \\\\\\\"running\\\\\\\",\\\\n      \\\\\\\"name\\\\\\\": \\\\\\\"exec\\\\\\\",\\\\n      \\\\\\\"meta\\\\\\\": \\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\",\\\\n      \\\\\\\"toolCallId\\\\\\\": \\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 578,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726275\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11204\\\\n}\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 583,\\n    \\\"ts\\\": 1776440726276\\n  },\\n  \\\"seq\\\": 11208\\n}\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 592,\n    \"ts\": 1776440726277\n  },\n  \"seq\": 11215\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 594,\n    \"ts\": 1776440726281\n  },\n  \"seq\": 11216\n}\n\n--- type=event event=agent ---",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 608,
+      "ts": 1776440726283
+    },
+    "seq": 11227
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 610,
+      "ts": 1776440726286
+    },
+    "seq": 11228
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": ",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 598,\n    \"ts\": 1776440726282\n  },\n  \"seq\": 11219\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"command\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \"85\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 580,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726275\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11206\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 588,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11212\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-p"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 611,
+      "ts": 1776440726286
+    },
+    "seq": 11229
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": ",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 598,\n    \"ts\": 1776440726282\n  },\n  \"seq\": 11219\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"command\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \"85\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 580,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726275\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11206\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 588,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11212\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-p",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 612,
+      "ts": 1776440726286
+    },
+    "seq": 11230
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 614,
+      "ts": 1776440726286
+    },
+    "seq": 11231
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \"\\\\n  \\\\\\\\\\\\\\\"payload\\\\\\\\\\\\\\\": {\\\\\\\\n    \\\\\\\\\\\\\\\"runId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"stream\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"item\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"data\\\\\\\\\\\\\\\": {\\\\\\\\n      \\\\\\\\\\\\\\\"itemId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"phase\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"update\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"kind\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"tool\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"title\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"status\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"running\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"name\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"exec\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"meta\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"toolCallId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\"\\\\\\\\n    },\\\\\\\\n    \\\\\\\\\\\\\\\"sessionKey\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 578,\\\\\\\\n    \\\\\\\\\\\\\\\"ts\\\\\\\\\\\\\\\": 1776440726275\\\\\\\\n  },\\\\\\\\n  \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 11204\\\\\\\\n}\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 583,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726276\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11208\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 592,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11215\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mj"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 615,
+      "ts": 1776440726286
+    },
+    "seq": 11232
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"progressText\": \"\\\\n  \\\\\\\\\\\\\\\"payload\\\\\\\\\\\\\\\": {\\\\\\\\n    \\\\\\\\\\\\\\\"runId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"stream\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"item\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"data\\\\\\\\\\\\\\\": {\\\\\\\\n      \\\\\\\\\\\\\\\"itemId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"phase\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"update\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"kind\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"tool\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"title\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"status\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"running\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"name\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"exec\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"meta\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"toolCallId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\"\\\\\\\\n    },\\\\\\\\n    \\\\\\\\\\\\\\\"sessionKey\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 578,\\\\\\\\n    \\\\\\\\\\\\\\\"ts\\\\\\\\\\\\\\\": 1776440726275\\\\\\\\n  },\\\\\\\\n  \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 11204\\\\\\\\n}\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 583,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726276\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11208\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 592,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11215\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mj",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 616,
+      "ts": 1776440726286
+    },
+    "seq": 11233
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 618,
+      "ts": 1776440726286
+    },
+    "seq": 11234
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\\\\\\\\\": 11204\\\\\\\\n}\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 583,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726276\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11208\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 592,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11215\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 594,\\n    \\\"ts\\\": 1776440726281\\n  },\\n  \\\"seq\\\": 11216\\n}\\n\\n--- type=event event=agent ---\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 607,\n    \"ts\": 1776440726283\n  },\n  \"seq\": 11226\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"command_output\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"delta\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"name\": \"exec\",\n      \"output\": \"\\\"runId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 619,
+      "ts": 1776440726286
+    },
+    "seq": 11235
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\\\\\\\\\": 11204\\\\\\\\n}\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 583,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726276\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11208\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 592,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11215\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 594,\\n    \\\"ts\\\": 1776440726281\\n  },\\n  \\\"seq\\\": 11216\\n}\\n\\n--- type=event event=agent ---\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 607,\n    \"ts\": 1776440726283\n  },\n  \"seq\": 11226\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"command_output\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"delta\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"name\": \"exec\",\n      \"output\": \"\\\"runId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 620,
+      "ts": 1776440726286
+    },
+    "seq": 11236
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 622,
+      "ts": 1776440726286
+    },
+    "seq": 11237
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "\\\\\\\\\\\\\"running\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"name\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"exec\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"meta\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"toolCallId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\"\\\\\\\\n    },\\\\\\\\n    \\\\\\\\\\\\\\\"sessionKey\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 578,\\\\\\\\n    \\\\\\\\\\\\\\\"ts\\\\\\\\\\\\\\\": 1776440726275\\\\\\\\n  },\\\\\\\\n  \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 11204\\\\\\\\n}\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 583,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726276\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11208\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 592,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11215\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 594,\\n    \\\"ts\\\": 1776440726281\\n  },\\n  \\\"seq\\\": 11216\\n}\\n\\n--- type=event event=agent ---\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 608,\n    \"ts\": 1776440726283\n  },\n  \"seq\": 11227\n}"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 623,
+      "ts": 1776440726286
+    },
+    "seq": 11238
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "command_output",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "delta",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "name": "exec",
+        "output": "\\\\\\\\\\\\\"running\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"name\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"exec\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"meta\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\\\\\\\\\\\\\",\\\\\\\\n      \\\\\\\\\\\\\\\"toolCallId\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\\\\\\\\\"\\\\\\\\n    },\\\\\\\\n    \\\\\\\\\\\\\\\"sessionKey\\\\\\\\\\\\\\\": \\\\\\\\\\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\\\\\\\\\",\\\\\\\\n    \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 578,\\\\\\\\n    \\\\\\\\\\\\\\\"ts\\\\\\\\\\\\\\\": 1776440726275\\\\\\\\n  },\\\\\\\\n  \\\\\\\\\\\\\\\"seq\\\\\\\\\\\\\\\": 11204\\\\\\\\n}\\\\\\\"\\\\n    },\\\\n    \\\\\\\"sessionKey\\\\\\\": \\\\\\\"agent:main:telegram:group:-1003830552971:topic:1185\\\\\\\",\\\\n    \\\\\\\"seq\\\\\\\": 583,\\\\n    \\\\\\\"ts\\\\\\\": 1776440726276\\\\n  },\\\\n  \\\\\\\"seq\\\\\\\": 11208\\\\n}\\\",\\n      \\\"status\\\": \\\"running\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 592,\\n    \\\"ts\\\": 1776440726277\\n  },\\n  \\\"seq\\\": 11215\\n}\\n\\n--- type=event event=agent ---\\n{\\n  \\\"type\\\": \\\"event\\\",\\n  \\\"event\\\": \\\"agent\\\",\\n  \\\"payload\\\": {\\n    \\\"runId\\\": \\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\",\\n    \\\"stream\\\": \\\"item\\\",\\n    \\\"data\\\": {\\n      \\\"itemId\\\": \\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\",\\n      \\\"phase\\\": \\\"update\\\",\\n      \\\"kind\\\": \\\"tool\\\",\\n      \\\"title\\\": \\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"status\\\": \\\"running\\\",\\n      \\\"name\\\": \\\"exec\\\",\\n      \\\"meta\\\": \\\"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\\\",\\n      \\\"toolCallId\\\": \\\"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\"\\n    },\\n    \\\"sessionKey\\\": \\\"agent:main:telegram:group:-1003830552971:topic:1185\\\",\\n    \\\"seq\\\": 594,\\n    \\\"ts\\\": 1776440726281\\n  },\\n  \\\"seq\\\": 11216\\n}\\n\\n--- type=event event=agent ---\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 608,\n    \"ts\": 1776440726283\n  },\n  \"seq\": 11227\n}",
+        "status": "running"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 624,
+      "ts": 1776440726286
+    },
+    "seq": 11239
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "tool",
+        "title": "exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 626,
+      "ts": 1776440726289
+    },
+    "seq": 11240
+  },
+  {
+    "type": "event",
+    "event": "agent",
+    "payload": {
+      "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
+      "stream": "item",
+      "data": {
+        "itemId": "command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "phase": "update",
+        "kind": "command",
+        "title": "command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "status": "running",
+        "name": "exec",
+        "meta": "run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`",
+        "toolCallId": "ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1",
+        "progressText": "n  \\\\\\\"type\\\\\\\": \\\\\\\"event\\\\\\\",\\\\n  \\\\\\\"event\\\\\\\": \\\\\\\"agent\\\\\\\",\\\\n  \\\\\\\"payload\\\\\\\": {\\\\n    \\\\\\\"runId\\\\\\\": \\\\\\\"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\\\\\\\",\\\\n    \\\\\\\"stream\\\\\\\": \\\\\\\"item\\\\\\\",\\\\n    \\\\\\\"data\\\\\\\": {\\\\n      \\\\\\\"itemId\\\\\\\": \\\\\\\"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\\\\\\\",\\\\n      \\\\\\\"phase\\\\\\\": \\\\\\\"update\\\\\\\",\\\\n      \\\\\\\"kind\\\\\\\": \\\\\\\"tool\\\\\\\",\\\\n      \\\\\\\"title\\\\\\\": \\\\\\\"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-p\",\n      \"status\": \"running\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 612,\n    \"ts\": 1776440726286\n  },\n  \"seq\": 11230\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"tool:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"tool\",\n      \"title\": \"exec run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolCallId\": \"ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\"\n    },\n    \"sessionKey\": \"agent:main:telegram:group:-1003830552971:topic:1185\",\n    \"seq\": 614,\n    \"ts\": 1776440726286\n  },\n  \"seq\": 11231\n}\n\n--- type=event event=agent ---\n{\n  \"type\": \"event\",\n  \"event\": \"agent\",\n  \"payload\": {\n    \"runId\": \"2cd1e889-81d0-4bb8-b356-d49a7b38ea3a\",\n    \"stream\": \"item\",\n    \"data\": {\n      \"itemId\": \"command:ollama_call_d26d42b4-aacd-4669-b8c5-a91dbfcb23c1\",\n      \"phase\": \"update\",\n      \"kind\": \"command\",\n      \"title\": \"command run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"status\": \"running\",\n      \"name\": \"exec\",\n      \"meta\": \"run node script gateway-probe.mjs (in /tmp), `cd /tmp && node gateway-probe.mjs 2>&1`\",\n      \"toolC"
+      },
+      "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
+      "seq": 627,
+      "ts": 1776440726289
+    },
+    "seq": 11241
+  }
+]

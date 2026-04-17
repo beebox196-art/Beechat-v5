@@ -354,7 +354,8 @@ final class GatewayEventTests: XCTestCase {
     
     func testGatewayEventEnum() throws {
         // Verify all cases exist and have correct raw values
-        XCTAssertEqual(GatewayEvent.chat.rawValue, "chat")
+        XCTAssertEqual(GatewayEvent.agent.rawValue, "agent")
+        XCTAssertEqual(GatewayEvent.health.rawValue, "health")
         XCTAssertEqual(GatewayEvent.tick.rawValue, "tick")
         XCTAssertEqual(GatewayEvent.presence.rawValue, "presence")
         XCTAssertEqual(GatewayEvent.error.rawValue, "error")
@@ -364,9 +365,9 @@ final class GatewayEventTests: XCTestCase {
         XCTAssertEqual(GatewayEvent.sessionTool.rawValue, "session.tool")
         
         // Codable round-trip
-        let encoded = try JSONEncoder().encode(GatewayEvent.chat)
+        let encoded = try JSONEncoder().encode(GatewayEvent.agent)
         let decoded = try JSONDecoder().decode(GatewayEvent.self, from: encoded)
-        XCTAssertEqual(decoded, .chat)
+        XCTAssertEqual(decoded, .agent)
     }
     
     func testRequestIdIncrementing() {
