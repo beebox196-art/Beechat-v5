@@ -6,6 +6,7 @@ public actor GatewayClient {
         public let token: String
         public let deviceToken: String?
         public let clientInfo: ConnectParams.ClientInfo
+        public let clientMode: String
         public let requestTimeout: TimeInterval
         public let maxRetries: Int
         public let baseRetryDelay: TimeInterval
@@ -15,7 +16,8 @@ public actor GatewayClient {
             url: String,
             token: String,
             deviceToken: String? = nil,
-            clientInfo: ConnectParams.ClientInfo = .init(id: "beechat", version: "1.0", platform: "macos", mode: "operator"),
+            clientMode: String = "webchat",
+            clientInfo: ConnectParams.ClientInfo? = nil,
             requestTimeout: TimeInterval = 30.0,
             maxRetries: Int = 10,
             baseRetryDelay: TimeInterval = 1.0,
@@ -24,7 +26,8 @@ public actor GatewayClient {
             self.url = url
             self.token = token
             self.deviceToken = deviceToken
-            self.clientInfo = clientInfo
+            self.clientMode = clientMode
+            self.clientInfo = clientInfo ?? .init(id: "beechat", version: "1.0", platform: "macos", mode: clientMode)
             self.requestTimeout = requestTimeout
             self.maxRetries = maxRetries
             self.baseRetryDelay = baseRetryDelay
@@ -231,7 +234,7 @@ public actor GatewayClient {
                     key,
                     deviceId: deviceId,
                     clientId: config.clientInfo.id,
-                    clientMode: config.clientInfo.mode,
+                    clientMode: config.clientMode,
                     role: "operator",
                     scopes: ["operator.read", "operator.write"],
                     signedAtMs: signedAt,

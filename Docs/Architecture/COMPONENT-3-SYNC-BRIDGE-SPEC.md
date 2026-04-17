@@ -103,12 +103,15 @@ struct AgentEventPayload: Codable {
 struct AgentEventData: Codable {
     let itemId: String?         // Unique item ID (e.g. "tool:ollama_call_...")
     let phase: String?          // "delta", "update", "final"
-    let kind: String?           // "tool", "text", or other
+    let kind: String?           // "tool", "text", "command"
     let title: String?          // Display title for tool calls
     let status: String?         // "running", "completed", "error"
     let name: String?           // Tool name (e.g. "exec", "read")
     let text: String?           // Text content (for text stream items)
     let toolCallId: String?     // Tool call reference
+    let meta: String?           // Full command description (validated live)
+    let progressText: String?   // Streaming progress text (validated live)
+    let output: String?         // Command output chunks (validated live)
 }
 ```
 
@@ -133,7 +136,8 @@ struct AgentEventData: Codable {
 ```
 
 **Handling rules:**
-- `stream: "item"`, `kind: "tool"` → tool call tracking (store as message metadata or skip for v1)
+- `stream: "item"`, `kind: "command"` → command execution tracking (store as message metadata or skip for v1)
+- `stream: "command_output"` → streaming command output (ephemeral, like delta text)
 - `stream: "text"` → streaming text content (ephemeral delta buffer, NOT persisted)
 - `stream: "item"`, `kind: "text"`, `phase: "delta"` → append to streaming buffer
 - `stream: "item"`, `phase: "final"` → persist as durable message row, clear streaming buffer
@@ -299,6 +303,11 @@ public actor SyncBridge {
 }
 ```
 
+**Lifecycle Detail: `start()`**
+After handshake + hello-ok, and before fetching sessions.list, the bridge must:
+- Subscribe to session change events: `try await gatewayClient.call(method: "sessions.subscribe", params: [:])`
+
+
 ---
 
 ## Reconnect Strategy
@@ -310,9 +319,11 @@ On reconnect, SyncBridge must:
 3. Refresh sessions via `sessions.list` → upsert all to DB
 4. For active session, fetch `chat.history(limit: 200)` → upsert all messages
 5. Reconcile pending outbound messages:
-   - For each `pending` delivery ledger entry, check if message appears in history
-   - If found: mark as `delivered`
-   - If not found after timeout: mark as `failed`
+   - For pending entries without a `runId` (ambiguous inflight case):
+     - If `idempotencyKey` is set, call `chat.history` and search for the message
+     - If found → mark as `delivered`
+     - If not found and retryCount < 3 → retry with same idempotencyKey
+     - If not found and retryCount >= 3 → mark as `failed`
 6. Resume live event processing
 
 ### Seq tracking
@@ -410,7 +421,8 @@ private var streamingSessionKey: String?
 - On `agent` event with `phase: "delta"` → append content to `streamingBuffer[runId]`
 - On `agent` event with `phase: "final"` → upsert final message to DB, remove from streamingBuffer
 - On `agent` event with `phase: "error"` → mark delivery as failed, remove from streamingBuffer
-- On new session selection → clear previous streaming state
+- On new session selection → clear `streamingBuffer` and `streamingSessionKey`
+- If a delta arrives for a different session than the active one, buffer it but don't surface it
 - UI reads `currentStreamingContent` for live display
 
 ---
@@ -425,7 +437,7 @@ private var streamingSessionKey: String?
 | Duplicate event (seq check) | Ignore silently |
 | Gap detected (seq skip) | Fetch `chat.history` for affected session |
 | `sessions.list` returns empty | Clear local cache only if intentional |
-| DB write fails | Log and continue — DB errors should not crash the sync loop |
+| DB write fails | Classification: <br> - Session metadata write failure $\rightarrow$ log, retry on next event <br> - Message write failure $\rightarrow$ log, flag for reconciliation on reconnect <br> - Delivery ledger write failure $\rightarrow$ critical, alert user (message may be lost) |
 
 ---
 
