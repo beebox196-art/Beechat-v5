@@ -3,6 +3,7 @@
 **Date:** 2026-04-17  
 **Phase:** Build Phase 3  
 **Predecessors:** Component 1 (Persistence) ✅, Component 2 (Gateway) ✅  
+**Live-validated:** Connected to real OpenClaw gateway on 2026-04-17, captured actual event shapes  
 **Exit Criteria:** Sessions list syncs from gateway, messages sync per session, reconnect reconciles without duplicates, UI can observe DB changes reactively
 
 ---
@@ -14,7 +15,7 @@ BeeChatSyncBridge is the glue between BeeChatGateway (WebSocket transport) and B
 **Critical design rules:**
 1. **DB is source of UI truth.** SwiftUI observes the database, not the WebSocket.
 2. **Gateway owns session state.** Local DB is a cache, always rebuildable from gateway.
-3. **Deltas are ephemeral.** Only `final` state messages get persisted as durable rows.
+3. **Deltas are ephemeral.** Only `final` phase messages get persisted as durable rows.
 4. **Upsert always.** Never blind-insert. Use stable remote IDs for deduplication.
 5. **Reconnect = reconcile.** On reconnect, fetch recent history and upsert idempotently.
 
@@ -31,7 +32,8 @@ BeeChatSyncBridge (Swift Package)
 │       ├── RPCClient.swift               — Typed wrapper around GatewayClient.call()
 │       ├── Reconciler.swift              — Reconnect reconciliation logic
 │       ├── Models/
-│       │   ├── ChatEvent.swift           — chat event payload types (delta/final/error)
+│       │   ├── AgentEvent.swift          — agent event payload (validated live)
+│       │   ├── HealthEvent.swift          — health event payload (validated live)
 │       │   ├── SessionsChanged.swift     — sessions.changed event payload
 │       │   ├── SessionInfo.swift         — Session info from sessions.list
 │       │   ├── ChatMessage.swift         — Message from chat.history
@@ -57,13 +59,14 @@ BeeChatSyncBridge (Swift Package)
 
 ---
 
-## Gateway Event Types (Updated from Research)
+## Gateway Event Types (Validated Against Live Gateway)
 
-The GatewayEvent enum in Component 2 needs updating to match the current OpenClaw protocol:
+The GatewayEvent enum has been updated in Component 2 to match the live OpenClaw protocol:
 
 ```swift
 public enum GatewayEvent: String, Codable, Sendable {
-    case chat                           // Real-time transcript streaming
+    case agent                          // Primary real-time streaming event (NOT "chat")
+    case health                         // Health/status events
     case sessionsChanged = "sessions.changed"  // Session list invalidation
     case sessionMessage = "session.message"     // Per-session transcript updates
     case sessionTool = "session.tool"           // Tool call/result updates
@@ -71,55 +74,57 @@ public enum GatewayEvent: String, Codable, Sendable {
     case tick                            // Keepalive/liveness
     case connectChallenge = "connect.challenge" // Handshake challenge
     case error                           // Error event
-    
-    // NOTE: state.snapshot and session.update do NOT exist in current protocol.
-    // Initial state comes from hello-ok.snapshot.
-    // Session invalidation comes from sessions.changed.
 }
 ```
 
-**This is a Component 2 change — update GatewayEvent.swift before building Component 3.**
+**Validated against live gateway on 2026-04-17.** See `Docs/History/GATEWAY-PROBE-CAPTURE.json` for captured data.
 
 ---
 
 ## Event Handling Rules
 
-### `agent` Event (NOT `chat`)
-**CRITICAL: The primary real-time event is `agent`, NOT `chat`.**
-Validated against live OpenClaw gateway on 2026-04-17. The `agent` event replaces what was previously assumed to be `chat`.
+### `agent` Event — Primary Real-Time Event
+
+**CRITICAL: The primary real-time event is `agent`, NOT `chat`.** Validated against the live OpenClaw gateway. The gateway emits `agent` events for all streaming transcript data.
 
 The payload contains streaming data with a `stream` field and a `data` object:
 
 ```swift
-enum AgentStreamType: String, Codable {
-    case item   // A tool call, text block, or other transcript item
-    case text    // Streaming text content (delta)
-    case final   // Completion marker
-}
-
 struct AgentEventPayload: Codable {
     let runId: String
-    let stream: String          // "item", "text", or other stream types
-    let data: AgentEventData   // Polymorphic — shape depends on stream type
+    let stream: String          // "item" or "text" (validated live)
+    let data: AgentEventData    // Polymorphic — shape depends on stream+kind
     let sessionKey: String
-    let seq: Int?
-    let ts: Int64              // Unix milliseconds
+    let seq: Int?               // Event sequence number
+    let ts: Int64               // Unix milliseconds
+}
+
+// The data field is polymorphic. Key discriminator: stream + kind
+struct AgentEventData: Codable {
+    let itemId: String?         // Unique item ID (e.g. "tool:ollama_call_...")
+    let phase: String?          // "delta", "update", "final"
+    let kind: String?           // "tool", "text", or other
+    let title: String?          // Display title for tool calls
+    let status: String?         // "running", "completed", "error"
+    let name: String?           // Tool name (e.g. "exec", "read")
+    let text: String?           // Text content (for text stream items)
+    let toolCallId: String?     // Tool call reference
 }
 ```
 
 **Live captured example (tool call update):**
 ```json
 {
-  "runId": "2cd1e889-...",
+  "runId": "2cd1e889-81d0-4bb8-b356-d49a7b38ea3a",
   "stream": "item",
   "data": {
-    "itemId": "tool:ollama_call_...",
+    "itemId": "tool:ollama_call_d26d42b4-...",
     "phase": "update",
     "kind": "tool",
     "title": "exec run node script...",
     "status": "running",
     "name": "exec",
-    "toolCallId": "ollama_call_..."
+    "toolCallId": "ollama_call_d26d42b4-..."
   },
   "sessionKey": "agent:main:telegram:group:-1003830552971:topic:1185",
   "seq": 566,
@@ -127,14 +132,36 @@ struct AgentEventPayload: Codable {
 }
 ```
 
-**Handling:**
-- `stream: "item"` with `kind: "tool"` → tool call tracking (store as message metadata or skip for v1)
-- `stream: "text"` → streaming text content (ephemeral delta buffer, NOT persisted as message row)
-- `stream: "item"` with `kind: "text"` and `phase: "delta"` → same as `text` stream
-- `stream: "item"` with `phase: "final"` → persist as durable message row
+**Handling rules:**
+- `stream: "item"`, `kind: "tool"` → tool call tracking (store as message metadata or skip for v1)
+- `stream: "text"` → streaming text content (ephemeral delta buffer, NOT persisted)
+- `stream: "item"`, `kind: "text"`, `phase: "delta"` → append to streaming buffer
+- `stream: "item"`, `phase: "final"` → persist as durable message row, clear streaming buffer
+- `stream: "item"`, `phase: "error"` → mark delivery as failed, clear streaming buffer
 - The `data` field is polymorphic — decode based on `stream` and `kind` fields
 
+### `health` Event
+
+Regular health check event with channel status, agent info, and session metadata.
+
+```swift
+struct HealthEventPayload: Codable {
+    let ok: Bool
+    let ts: Int64
+    let durationMs: Int
+    let channels: [String: ChannelStatus]?
+    let agents: [String: AgentStatus]?
+    let sessions: [String: SessionStatus]?
+}
+```
+
+**Handling:**
+- Update connection health state in memory
+- Extract session metadata if needed (session count, active sessions)
+- Do NOT write to DB on every health event (too frequent)
+
 ### `sessions.changed` Event
+
 Invalidates the session list cache.
 
 **Handling:**
@@ -143,6 +170,7 @@ Invalidates the session list cache.
 - Delete local sessions that no longer appear in the response
 
 ### `tick` Event
+
 Keepalive. No DB write needed.
 
 **Handling:**
@@ -150,17 +178,18 @@ Keepalive. No DB write needed.
 - If ticks stop arriving beyond `2 * tickIntervalMs`, trigger reconnect
 
 ### `session.message` Event
+
 Per-session transcript update (for subscribed sessions).
 
 **Handling:**
 - Upsert message to DB by message ID
-- This is an alternative to `chat` for subscribed session streams
 
 ### `session.tool` Event
+
 Tool call/result updates for subscribed sessions.
 
 **Handling:**
-- Store as message metadata or skip for v1 (not required for minimal messenger)
+- Store as message metadata or skip for v1
 
 ---
 
@@ -180,11 +209,13 @@ struct SessionInfo: Codable {
     let key: String           // e.g. "agent:main:telegram:group:-1001234567890:topic:42"
     let label: String?       // Display name
     let channel: String?     // e.g. "telegram"
-    let model: String?      // e.g. "ollama/glm-5.1:cloud"
+    let model: String?       // e.g. "ollama/glm-5.1:cloud"
     let totalTokens: Int?    // Token usage
     let lastMessageAt: String? // ISO 8601 timestamp
 }
 ```
+
+**Note:** Validated live — the method exists in `hello-ok.features.methods`. Returns session objects with a `key` field.
 
 ### `chat.history`
 ```swift
@@ -199,6 +230,8 @@ struct ChatHistoryResponse: Codable {
     let messages: [ChatMessage]
 }
 ```
+
+**Note:** `chat.history` is UI-normalized — directive tags and tool XML may be stripped. Not a raw audit ledger.
 
 ### `chat.send`
 ```swift
@@ -365,7 +398,7 @@ targets: [
 
 ## Streaming Delta Buffer
 
-For live streaming messages (delta state), SyncBridge maintains an in-memory buffer:
+For live streaming messages, SyncBridge maintains an in-memory buffer:
 
 ```swift
 /// In-memory only — NOT persisted to DB
@@ -374,10 +407,10 @@ private var streamingSessionKey: String?
 ```
 
 **Rules:**
-- On `chat` delta: append content to `streamingBuffer[runId]`
-- On `chat` final: upsert final message to DB, remove from streamingBuffer
-- On `chat` error: mark delivery as failed, remove from streamingBuffer
-- On new session selection: clear previous streaming state
+- On `agent` event with `phase: "delta"` → append content to `streamingBuffer[runId]`
+- On `agent` event with `phase: "final"` → upsert final message to DB, remove from streamingBuffer
+- On `agent` event with `phase: "error"` → mark delivery as failed, remove from streamingBuffer
+- On new session selection → clear previous streaming state
 - UI reads `currentStreamingContent` for live display
 
 ---
@@ -396,11 +429,18 @@ private var streamingSessionKey: String?
 
 ---
 
+## Client Mode Note
+
+The WebSocket client must connect with `client.mode: "webchat"` (not `"operator"`). The gateway schema validates `mode` against a strict enum. Validated against live gateway on 2026-04-17.
+
+---
+
 ## Attribution
 
 - Event routing patterns informed by ClawChat (`ngmaloney/clawchat`, MIT) — `useSessions.ts`, `useGateway.ts`
 - OpenClaw protocol v3 docs (https://docs.openclaw.ai/gateway/protocol)
 - GRDB ValueObservation pattern from GRDB.swift docs
+- Live gateway validation data: `Docs/History/GATEWAY-PROBE-CAPTURE.json`
 
 ---
 
@@ -412,7 +452,7 @@ private var streamingSessionKey: String?
 
 1. ✅ `SyncBridge.start()` connects gateway, fetches session list, upserts to DB
 2. ✅ `sessions.changed` event triggers session list refresh
-3. ✅ `chat` events route correctly: delta → streaming buffer, final → DB upsert, error → failed state
+3. ✅ `agent` events route correctly: delta → streaming buffer, final → DB upsert, error → failed state
 4. ✅ `chat.history` fetches and upserts messages for a session
 5. ✅ `sendMessage()` creates delivery ledger entry, sends via gateway, updates status on ack
 6. ✅ `sendMessage()` uses idempotency key for dedup
