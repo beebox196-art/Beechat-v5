@@ -21,8 +21,8 @@
 | # | Component | Status | Agent |
 |---|-----------|--------|-------|
 | 1 | BeeChatPersistence | ✅ Complete (reviewed, verified) | Q + Bee |
-| 2 | BeeChatGateway | 🏗️ Building | Q |
-| 3 | Sync Bridge | ⬜ Not started | — |
+| 2 | BeeChatGateway | ✅ Complete (reviewed, verified) | Q |
+| 3 | Sync Bridge | 🔎 Research complete, implementation not started | Gav |
 | 4 | BeeChatUI | ⬜ Not started | — |
 | 5 | BeeChatApp (Assembly) | ⬜ Not started | — |
 
@@ -32,8 +32,8 @@
 None
 
 ## Next 3 Priorities
-1. Validate Component 1 (Persistence) — Q building now
-2. Begin Component 2 (Gateway) after Persistence passes
+1. Review and approve Component 3 Sync Bridge research (`Docs/History/PHASE0-COMPONENT3-RESEARCH.md`)
+2. Implement Sync Bridge around current protocol v3 events (`chat`, `sessions.changed`, `session.message`, `session.tool`, `tick`)
 3. Create Xcode workspace for integrated build
 
 ## Context Notes
@@ -42,6 +42,8 @@ None
 - Research-first enforcement applied (decision 2026-04-14)
 - GRDB chosen for persistence layer
 - ClawChat patterns adapted for gateway (not storage)
+- Component 3 research completed: `Docs/History/PHASE0-COMPONENT3-RESEARCH.md`
+- Important finding: current public protocol points to `hello-ok.snapshot`, `sessions.changed`, and `chat` events, not older assumed `state.snapshot` / `session.update` names
 
 ---
 *Update this file after each meaningful work session.*
