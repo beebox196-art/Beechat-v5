@@ -25,6 +25,7 @@ public struct ResponseFrame: Codable, Sendable {
     public let ok: Bool
     public let payload: [String: AnyCodable]?
     public let error: ResponseError?
+    public var rawData: Data? = nil
     
     public struct ResponseError: Codable, Sendable {
         public let message: String
@@ -38,4 +39,5 @@ public struct EventFrame: Codable, Sendable {
     public let payload: [String: AnyCodable]?
     public let seq: Int?
     public let stateVersion: Int?
+    public var rawData: Data? = nil
 }

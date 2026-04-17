@@ -31,7 +31,11 @@ public final class KeychainTokenStore: TokenStore {
     }
     
     public func deleteAll() throws {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service]
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
         SecItemDelete(query as CFDictionary)
     }
     

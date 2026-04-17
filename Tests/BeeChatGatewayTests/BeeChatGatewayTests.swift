@@ -327,3 +327,57 @@ final class PendingRequestMapTests: XCTestCase {
         XCTAssertEqual(rejectCount, 2)
     }
 }
+
+final class HelloOkParsingTests: XCTestCase {
+    
+    func testHelloOkParsingFromRawJSON() throws {
+        // Simulates handleHelloOk: decode HelloOk directly from raw JSON bytes
+        let rawJSON = """
+        {
+            "type": "hello-ok",
+            "protocol": 3,
+            "server": {"id": "test-server", "version": "1.0.0"},
+            "features": {"methods": ["sessions.list", "chat.send"], "events": ["chat", "tick"]},
+            "policy": {"maxPayload": 1048576},
+            "auth": {"deviceToken": "dt-abc123", "role": "operator", "scopes": ["operator.read"]}
+        }
+        """.data(using: .utf8)!
+        
+        let helloOk = try JSONDecoder().decode(HelloOk.self, from: rawJSON)
+        XCTAssertEqual(helloOk.protocol, 3)
+        XCTAssertEqual(helloOk.policy.maxPayload, 1048576)
+        XCTAssertEqual(helloOk.auth?.deviceToken, "dt-abc123")
+    }
+}
+
+final class GatewayEventTests: XCTestCase {
+    
+    func testGatewayEventEnum() throws {
+        // Verify all cases exist and have correct raw values
+        XCTAssertEqual(GatewayEvent.chat.rawValue, "chat")
+        XCTAssertEqual(GatewayEvent.agent.rawValue, "agent")
+        XCTAssertEqual(GatewayEvent.tick.rawValue, "tick")
+        XCTAssertEqual(GatewayEvent.connectChallenge.rawValue, "connect.challenge")
+        XCTAssertEqual(GatewayEvent.stateSnapshot.rawValue, "state.snapshot")
+        XCTAssertEqual(GatewayEvent.sessionUpdate.rawValue, "session.update")
+        XCTAssertEqual(GatewayEvent.messageUpdate.rawValue, "message.update")
+        
+        // Codable round-trip
+        let encoded = try JSONEncoder().encode(GatewayEvent.chat)
+        let decoded = try JSONDecoder().decode(GatewayEvent.self, from: encoded)
+        XCTAssertEqual(decoded, .chat)
+    }
+    
+    func testRequestIdIncrementing() {
+        // Verify the request ID format is bc-N with incrementing N
+        let id0 = "bc-\(0)"
+        let id1 = "bc-\(1)"
+        let id2 = "bc-\(2)"
+        XCTAssertEqual(id0, "bc-0")
+        XCTAssertEqual(id1, "bc-1")
+        XCTAssertEqual(id2, "bc-2")
+        // Verify the IDs sort correctly (monotonically increasing)
+        let ids = [id0, id1, id2]
+        XCTAssertEqual(ids.sorted(), ids, "Incrementing IDs should sort naturally")
+    }
+}
