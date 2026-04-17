@@ -12,8 +12,12 @@ public class WebSocketTransport: NSObject, URLSessionWebSocketDelegate {
         self.session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
     }
     
-    public func connect(url: URL) {
-        let task = session.webSocketTask(with: url)
+    public func connect(url: URL, origin: String? = nil) {
+        var request = URLRequest(url: url)
+        if let origin = origin {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+        let task = session.webSocketTask(with: request)
         self.task = task
         task.resume()
     }

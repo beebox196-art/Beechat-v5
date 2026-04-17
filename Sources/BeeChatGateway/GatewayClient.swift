@@ -27,7 +27,7 @@ public actor GatewayClient {
             self.token = token
             self.deviceToken = deviceToken
             self.clientMode = clientMode
-            self.clientInfo = clientInfo ?? .init(id: "beechat", version: "1.0", platform: "macos", mode: clientMode)
+            self.clientInfo = clientInfo ?? .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: clientMode)
             self.requestTimeout = requestTimeout
             self.maxRetries = maxRetries
             self.baseRetryDelay = baseRetryDelay
@@ -126,7 +126,8 @@ public actor GatewayClient {
             return
         }
         
-        transport.connect(url: url)
+        // Native app — no Origin header (allows silent local pairing on localhost)
+        transport.connect(url: url, origin: nil)
         
         // Handle close events from transport
         transport.onClose = { [weak self] code, reason in
@@ -189,7 +190,21 @@ public actor GatewayClient {
     }
     
     private func handleResponse(_ frame: ResponseFrame) async {
-        if frame.id == "handshake" { // Special ID for handshake
+        if !frame.ok {
+            // Error response
+            if frame.id == "handshake" {
+                print("Handshake rejected: \(frame.error?.message ?? "unknown")")
+                updateState(.error)
+            } else {
+                await pendingRequests.reject(id: frame.id, error: NSError(
+                    domain: "GatewayClient",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: frame.error?.message ?? "RPC error"]
+                ))
+            }
+            return
+        }
+        if frame.id == "handshake" {
             await handleHelloOk(frame)
         } else {
             await pendingRequests.resolve(id: frame.id, payload: frame.payload ?? [:])
@@ -197,12 +212,16 @@ public actor GatewayClient {
     }
     
     private func handleHelloOk(_ frame: ResponseFrame) async {
-        // In a real implementation, the 'connect' call response is the HelloOk object
-        // For this simplified version, we treat the response payload as HelloOk
-        guard let data = frame.rawData else { return }
+        // The hello-ok data is inside the response payload
+        guard let payload = frame.payload else {
+            print("HelloOk: no payload in response")
+            updateState(.error)
+            return
+        }
         
         do {
-            let helloOk = try JSONDecoder().decode(HelloOk.self, from: data)
+            let payloadData = try JSONEncoder().encode(payload)
+            let helloOk = try JSONDecoder().decode(HelloOk.self, from: payloadData)
             self._maxPayload = helloOk.policy.maxPayload
             
             if let deviceToken = helloOk.auth?.deviceToken {
@@ -214,6 +233,7 @@ public actor GatewayClient {
             retryCount = 0
             updateState(.connected)
         } catch {
+            print("HelloOk decode error: \(error)")
             updateState(.error)
         }
     }
@@ -226,49 +246,37 @@ public actor GatewayClient {
             return
         }
         
-        var device: DeviceIdentity?
-        if let deviceToken = currentDeviceToken {
-            do {
-                let key = try DeviceCrypto.getOrCreateKeyPair()
-                let deviceId = try DeviceCrypto.getDeviceId(key)
-                let pubKey = try DeviceCrypto.exportPublicKey(key)
-                let signedAt = Int(Date().timeIntervalSince1970 * 1000)
-                
-                let signature = try DeviceCrypto.signChallenge(
-                    key,
-                    deviceId: deviceId,
-                    clientId: config.clientInfo.id,
-                    clientMode: config.clientMode,
-                    role: "operator",
-                    scopes: ["operator.read", "operator.write"],
-                    signedAtMs: signedAt,
-                    token: config.token,
-                    nonce: nonce
-                )
-                
-                device = DeviceIdentity(id: deviceId, publicKey: pubKey, signature: signature, signedAt: signedAt, nonce: nonce)
-            } catch {
-                print("Handshake crypto failed: \(error)")
-            }
+        // Derive role/scopes based on client mode
+        // CLI mode gets operator.admin on localhost; other modes get user scopes
+        let role = "operator"
+        let scopes: [String]
+        switch config.clientMode {
+        case "cli":
+            scopes = ["operator.admin"]
+        default:
+            scopes = ["user.read", "user.write"]
         }
         
         let params = ConnectParams(
             client: config.clientInfo,
-            role: "operator",
-            scopes: ["operator.read", "operator.write"],
+            role: role,
+            scopes: scopes,
             caps: nil,
             commands: nil,
             permissions: nil,
-            auth: .init(token: config.token, deviceToken: currentDeviceToken),
+            auth: .init(token: config.token, deviceToken: nil),
             locale: nil,
             userAgent: nil,
-            device: device
+            device: nil
         )
         
         do {
             let id = "handshake"
             let frame = RequestFrame(id: id, method: "connect", params: try encodeParams(params))
             let data = try JSONEncoder().encode(frame)
+            if let jsonStr = String(data: data, encoding: .utf8) {
+                print("[GW] Sending connect: \(jsonStr.prefix(500))")
+            }
             try await transport.send(String(data: data, encoding: .utf8)!)
             
             await pendingRequests.add(id: id, timeout: config.requestTimeout, resolve: { payload in

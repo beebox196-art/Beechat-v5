@@ -44,13 +44,13 @@ public struct HelloOk: Codable, Sendable {
     public let auth: AuthResult?
     
     public struct ServerInfo: Codable, Sendable {
-        public let id: String
+        public let connId: String?
         public let version: String
     }
     
     public struct Features: Codable, Sendable {
-        public let methods: [String]
-        public let events: [String]
+        public let methods: [String]?
+        public let events: [String]?
     }
     
     public struct Policy: Codable, Sendable {
