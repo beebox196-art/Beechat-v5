@@ -8,18 +8,38 @@ public class SessionRepository {
         self.dbManager = dbManager
     }
     
+    /// Upsert a session — preserves createdAt on conflict.
     public func save(_ session: Session) throws {
         try dbManager.write { db in
             var session = session
-            try session.save(db)
+            try session.upsertAndFetch(
+                db,
+                onConflict: ["id"],
+                updating: .noColumnUnlessSpecified,
+                doUpdate: { excluded in
+                    Session.upsertColumns.map { column in
+                        column.set(to: excluded[column])
+                    }
+                }
+            )
         }
     }
     
+    /// Bulk upsert sessions — preserves createdAt on conflict.
     public func upsert(_ sessions: [Session]) throws {
         try dbManager.write { db in
             for session in sessions {
                 var session = session
-                try session.save(db)
+                try session.upsertAndFetch(
+                    db,
+                    onConflict: ["id"],
+                    updating: .noColumnUnlessSpecified,
+                    doUpdate: { excluded in
+                        Session.upsertColumns.map { column in
+                            column.set(to: excluded[column])
+                        }
+                    }
+                )
             }
         }
     }
@@ -40,6 +60,22 @@ public class SessionRepository {
     
     public func delete(_ id: String) throws {
         try dbManager.write { db in
+            try Session.deleteOne(db, key: id)
+        }
+    }
+    
+    /// Delete a session and all its messages and attachments (cascade).
+    public func deleteCascading(_ id: String) throws {
+        try dbManager.write { db in
+            // Delete attachments for messages in this session
+            try db.execute(sql: """
+                DELETE FROM attachments WHERE messageId IN (
+                    SELECT id FROM messages WHERE sessionId = ?
+                )
+                """, arguments: [id])
+            // Delete messages in this session
+            try db.execute(sql: "DELETE FROM messages WHERE sessionId = ?", arguments: [id])
+            // Delete the session itself
             try Session.deleteOne(db, key: id)
         }
     }

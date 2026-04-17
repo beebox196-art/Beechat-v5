@@ -8,18 +8,38 @@ public class MessageRepository {
         self.dbManager = dbManager
     }
     
+    /// Upsert a message — preserves createdAt on conflict.
     public func save(_ message: Message) throws {
         try dbManager.write { db in
             var message = message
-            try message.save(db)
+            try message.upsertAndFetch(
+                db,
+                onConflict: ["id"],
+                updating: .noColumnUnlessSpecified,
+                doUpdate: { excluded in
+                    Message.upsertColumns.map { column in
+                        column.set(to: excluded[column])
+                    }
+                }
+            )
         }
     }
     
+    /// Bulk upsert messages — preserves createdAt on conflict.
     public func upsert(_ messages: [Message]) throws {
         try dbManager.write { db in
             for message in messages {
                 var message = message
-                try message.save(db)
+                try message.upsertAndFetch(
+                    db,
+                    onConflict: ["id"],
+                    updating: .noColumnUnlessSpecified,
+                    doUpdate: { excluded in
+                        Message.upsertColumns.map { column in
+                            column.set(to: excluded[column])
+                        }
+                    }
+                )
             }
         }
     }
@@ -49,6 +69,7 @@ public class MessageRepository {
     }
     
     public func markAsRead(ids: [String]) throws {
+        guard !ids.isEmpty else { return }
         try dbManager.write { db in
             try db.execute(sql: "UPDATE messages SET isRead = 1 WHERE id IN (\(ids.map { _ in "?" }.joined(separator: ",")))", arguments: StatementArguments(ids))
         }

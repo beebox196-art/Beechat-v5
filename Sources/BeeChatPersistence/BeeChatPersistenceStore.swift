@@ -23,6 +23,7 @@ public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
     }
     
     // MARK: - Session operations
+    
     public func saveSession(_ session: Session) throws {
         try sessionRepo.save(session)
     }
@@ -39,6 +40,10 @@ public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
         try sessionRepo.delete(id)
     }
     
+    public func deleteSessionCascading(id: String) throws {
+        try sessionRepo.deleteCascading(id)
+    }
+    
     public func updateUnreadCount(sessionId: String, count: Int) throws {
         try sessionRepo.updateUnreadCount(id: sessionId, count: count)
     }
@@ -48,6 +53,7 @@ public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
     }
     
     // MARK: - Message operations
+    
     public func saveMessage(_ message: Message) throws {
         try messageRepo.save(message)
     }
@@ -73,6 +79,7 @@ public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
     }
     
     // MARK: - Attachment operations
+    
     public func saveAttachment(_ attachment: Attachment) throws {
         try attachmentRepo.save(attachment)
     }
@@ -82,6 +89,7 @@ public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
     }
     
     // MARK: - GatewayEventConsumer
+    
     public func handleSessionList(_ sessions: [Session]) throws {
         try upsertSessions(sessions)
     }

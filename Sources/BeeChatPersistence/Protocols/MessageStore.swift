@@ -7,6 +7,7 @@ public protocol MessageStore {
     func fetchSessions(limit: Int, offset: Int) throws -> [Session]
     func fetchSession(id: String) throws -> Session?
     func deleteSession(id: String) throws
+    func deleteSessionCascading(id: String) throws
     func updateUnreadCount(sessionId: String, count: Int) throws
     
     // Message operations

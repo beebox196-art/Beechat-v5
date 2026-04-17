@@ -6,17 +6,15 @@ final class BeeChatPersistenceTests: XCTestCase {
     var store: BeeChatPersistenceStore!
     var dbPath: String!
     
-    override func setUp() {
-        super.setUp()
+    override func setUpWithError() throws {
         dbPath = "/tmp/beechat_test_\(UUID().uuidString).db"
         store = BeeChatPersistenceStore()
-        try! store.openDatabase(at: dbPath)
+        try store.openDatabase(at: dbPath)
     }
     
-    override func tearDown() {
+    override func tearDownWithError() throws {
         store.closeDatabase()
         try? FileManager.default.removeItem(atPath: dbPath)
-        super.tearDown()
     }
     
     func testDatabaseOpenAndWal() throws {
@@ -25,6 +23,10 @@ final class BeeChatPersistenceTests: XCTestCase {
             try String.fetchAll(db, sql: "PRAGMA journal_mode").first
         }
         XCTAssertEqual(mode?.lowercased(), "wal")
+        
+        // Verify basic DB accessibility through the store
+        let sessions = try store.fetchSessions(limit: 1, offset: 0)
+        XCTAssertEqual(sessions.count, 0) // Empty but accessible
     }
     
     func testSessionCRUD() throws {
@@ -90,5 +92,58 @@ final class BeeChatPersistenceTests: XCTestCase {
         
         XCTAssertEqual(try store.fetchSessions(limit: 10, offset: 0).count, 2)
         XCTAssertEqual(try store.fetchSession(id: "s1")?.title, "Updated Title 1")
+    }
+    
+    // MARK: - FAIL-1 fix: createdAt preserved on upsert
+    
+    func testCreatedAtPreservedOnUpsert() throws {
+        // Create a session with a known createdAt
+        let originalTime = Date().addingTimeInterval(-3600) // 1 hour ago
+        let session = Session(id: "s_createdAt", agentId: "a1", title: "Original", createdAt: originalTime)
+        try store.saveSession(session)
+        
+        // Fetch to confirm createdAt
+        let fetched = try store.fetchSession(id: "s_createdAt")
+        XCTAssertNotNil(fetched)
+        let savedCreatedAt = fetched!.createdAt
+        
+        // Upsert with a different title — createdAt must NOT change
+        var updated = session
+        updated.title = "Updated Title"
+        try store.saveSession(updated)
+        
+        let afterUpdate = try store.fetchSession(id: "s_createdAt")
+        XCTAssertNotNil(afterUpdate)
+        XCTAssertEqual(afterUpdate?.title, "Updated Title")
+        // createdAt must be preserved (within 1 second tolerance)
+        XCTAssertEqual(afterUpdate!.createdAt.timeIntervalSince1970, savedCreatedAt.timeIntervalSince1970, accuracy: 1.0,
+                       "createdAt was overwritten on upsert — FAIL-1 regression")
+    }
+    
+    // MARK: - FAIL-3 fix: cascade delete
+    
+    func testCascadeDelete() throws {
+        // Create session, message, attachment
+        let session = Session(id: "s_cascade", agentId: "a1")
+        try store.saveSession(session)
+        
+        let msg = Message(id: "m_cascade", sessionId: "s_cascade", role: "user", content: "test", timestamp: Date())
+        try store.saveMessage(msg)
+        
+        let attach = Attachment(id: "at_cascade", messageId: "m_cascade", type: "image", url: "http://example.com/img.png")
+        try store.saveAttachment(attach)
+        
+        // Verify they exist
+        XCTAssertNotNil(try store.fetchSession(id: "s_cascade"))
+        XCTAssertNotNil(try store.fetchMessage(id: "m_cascade"))
+        XCTAssertEqual(try store.fetchAttachments(messageId: "m_cascade").count, 1)
+        
+        // Cascade delete the session
+        try store.deleteSessionCascading(id: "s_cascade")
+        
+        // Verify all gone
+        XCTAssertNil(try store.fetchSession(id: "s_cascade"), "Session should be deleted")
+        XCTAssertNil(try store.fetchMessage(id: "m_cascade"), "Message should be cascade-deleted")
+        XCTAssertEqual(try store.fetchAttachments(messageId: "m_cascade").count, 0, "Attachments should be cascade-deleted")
     }
 }

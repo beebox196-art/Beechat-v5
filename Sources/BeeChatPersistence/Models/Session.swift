@@ -25,4 +25,11 @@ public struct Session: Codable, FetchableRecord, MutablePersistableRecord {
         self.updatedAt = updatedAt
         self.createdAt = createdAt
     }
+    
+    /// Columns that should be updated on conflict (upsert). Excludes createdAt and id.
+    public static let upsertColumns: [Column] = [
+        Column("agentId"), Column("channel"), Column("title"),
+        Column("lastMessageAt"), Column("unreadCount"), Column("isPinned"),
+        Column("updatedAt")
+    ]
 }

@@ -29,4 +29,11 @@ public struct Message: Codable, FetchableRecord, MutablePersistableRecord {
         self.metadata = metadata
         self.createdAt = createdAt
     }
+    
+    /// Columns that should be updated on conflict (upsert). Excludes createdAt and id.
+    public static let upsertColumns: [Column] = [
+        Column("sessionId"), Column("role"), Column("content"),
+        Column("senderName"), Column("senderId"), Column("timestamp"),
+        Column("editedAt"), Column("isRead"), Column("metadata")
+    ]
 }
