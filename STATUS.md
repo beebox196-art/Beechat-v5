@@ -20,8 +20,8 @@
 
 | # | Component | Status | Agent |
 |---|-----------|--------|-------|
-| 1 | BeeChatPersistence | 🏗️ Building | Q |
-| 2 | BeeChatGateway | ⬜ Not started | — |
+| 1 | BeeChatPersistence | ✅ Complete (reviewed, verified) | Q + Bee |
+| 2 | BeeChatGateway | 🏗️ Building | Q |
 | 3 | Sync Bridge | ⬜ Not started | — |
 | 4 | BeeChatUI | ⬜ Not started | — |
 | 5 | BeeChatApp (Assembly) | ⬜ Not started | — |

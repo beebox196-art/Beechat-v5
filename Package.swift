@@ -10,6 +10,9 @@ let package = Package(
         .library(
             name: "BeeChatPersistence",
             targets: ["BeeChatPersistence"]),
+        .library(
+            name: "BeeChatGateway",
+            targets: ["BeeChatGateway"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
@@ -21,9 +24,16 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift")
             ],
             path: "Sources/BeeChatPersistence"),
+        .target(
+            name: "BeeChatGateway",
+            path: "Sources/BeeChatGateway"),
         .testTarget(
             name: "BeeChatPersistenceTests",
             dependencies: ["BeeChatPersistence"],
             path: "Tests/BeeChatPersistenceTests"),
+        .testTarget(
+            name: "BeeChatGatewayTests",
+            dependencies: ["BeeChatGateway"],
+            path: "Tests/BeeChatGatewayTests"),
     ]
 )
