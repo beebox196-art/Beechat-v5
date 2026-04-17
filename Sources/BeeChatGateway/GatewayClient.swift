@@ -57,6 +57,10 @@ public actor GatewayClient {
     public var onStatusChange: ((ConnectionState) -> Void)?
     public var onDeviceToken: ((String) -> Void)?
 
+    public func updateOnStatusChange(_ callback: @escaping (ConnectionState) -> Void) {
+        self.onStatusChange = callback
+    }
+
     public init(config: Configuration, tokenStore: TokenStore = KeychainTokenStore()) {
         self.config = config
         self.tokenStore = tokenStore
