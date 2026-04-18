@@ -237,7 +237,27 @@ final class FrameTests: XCTestCase {
         let frame = try JSONDecoder().decode(EventFrame.self, from: json)
         XCTAssertEqual(frame.event, "chat")
         XCTAssertEqual(frame.seq, 42)
-        XCTAssertEqual(frame.stateVersion, 7)
+        XCTAssertEqual(frame.stateVersion?.value as? Int, 7)
+    }
+    
+    func testEventFrameStateVersionAsDict() throws {
+        // Gateway sometimes sends stateVersion as a dictionary — should decode as AnyCodable
+        let json = """
+        {
+            "type": "event",
+            "event": "chat",
+            "payload": {"message": "hello"},
+            "seq": 42,
+            "stateVersion": {"major": 1, "minor": 0}
+        }
+        """.data(using: .utf8)!
+        
+        let frame = try JSONDecoder().decode(EventFrame.self, from: json)
+        XCTAssertEqual(frame.event, "chat")
+        XCTAssertEqual(frame.seq, 42)
+        // stateVersion should decode as a dictionary without error
+        XCTAssertNotNil(frame.stateVersion)
+        XCTAssertEqual(frame.stateVersion?.value as? [String: Int], ["major": 1, "minor": 0])
     }
 }
 

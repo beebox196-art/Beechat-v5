@@ -44,7 +44,7 @@ struct IntegrationTest {
 
         // ─── Step 2: Create GatewayClient with desktop mode ───
         print()
-        print("🌐 Step 2: Creating GatewayClient (macOS native mode)...")
+        print("🌐 Step 2: Creating GatewayClient (control-ui mode for localhost auto-pairing)...")
 
         // Use KeychainTokenStore so device pairing persists between runs
         // First run: pairs device, gets deviceToken stored in keychain
@@ -57,8 +57,8 @@ struct IntegrationTest {
         let config = GatewayClient.Configuration(
             url: "ws://127.0.0.1:18789",
             token: token,
-            clientMode: "ui",
-            clientInfo: .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: "ui")
+            clientMode: "webchat",
+            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "webchat")
         )
         let gateway = GatewayClient(config: config, tokenStore: tokenStore)
         print("   ✅ GatewayClient created")

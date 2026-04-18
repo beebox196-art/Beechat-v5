@@ -38,6 +38,6 @@ public struct EventFrame: Codable, Sendable {
     public let event: String
     public let payload: [String: AnyCodable]?
     public let seq: Int?
-    public let stateVersion: Int?
+    public let stateVersion: AnyCodable?
     public var rawData: Data? = nil
 }
