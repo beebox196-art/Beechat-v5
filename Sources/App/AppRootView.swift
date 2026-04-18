@@ -44,6 +44,7 @@ final class AppState {
     var connectionState: ConnectionState = .disconnected
     var isReady = false
     var errorMessage: String?
+    var offlineStatus: String?
 
     func startup() {
         Task {
@@ -56,34 +57,49 @@ final class AppState {
                 // Create persistence store
                 let persistenceStore = BeeChatPersistenceStore(dbManager: dbManager)
 
-                // Try to load gateway config from openclaw.json
-                if let gatewayConfig = try? loadGatewayConfig() {
-                    let tokenStore = KeychainTokenStore()
-                    let gatewayClient = GatewayClient(config: gatewayConfig, tokenStore: tokenStore)
-                    let config = SyncBridgeConfiguration(
-                        gatewayClient: gatewayClient,
-                        persistenceStore: persistenceStore
-                    )
-                    let bridge = SyncBridge(config: config)
-                    self.syncBridge = bridge
+                // Try to load gateway config from openclaw.json — surface errors properly
+                let configPath = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".openclaw/openclaw.json")
 
-                    // Mark ready immediately so UI can load local DB
-                    self.isReady = true
-                    self.connectionState = .disconnected
-
-                    // Try gateway connection (non-blocking)
+                if FileManager.default.fileExists(atPath: configPath.path) {
+                    // Config file exists — parse it, surface errors if malformed
                     do {
-                        try await bridge.start()
-                        self.connectionState = .connected
-                        print("[AppState] Connected to gateway")
+                        let gatewayConfig = try loadGatewayConfig(from: configPath)
+                        let tokenStore = KeychainTokenStore()
+                        let gatewayClient = GatewayClient(config: gatewayConfig, tokenStore: tokenStore)
+                        let config = SyncBridgeConfiguration(
+                            gatewayClient: gatewayClient,
+                            persistenceStore: persistenceStore
+                        )
+                        let bridge = SyncBridge(config: config)
+                        self.syncBridge = bridge
+
+                        // Mark ready immediately so UI can load local DB
+                        self.isReady = true
+                        self.connectionState = .disconnected
+
+                        // Try gateway connection (non-blocking)
+                        do {
+                            try await bridge.start()
+                            self.connectionState = .connected
+                            print("[AppState] Connected to gateway")
+                        } catch {
+                            print("[AppState] Gateway unavailable — offline mode: \(error)")
+                        }
                     } catch {
-                        print("[AppState] Gateway unavailable — offline mode: \(error)")
+                        // Config file exists but is malformed — surface the error
+                        self.errorMessage = "Gateway config error: \(error.localizedDescription)"
+                        self.isReady = true
+                        self.connectionState = .error
+                        self.offlineStatus = "Offline — gateway config error"
+                        print("[AppState] Malformed gateway config: \(error)")
                     }
                 } else {
                     // No config file — run with local DB only (no gateway)
                     print("[AppState] No openclaw.json — local DB mode only")
                     self.isReady = true
                     self.connectionState = .disconnected
+                    self.offlineStatus = "Offline — no gateway config found"
                 }
             } catch {
                 self.errorMessage = error.localizedDescription
@@ -108,25 +124,39 @@ final class AppState {
         return dir.appendingPathComponent("beechat.sqlite").path
     }
 
-    /// Load gateway configuration from ~/.openclaw/openclaw.json
-    /// Falls back to localhost:18789 with token from keychain if config is missing
-    private func loadGatewayConfig() throws -> GatewayClient.Configuration {
-        let configPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".openclaw/openclaw.json")
-        
-        let configData = try Data(contentsOf: configPath)
-        guard let json = try JSONSerialization.jsonObject(with: configData) as? [String: Any],
-              let gateway = json["gateway"] as? [String: Any],
-              let auth = gateway["auth"] as? [String: Any],
-              let token = auth["token"] as? String else {
-            throw AppStateError.missingConfig("Could not extract gateway.auth.token from openclaw.json")
+    /// Load gateway configuration from a given config file URL.
+    /// Throws descriptive errors if the file is malformed.
+    private func loadGatewayConfig(from url: URL) throws -> GatewayClient.Configuration {
+        let configData = try Data(contentsOf: url)
+        let json: [String: Any]
+        do {
+            guard let parsed = try JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
+                throw AppStateError.malformedConfig("openclaw.json is not a valid JSON object")
+            }
+            json = parsed
+        } catch let error as AppStateError {
+            throw error
+        } catch {
+            throw AppStateError.malformedConfig("openclaw.json is not valid JSON: \(error.localizedDescription)")
         }
-        
+
+        guard let gateway = json["gateway"] as? [String: Any] else {
+            throw AppStateError.malformedConfig("Missing 'gateway' key in openclaw.json")
+        }
+
+        guard let auth = gateway["auth"] as? [String: Any] else {
+            throw AppStateError.malformedConfig("Missing 'gateway.auth' key in openclaw.json")
+        }
+
+        guard let token = auth["token"] as? String else {
+            throw AppStateError.malformedConfig("Missing 'gateway.auth.token' in openclaw.json")
+        }
+
         // Determine gateway URL — default to localhost:18789 for local development
         let host = gateway["host"] as? String ?? "127.0.0.1"
         let port = gateway["port"] as? Int ?? 18789
         let wsURL = "ws://\(host):\(port)"
-        
+
         return GatewayClient.Configuration(
             url: wsURL,
             token: token,
@@ -138,10 +168,12 @@ final class AppState {
 
 enum AppStateError: LocalizedError {
     case missingConfig(String)
-    
+    case malformedConfig(String)
+
     var errorDescription: String? {
         switch self {
         case .missingConfig(let msg): return msg
+        case .malformedConfig(let msg): return msg
         }
     }
 }
