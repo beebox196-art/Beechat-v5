@@ -16,7 +16,7 @@ public actor GatewayClient {
             url: String,
             token: String,
             deviceToken: String? = nil,
-            clientMode: String = "desktop",
+            clientMode: String = "ui",
             clientInfo: ConnectParams.ClientInfo? = nil,
             requestTimeout: TimeInterval = 30.0,
             maxRetries: Int = 10,
@@ -27,7 +27,7 @@ public actor GatewayClient {
             self.token = token
             self.deviceToken = deviceToken
             self.clientMode = clientMode
-            self.clientInfo = clientInfo ?? .init(id: "beechat", version: "1.0", platform: "macos", mode: clientMode)
+            self.clientInfo = clientInfo ?? .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: clientMode)
             self.requestTimeout = requestTimeout
             self.maxRetries = maxRetries
             self.baseRetryDelay = baseRetryDelay
@@ -127,8 +127,16 @@ public actor GatewayClient {
             return
         }
         
-        // Native app — no Origin header (allows silent local pairing on localhost)
-        transport.connect(url: url, origin: nil)
+        // Native app — set Origin to gateway host so it passes validation
+        // URLSession adds Origin automatically; we must send a valid one
+        let origin: String
+        if config.url.contains("127.0.0.1") || config.url.contains("localhost") {
+            origin = "http://localhost:18789"
+        } else {
+            // Extract host from URL for remote gateways
+            origin = config.url.replacingOccurrences(of: "ws://", with: "http://").replacingOccurrences(of: "wss://", with: "https://")
+        }
+        transport.connect(url: url, origin: origin)
         
         // Handle close events from transport
         transport.onClose = { [weak self] code, reason in
@@ -215,7 +223,7 @@ public actor GatewayClient {
     private func handleHelloOk(_ frame: ResponseFrame) async {
         // The hello-ok data is inside the response payload
         guard let payload = frame.payload else {
-            print("HelloOk: no payload in response")
+            print("[GW] HelloOk: no payload in response")
             updateState(.error)
             return
         }
@@ -225,16 +233,21 @@ public actor GatewayClient {
             let helloOk = try JSONDecoder().decode(HelloOk.self, from: payloadData)
             self._maxPayload = helloOk.policy.maxPayload
             
+            print("[GW] HelloOk: auth=\(String(data: try JSONEncoder().encode(helloOk.auth), encoding: .utf8) ?? "nil")")
+            
             if let deviceToken = helloOk.auth?.deviceToken {
                 self.currentDeviceToken = deviceToken
                 try? tokenStore.setDeviceToken(deviceToken)
                 onDeviceToken?(deviceToken)
+                print("[GW] Device token persisted: \(deviceToken.prefix(8))...")
+            } else {
+                print("[GW] No deviceToken in hello-ok response — role=\(helloOk.auth?.role ?? "nil"), scopes=\(helloOk.auth?.scopes ?? [])")
             }
             
             retryCount = 0
             updateState(.connected)
         } catch {
-            print("HelloOk decode error: \(error)")
+            print("[GW] HelloOk decode error: \(error)")
             updateState(.error)
         }
     }

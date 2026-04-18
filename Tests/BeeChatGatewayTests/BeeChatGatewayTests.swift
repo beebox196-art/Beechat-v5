@@ -74,14 +74,14 @@ final class DeviceCryptoTests: XCTestCase {
     func testKeyGeneration() throws {
         // Generate a keypair — should not throw
         let key = try DeviceCrypto.getOrCreateKeyPair()
-        // Should be able to get public key
-        let publicKey = SecKeyCopyPublicKey(key)
-        XCTAssertNotNil(publicKey, "Public key should be extractable")
+        // Public key should be extractable
+        let rawPubKey = key.publicKey.rawRepresentation
+        XCTAssertEqual(rawPubKey.count, 32, "Ed25519 public key should be 32 bytes")
     }
     
     func testDeviceIdDerivation() throws {
         let key = try DeviceCrypto.getOrCreateKeyPair()
-        let deviceId = try DeviceCrypto.getDeviceId(key)
+        let deviceId = DeviceCrypto.getDeviceId(key)
         // Device ID should be a hex string (SHA-256 = 64 hex chars)
         XCTAssertEqual(deviceId.count, 64, "Device ID should be 64 hex characters (SHA-256)")
         XCTAssertNotNil(deviceId.range(of: "^[0-9a-f]+$", options: .regularExpression), "Device ID should be lowercase hex")
@@ -89,27 +89,31 @@ final class DeviceCryptoTests: XCTestCase {
     
     func testDeviceIdIsStable() throws {
         let key = try DeviceCrypto.getOrCreateKeyPair()
-        let id1 = try DeviceCrypto.getDeviceId(key)
-        let id2 = try DeviceCrypto.getDeviceId(key)
+        let id1 = DeviceCrypto.getDeviceId(key)
+        let id2 = DeviceCrypto.getDeviceId(key)
         XCTAssertEqual(id1, id2, "Device ID should be deterministic for the same key")
     }
     
     func testPublicKeyExport() throws {
         let key = try DeviceCrypto.getOrCreateKeyPair()
-        let exported = try DeviceCrypto.exportPublicKey(key)
-        // Should be valid base64
-        XCTAssertNotNil(Data(base64Encoded: exported), "Exported public key should be valid base64")
+        let exported = DeviceCrypto.exportPublicKey(key)
+        // Should be valid base64url (no +, /, or =)
+        XCTAssertNil(exported.range(of: "[+/=]", options: .regularExpression), "Exported public key should be base64url (no +, /, =)")
+        // Should decode back to 32 bytes
+        let decoded = DeviceCrypto.fromBase64URL(exported)
+        XCTAssertNotNil(decoded, "base64url decode should succeed")
+        XCTAssertEqual(decoded?.count, 32, "Decoded public key should be 32 bytes")
     }
     
     func testChallengeSigning() throws {
         let key = try DeviceCrypto.getOrCreateKeyPair()
-        let deviceId = try DeviceCrypto.getDeviceId(key)
+        let deviceId = DeviceCrypto.getDeviceId(key)
         
         let signature = try DeviceCrypto.signChallenge(
             key,
             deviceId: deviceId,
             clientId: "beechat",
-            clientMode: "operator",
+            clientMode: "cli",
             role: "operator",
             scopes: ["operator.read", "operator.write"],
             signedAtMs: Int(Date().timeIntervalSince1970 * 1000),
@@ -117,27 +121,49 @@ final class DeviceCryptoTests: XCTestCase {
             nonce: "test-nonce-12345"
         )
         
-        // Signature should be valid base64
-        XCTAssertNotNil(Data(base64Encoded: signature), "Signature should be valid base64")
+        // Signature should be valid base64url (no +, /, or =)
+        XCTAssertNil(signature.range(of: "[+/=]", options: .regularExpression), "Signature should be base64url (no +, /, =)")
         XCTAssertGreaterThan(signature.count, 0, "Signature should not be empty")
+        
+        // Should decode to 64 bytes (Ed25519 signature)
+        let decoded = DeviceCrypto.fromBase64URL(signature)
+        XCTAssertNotNil(decoded, "base64url decode should succeed")
+        XCTAssertEqual(decoded?.count, 64, "Ed25519 signature should be 64 bytes")
     }
     
     func testSignatureProducesValidOutput() throws {
         let key = try DeviceCrypto.getOrCreateKeyPair()
-        let deviceId = try DeviceCrypto.getDeviceId(key)
+        let deviceId = DeviceCrypto.getDeviceId(key)
         let signedAt = Int(Date().timeIntervalSince1970 * 1000)
         
         let signature = try DeviceCrypto.signChallenge(
             key, deviceId: deviceId, clientId: "beechat",
-            clientMode: "operator", role: "operator",
+            clientMode: "cli", role: "operator",
             scopes: ["operator.read"], signedAtMs: signedAt,
             token: nil, nonce: "test-nonce"
         )
         
-        // ECDSA produces non-deterministic signatures (random K) — this is correct
-        // Just verify each signature is valid base64
-        XCTAssertNotNil(Data(base64Encoded: signature), "Signature should be valid base64")
+        // Ed25519 produces deterministic signatures for the same input
+        XCTAssertNotNil(DeviceCrypto.fromBase64URL(signature), "Signature should be valid base64url")
         XCTAssertGreaterThan(signature.count, 0, "Signature should not be empty")
+    }
+    
+    func testV3PayloadFormat() throws {
+        let key = try DeviceCrypto.getOrCreateKeyPair()
+        let deviceId = DeviceCrypto.getDeviceId(key)
+        let signedAt = 1713427200000 // fixed timestamp for deterministic test
+        
+        let signature = try DeviceCrypto.signChallenge(
+            key, deviceId: deviceId, clientId: "beechat",
+            clientMode: "cli", role: "operator",
+            scopes: ["operator.read", "operator.write"], signedAtMs: signedAt,
+            token: "test-token", nonce: "test-nonce",
+            platform: "macos", deviceFamily: "desktop"
+        )
+        
+        // Verify signature is valid base64url and 64 bytes
+        let decoded = DeviceCrypto.fromBase64URL(signature)
+        XCTAssertEqual(decoded?.count, 64, "Ed25519 signature should be 64 bytes")
     }
 }
 
@@ -354,6 +380,7 @@ final class GatewayEventTests: XCTestCase {
     
     func testGatewayEventEnum() throws {
         // Verify all cases exist and have correct raw values
+        XCTAssertEqual(GatewayEvent.chat.rawValue, "chat")
         XCTAssertEqual(GatewayEvent.agent.rawValue, "agent")
         XCTAssertEqual(GatewayEvent.health.rawValue, "health")
         XCTAssertEqual(GatewayEvent.tick.rawValue, "tick")
@@ -365,9 +392,9 @@ final class GatewayEventTests: XCTestCase {
         XCTAssertEqual(GatewayEvent.sessionTool.rawValue, "session.tool")
         
         // Codable round-trip
-        let encoded = try JSONEncoder().encode(GatewayEvent.agent)
+        let encoded = try JSONEncoder().encode(GatewayEvent.chat)
         let decoded = try JSONDecoder().decode(GatewayEvent.self, from: encoded)
-        XCTAssertEqual(decoded, .agent)
+        XCTAssertEqual(decoded, .chat)
     }
     
     func testRequestIdIncrementing() {
