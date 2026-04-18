@@ -12,7 +12,7 @@ final class ComposerViewModel {
     private weak var syncBridge: SyncBridge?
     private weak var messageViewModel: MessageViewModel?
 
-    func configure(syncBridge: SyncBridge, messageViewModel: MessageViewModel) {
+    func configure(syncBridge: SyncBridge?, messageViewModel: MessageViewModel) {
         self.syncBridge = syncBridge
         self.messageViewModel = messageViewModel
     }

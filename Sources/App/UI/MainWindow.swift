@@ -75,27 +75,48 @@ struct MainWindow: View {
     // MARK: - Wiring
 
     private func wireUpObservers() {
-        guard !isObserving, let bridge = appState.syncBridge else { return }
+        guard !isObserving else { return }
         isObserving = true
 
-        // Attach SyncBridgeObserver as delegate
-        syncBridgeObserver.attach(bridge)
+        // Always load sessions from local DB first (works offline)
+        loadLocalSessions()
 
-        // Start messageViewModel observing
-        messageViewModel.start(syncBridge: bridge)
+        if let bridge = appState.syncBridge {
+            // Attach SyncBridgeObserver as delegate
+            syncBridgeObserver.attach(bridge)
 
-        // Configure composer
-        composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
+            // Start messageViewModel observing
+            messageViewModel.start(syncBridge: bridge)
 
-        // Start observing session list changes
-        // This will drive topic updates
-        Task {
-            let stream = await bridge.sessionListStream()
-            for await sessions in stream {
-                await MainActor.run {
-                    messageViewModel.updateTopics(from: sessions)
+            // Configure composer
+            composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
+
+            // Start observing session list changes from gateway
+            Task {
+                let stream = await bridge.sessionListStream()
+                for await sessions in stream {
+                    await MainActor.run {
+                        messageViewModel.updateTopics(from: sessions)
+                    }
                 }
             }
+        } else {
+            // No gateway — configure composer for local-only mode
+            composerViewModel.configure(syncBridge: nil, messageViewModel: messageViewModel)
+        }
+    }
+
+    /// Load sessions from local database (works without gateway).
+    private func loadLocalSessions() {
+        do {
+            let repo = SessionRepository()
+            let sessions = try repo.fetchAll(limit: 100, offset: 0)
+            if !sessions.isEmpty {
+                messageViewModel.updateTopics(from: sessions)
+                print("[MainWindow] Loaded \(sessions.count) sessions from local DB")
+            }
+        } catch {
+            print("[MainWindow] Failed to load local sessions: \(error)")
         }
     }
 
@@ -116,31 +137,38 @@ struct MainWindow: View {
 
     private func createNewTopic() {
         guard !newTopicTitle.isEmpty else { return }
+        let title = newTopicTitle
+        newTopicTitle = "" // Clear before async work
+        
         Task {
             do {
-                // Create a new session via SyncBridge, which will appear in the session list stream
-                guard let bridge = appState.syncBridge else { return }
-                _ = try await bridge.fetchSessions()
-                // Sessions are created via gateway — for now, create a local placeholder
-                // The gateway will create the session and it'll stream back via sessionListStream
-                // For manual topic creation, we add a local session with the user's title
+                // Create a local session and persist it
                 let newSession = Session(
                     id: "local-\(UUID().uuidString)",
                     agentId: "bee",
                     channel: "beechat",
-                    title: newTopicTitle,
-                    lastMessageAt: nil,
+                    title: title,
+                    lastMessageAt: Date(),
                     unreadCount: 0,
                     isPinned: false
                 )
-                // Persist locally
+                
+                // Persist to database
                 let repo = SessionRepository()
                 try repo.save(newSession)
-                // Update UI
-                messageViewModel.addLocalTopic(newSession)
-                newTopicTitle = ""
+                print("[MainWindow] Created topic: \(title) (\(newSession.id))")
+                
+                // Update UI directly
+                await MainActor.run {
+                    messageViewModel.addLocalTopic(newSession)
+                    print("[MainWindow] Topic added to UI")
+                }
             } catch {
                 print("[MainWindow] Create topic failed: \(error)")
+                await MainActor.run {
+                    // Show error to user
+                    self.newTopicTitle = title // Restore text for retry
+                }
             }
         }
     }

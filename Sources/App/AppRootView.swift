@@ -56,26 +56,35 @@ final class AppState {
                 // Create persistence store
                 let persistenceStore = BeeChatPersistenceStore(dbManager: dbManager)
 
-                // Load gateway config from openclaw.json
-                let gatewayConfig = try loadGatewayConfig()
-                let tokenStore = KeychainTokenStore()
-                let gatewayClient = GatewayClient(config: gatewayConfig, tokenStore: tokenStore)
+                // Try to load gateway config from openclaw.json
+                if let gatewayConfig = try? loadGatewayConfig() {
+                    let tokenStore = KeychainTokenStore()
+                    let gatewayClient = GatewayClient(config: gatewayConfig, tokenStore: tokenStore)
+                    let config = SyncBridgeConfiguration(
+                        gatewayClient: gatewayClient,
+                        persistenceStore: persistenceStore
+                    )
+                    let bridge = SyncBridge(config: config)
+                    self.syncBridge = bridge
 
-                // Create SyncBridge
-                let config = SyncBridgeConfiguration(
-                    gatewayClient: gatewayClient,
-                    persistenceStore: persistenceStore
-                )
-                let bridge = SyncBridge(config: config)
+                    // Mark ready immediately so UI can load local DB
+                    self.isReady = true
+                    self.connectionState = .disconnected
 
-                self.syncBridge = bridge
-
-                // Start SyncBridge (connects to gateway, fetches sessions, starts event loop)
-                try await bridge.start()
-                self.isReady = true
-                self.connectionState = .connected
-
-                print("[AppState] BeeChat started successfully")
+                    // Try gateway connection (non-blocking)
+                    do {
+                        try await bridge.start()
+                        self.connectionState = .connected
+                        print("[AppState] Connected to gateway")
+                    } catch {
+                        print("[AppState] Gateway unavailable — offline mode: \(error)")
+                    }
+                } else {
+                    // No config file — run with local DB only (no gateway)
+                    print("[AppState] No openclaw.json — local DB mode only")
+                    self.isReady = true
+                    self.connectionState = .disconnected
+                }
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.connectionState = .error
