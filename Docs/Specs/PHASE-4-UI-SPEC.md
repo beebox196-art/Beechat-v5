@@ -5,7 +5,9 @@
 **Date:** 2026-04-18  
 **Author:** Bee (AI Sister / Chief of Staff)  
 **Reviewers:** Adam (Product), Mel (Design), Neo (Architecture)  
-**Status:** UPDATED WITH PRODUCT DECISIONS — READY FOR REVIEW
+**Status:** APPROVED (Kieran review v1 — FAILs/WARNs resolved)
+
+**Minimum Deployment Target:** macOS 14.0 (Sonoma) — required for `@Observable`, `@Environment(ThemeManager.self)`, Swift Observation framework
 
 ---
 
@@ -28,7 +30,7 @@ Phase 4 delivers the **macOS chat interface** for BeeChat v5: a focused, full-sc
 - ✅ **Voice note duration:** 30 seconds max
 - ✅ **Deleted messages:** Remove entirely (no placeholder/tombstone)
 - ✅ **Topic ordering:** Alphanumeric left-to-right. Drag-to-reorder is a future feature.
-- ✅ **Message bubble width:** 66% of window width as default. Draggable resize is a future feature.
+- ✅ **Message bubble width:** Fixed at 66% of window width. No user resizing (future consideration only).
 
 **Phase 4 is the user-facing layer** built on top of the existing backend:
 - **SyncBridge** → state management, event streaming, RPC calls
@@ -83,6 +85,39 @@ Phase 4 delivers the **macOS chat interface** for BeeChat v5: a focused, full-sc
 | Top Bar | 56pt (fixed) | Sticky at top, contains topic cycling |
 | Message Canvas | Flexible (fills available space) | Scrollable, auto-scrolls to bottom on new message |
 | Composer | 120pt (min) → 200pt (max) | Auto-expands with text input, fixed on screen bottom |
+
+### 1.3.1 Window Configuration (macOS)
+
+**Minimum deployment target:** macOS 14.0 (Sonoma)
+
+```swift
+@main
+struct BeeChatApp: App {
+    var body: some Scene {
+        WindowGroup {
+            AppRootView()
+        }
+        .windowStyle(.hiddenTitleBar)  // Clean look, custom title area
+        .defaultSize(width: 800, height: 600)
+        .windowResizability(.contentMinSize(width: 500, height: 400))
+        .commands {
+            CommandGroup(replacing: .newItem) { }  // Remove File > New
+            CommandMenu("Chat") {
+                Button("New Topic") { /* create topic */ }
+                Button("Next Topic") { /* cycle right */ }
+                    .keyboardShortcut(.rightArrow, modifiers: .command)
+                Button("Previous Topic") { /* cycle left */ }
+                    .keyboardShortcut(.leftArrow, modifiers: .command)
+            }
+        }
+    }
+}
+```
+
+- Window uses `.hiddenTitleBar` for the clean, full-screen messaging aesthetic
+- Default size: 800×600pt
+- Minimum size: 500×400pt (prevents bubbles from becoming unusably narrow)
+- Menu bar includes Chat menu with topic navigation shortcuts
 
 ### 1.4 Comparison: Why Not 2-Pane or 3-Pane?
 
@@ -183,31 +218,41 @@ struct TopicBar: View {
 
 ### 2.5 Topic Data Model
 
+`Topic` is a **UI-layer view model** wrapping the `Session` persistence model. It does NOT have its own database table — it derives from `Session` plus UI-only fields.
+
 ```swift
-struct Topic: Identifiable, Codable, Hashable {
-    let id: String
-    var title: String
-    var icon: String? // SF Symbol name
-    var lastMessageAt: Date?
-    var unreadCount: Int
+// UI layer — wraps Session, adds UI-only presentation fields
+@Observable
+class TopicViewModel {
+    let id: String          // = Session.id (session key)
+    var title: String       // = Session.title ?? "Untitled"
+    var icon: String?       // UI-only: SF Symbol name, stored in UserDefaults
+    var lastMessageAt: Date? // = Session.lastMessageAt
+    var unreadCount: Int    // = Session.unreadCount
     
-    // Computed: maps to Session in backend
-    var sessionKey: String { id }
+    init(from session: Session, icon: String? = nil) {
+        self.id = session.id
+        self.title = session.title ?? "Untitled"
+        self.icon = icon
+        self.lastMessageAt = session.lastMessageAt
+        self.unreadCount = session.unreadCount
+    }
 }
 ```
 
 **Topic Management (Adam's decisions):**
 - **Creation:** Manual — user creates topics via "+" button in TopicBar
 - **Deletion:** Manual — user deletes topics via context menu or swipe
-- **Ordering:** Alphanumeric left-to-right (drag-to-reorder is a future feature)
+- **Ordering:** Sorted alphabetically by `title`, case-insensitive, left-to-right
 - **No auto-generation** from gateway sessions — topics are user-controlled
+- **`icon`** is a UI-only field stored in UserDefaults (not in GRDB)
 
 **Backend Mapping:**
-- Each `Topic` corresponds to one `Session` in SyncBridge
-- `Topic.id` = `Session.id` (session key)
-- `Topic.title` = user-defined title (not auto-generated)
-- `Topic.lastMessageAt` = `Session.lastMessageAt`
-- `Topic.unreadCount` = computed from unread messages
+- `TopicViewModel` derives from `Session` in GRDB
+- `TopicViewModel.id` = `Session.id` (session key)
+- `TopicViewModel.title` = `Session.title ?? "Untitled"` (handle nil safely)
+- `TopicViewModel.lastMessageAt` = `Session.lastMessageAt`
+- `TopicViewModel.unreadCount` = `Session.unreadCount`
 
 ---
 
@@ -219,13 +264,13 @@ struct Topic: Identifiable, Codable, Hashable {
 - Background: Accent primary colour (amber/honey in Artisanal Tech)
 - Text: Text primary (contrasting colour)
 - Corner radius: 16pt (asymmetric: top-right squared for "sent" look)
-- Max width: 66% of canvas width (future: user-resizable)
+- Max width: 66% of canvas width (fixed, no resizing)
 
 **Bee's messages (left-aligned):**
 - Background: Bg surface colour (ivory in Artisanal Tech)
 - Text: Text primary colour (charcoal in Artisanal Tech)
 - Corner radius: 16pt (asymmetric: top-left squared for "received" look)
-- Max width: 66% of canvas width (future: user-resizable)
+- Max width: 66% of canvas width (fixed, no resizing)
 
 **System messages (centered):**
 - Background: Transparent
@@ -510,6 +555,9 @@ var body: some View {
 }
 ```
 
+> **HARD CONSTRAINT:** The `streamingBuffer` content is **NEVER** displayed in the UI. Only the `TypingIndicator` animation is shown while `isStreaming` is true. When streaming completes, the full message appears as a complete `MessageBubble`. No live/progressive text rendering.
+```
+
 ---
 
 ## 4. Composer
@@ -561,17 +609,17 @@ struct Composer: View {
                 Button("Voice Note") { onStartRecording() }
             }
             
-            // Text input
-            TextEditor(text: $text)
+            // Text input — NSTextView wrapper for reliable macOS auto-expand
+            // (SwiftUI TextEditor has known quirks with .lineLimit ranges on macOS)
+            MacTextView(text: $text)
                 .font(.body)
-                .lineLimit(2...6)
                 .frame(minHeight: 40, maxHeight: 160)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(themeManager.color(.bgPanel))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .onChange(of: text) { _, newText in
-                    // Auto-scroll TextEditor if needed
+                    // Auto-scroll if needed
                 }
             
             // Voice recording button
@@ -808,14 +856,16 @@ struct MessageBubble: View {
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `AppRootView` | `UI/AppRootView.swift` | App entry point, window management |
+| `AppRootView` | `UI/AppRootView.swift` | App entry point, `WindowGroup`, NSWindow configuration |
 | `MainWindow` | `UI/MainWindow.swift` | Main chat window container |
+| `MacTextView` | `UI/Components/MacTextView.swift` | `NSTextView` wrapper for reliable macOS multiline input |
+| `SyncBridgeObserver` | `UI/Observers/SyncBridgeObserver.swift` | Bridges actor state to `@Observable` for SwiftUI |
 | `TopicBar` | `UI/Components/TopicBar.swift` | Horizontal topic cycling |
 | `TopicPill` | `UI/Components/TopicPill.swift` | Individual topic button |
 | `MessageCanvas` | `UI/Components/MessageCanvas.swift` | Scrollable message list |
-| `MessageBubble` | `UI/Components/MessageBubble.swift` | Individual message display |
+| `MessageBubble` | `UI/Components/MessageBubble.swift` | Individual message display (66% fixed width) |
 | `MessageContent` | `UI/Components/MessageContent.swift` | Renders text + media blocks |
-| `Composer` | `UI/Components/Composer.swift` | Input field + attachments |
+| `Composer` | `UI/Components/Composer.swift` | Input field + attachments (uses MacTextView) |
 | `TypingIndicator` | `UI/Components/TypingIndicator.swift` | Bee's "thinking" state |
 
 ### 6.2 Media Components
@@ -826,7 +876,7 @@ struct MessageBubble: View {
 | `FileAttachmentCard` | `UI/Media/FileAttachmentCard.swift` | File download card |
 | `VoiceNotePlayer` | `UI/Media/VoiceNotePlayer.swift` | Audio playback with waveform |
 | `MediaViewer` | `UI/Media/MediaViewer.swift` | Full-screen image/media viewer |
-| `WaveformView` | `UI/Media/WaveformView.swift` | Audio waveform visualization |
+| `WaveformView` | `UI/Media/WaveformView.swift` | Audio waveform visualization (decorative — simple capsule progress bar in v1, full waveform deferred) |
 
 ### 6.3 Theming Components
 
@@ -886,20 +936,22 @@ struct MessageBubble: View {
 1. **SyncBridge** fetches sessions via `sessions.list` RPC
 2. Sessions persisted to GRDB (`Session` table)
 3. **SessionObserver** tracks changes via `ValueObservation`
-4. SwiftUI views observe `sessionListStream()`
+4. SwiftUI views observe `SessionObserver` (not SyncBridge directly)
 5. TopicBar updates when sessions change
 
 ```swift
+// SessionObserver wraps GRDB ValueObservation
+// ViewModel consumes from Observer, NOT from SyncBridge
 @Observable
 class SessionViewModel {
-    private let syncBridge: SyncBridge
+    private let observer: SessionObserver
     var sessions: [Session] = []
     var selectedSession: Session?
     
-    init(syncBridge: SyncBridge) {
-        self.syncBridge = syncBridge
+    init(observer: SessionObserver) {
+        self.observer = observer
         Task {
-            for await sessions in syncBridge.sessionListStream() {
+            for await sessions in observer.sessionListStream() {
                 self.sessions = sessions
             }
         }
@@ -907,31 +959,37 @@ class SessionViewModel {
 }
 ```
 
+> **Note:** SyncBridge is an actor. ViewModels never access it directly for read operations. All reads flow through GRDB → ValueObservation → Observer → ViewModel. SyncBridge is only called directly for write operations (RPC calls like `chat.send`).
+```
+
 ### 7.3 Message State Flow
 
 1. **SyncBridge** receives `"chat"` events from gateway
 2. Messages persisted to GRDB (`Message` table)
 3. **MessageObserver** tracks changes per session
-4. MessageCanvas observes `messageStream(sessionKey:)`
+4. MessageCanvas observes `MessageObserver` (not SyncBridge directly)
 5. Bubbles update in real-time
 
 ```swift
+// MessageObserver wraps GRDB ValueObservation
+// ViewModel consumes from Observer, NOT from SyncBridge
 @Observable
 class MessageViewModel {
-    private let syncBridge: SyncBridge
+    private let observer: MessageObserver
     var messages: [Message] = []
     let sessionKey: String
     
-    init(syncBridge: SyncBridge, sessionKey: String) {
-        self.syncBridge = syncBridge
+    init(observer: MessageObserver, sessionKey: String) {
+        self.observer = observer
         self.sessionKey = sessionKey
         Task {
-            for await messages in syncBridge.messageStream(sessionKey: sessionKey) {
+            for await messages in observer.messageStream(sessionKey: sessionKey) {
                 self.messages = messages
             }
         }
     }
 }
+```
 ```
 
 ### 7.4 Streaming State
@@ -942,9 +1000,28 @@ class MessageViewModel {
 - `isStreaming: Bool` — computed property
 
 **UI Integration:**
+
+SyncBridge is an actor — its properties cannot be read synchronously from SwiftUI. A `SyncBridgeObserver` bridges actor state to `@Observable`:
+
 ```swift
+// Bridges actor state to @Observable for SwiftUI consumption
+@Observable
+class SyncBridgeObserver {
+    var isStreaming: Bool = false
+    var streamingSessionKey: String?
+    
+    init(syncBridge: SyncBridge) {
+        Task {
+            for await state in syncBridge.streamingStateStream() {
+                self.isStreaming = state.isStreaming
+                self.streamingSessionKey = state.sessionKey
+            }
+        }
+    }
+}
+
 struct MessageCanvas: View {
-    @Environment(SyncBridge.self) var syncBridge
+    @Environment(SyncBridgeObserver.self) var observer
     @State var messages: [Message] = []
     
     var body: some View {
@@ -953,8 +1030,8 @@ struct MessageCanvas: View {
                 MessageBubble(message: message)
             }
             
-            // Show typing indicator if streaming
-            if syncBridge.currentStreamingSessionKey == sessionKey {
+            // Typing indicator only — buffer content is NEVER displayed
+            if observer.isStreaming {
                 TypingIndicator()
                     .transition(.opacity)
             }
@@ -963,7 +1040,12 @@ struct MessageCanvas: View {
 }
 ```
 
+> **HARD CONSTRAINT (repeated):** `streamingBuffer` content is **NEVER** rendered in the UI. The `TypingIndicator` animation is the only visible sign of streaming. When streaming completes, the full message appears as a complete `MessageBubble`.
+```
+
 ### 7.5 Composer State
+
+The Composer uses a custom `NSTextView` wrapper (not SwiftUI `TextEditor`) for reliable multiline auto-expand on macOS:
 
 ```swift
 @Observable
