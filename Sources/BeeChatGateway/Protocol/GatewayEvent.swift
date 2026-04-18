@@ -1,6 +1,10 @@
 public enum GatewayEvent: String, Codable, Sendable {
-    // Real-time agent/streaming events (delta/final/error states)
-    // This is the primary transcript event — NOT "chat" as previously assumed
+    // Client-friendly streaming events (delta/final/error with assembled message)
+    // This is the preferred event for rendering — used by ClawChat
+    case chat
+    
+    // Lower-level agent/streaming events (delta/final/error with raw data)
+    // Still emitted by gateway alongside "chat" but harder to parse
     case agent
     
     // Session list invalidation — triggers sessions.list refresh

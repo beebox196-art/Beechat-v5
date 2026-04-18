@@ -16,7 +16,7 @@ public actor GatewayClient {
             url: String,
             token: String,
             deviceToken: String? = nil,
-            clientMode: String = "webchat",
+            clientMode: String = "cli",
             clientInfo: ConnectParams.ClientInfo? = nil,
             requestTimeout: TimeInterval = 30.0,
             maxRetries: Int = 10,
@@ -27,7 +27,7 @@ public actor GatewayClient {
             self.token = token
             self.deviceToken = deviceToken
             self.clientMode = clientMode
-            self.clientInfo = clientInfo ?? .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: clientMode)
+            self.clientInfo = clientInfo ?? .init(id: "beechat", version: "1.0", platform: "macos", mode: clientMode)
             self.requestTimeout = requestTimeout
             self.maxRetries = maxRetries
             self.baseRetryDelay = baseRetryDelay
@@ -64,7 +64,8 @@ public actor GatewayClient {
     public init(config: Configuration, tokenStore: TokenStore = KeychainTokenStore()) {
         self.config = config
         self.tokenStore = tokenStore
-        self.currentDeviceToken = config.deviceToken
+        // Load stored device token from Keychain if available
+        self.currentDeviceToken = config.deviceToken ?? (try? tokenStore.getDeviceToken())
         self.backoff = BackoffCalculator(baseDelay: config.baseRetryDelay, maxDelay: config.maxRetryDelay, maxRetries: config.maxRetries)
     }
     
@@ -246,15 +247,53 @@ public actor GatewayClient {
             return
         }
         
-        // Derive role/scopes based on client mode
-        // CLI mode gets operator.admin on localhost; other modes get user scopes
+        // Two-phase auth (matching ClawChat):
+        // Phase 1: First connection — no device identity, just auth.token
+        //   Gateway returns hello-ok with deviceToken
+        // Phase 2: Subsequent connections — include device signature + deviceToken
+        //   This is what grants operator scopes
+        
         let role = "operator"
-        let scopes: [String]
-        switch config.clientMode {
-        case "cli":
-            scopes = ["operator.admin"]
-        default:
-            scopes = ["user.read", "user.write"]
+        let scopes = ["operator.read", "operator.write", "operator.approvals", "operator.pairing"]
+        
+        // Build device identity only when we have a stored deviceToken
+        // (i.e. the device was previously paired).
+        // Sending an unsolicited device field to a token-auth gateway causes rejection ("not-paired").
+        var deviceIdentity: ConnectParams.DeviceIdentity? = nil
+        if currentDeviceToken != nil {
+            do {
+                let keyPair = try DeviceCrypto.getOrCreateKeyPair()
+                let deviceId = DeviceCrypto.getDeviceId(keyPair)
+                let publicKey = DeviceCrypto.exportPublicKey(keyPair)
+                let signedAt = Int(Date().timeIntervalSince1970 * 1000)
+                
+                let signature = try DeviceCrypto.signChallenge(
+                    keyPair,
+                    deviceId: deviceId,
+                    clientId: config.clientInfo.id,
+                    clientMode: config.clientInfo.mode,
+                    role: role,
+                    scopes: scopes,
+                    signedAtMs: signedAt,
+                    token: config.token,
+                    nonce: nonce,
+                    platform: "macos",
+                    deviceFamily: "desktop"
+                )
+                
+                deviceIdentity = ConnectParams.DeviceIdentity(
+                    id: deviceId,
+                    publicKey: publicKey,
+                    signature: signature,
+                    signedAt: signedAt,
+                    nonce: nonce
+                )
+                print("[GW] Built device identity: id=\(deviceId.prefix(8))...")
+            } catch {
+                print("[GW] Failed to build device identity, connecting without it: \(error)")
+            }
+        } else {
+            print("[GW] No stored deviceToken — connecting without device identity (first connection)")
         }
         
         let params = ConnectParams(
@@ -264,10 +303,13 @@ public actor GatewayClient {
             caps: nil,
             commands: nil,
             permissions: nil,
-            auth: .init(token: config.token, deviceToken: nil),
+            auth: .init(
+                token: config.token,
+                deviceToken: currentDeviceToken
+            ),
             locale: nil,
             userAgent: nil,
-            device: nil
+            device: deviceIdentity
         )
         
         do {

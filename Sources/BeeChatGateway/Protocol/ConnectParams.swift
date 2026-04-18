@@ -32,6 +32,22 @@ public struct ConnectParams: Codable, Sendable {
         public let token: String
         public let deviceToken: String?
     }
+    
+    public struct DeviceIdentity: Codable, Sendable {
+        public let id: String
+        public let publicKey: String
+        public let signature: String
+        public let signedAt: Int
+        public let nonce: String
+        
+        public init(id: String, publicKey: String, signature: String, signedAt: Int, nonce: String) {
+            self.id = id
+            self.publicKey = publicKey
+            self.signature = signature
+            self.signedAt = signedAt
+            self.nonce = nonce
+        }
+    }
 }
 
 public struct HelloOk: Codable, Sendable {
