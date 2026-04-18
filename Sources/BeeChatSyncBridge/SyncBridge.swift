@@ -15,6 +15,12 @@ public actor SyncBridge {
     
     public weak var delegate: SyncBridgeDelegate?
     
+    /// Set the delegate from outside the actor. Needed because the delegate property
+    /// is actor-isolated and cannot be mutated from the main actor.
+    public func setDelegate(_ delegate: SyncBridgeDelegate?) {
+        self.delegate = delegate
+    }
+    
     private var lastSeenEventSeq: Int?
     private var streamingBuffer: [String: String] = [:]
     public private(set) var currentStreamingSessionKey: String?
