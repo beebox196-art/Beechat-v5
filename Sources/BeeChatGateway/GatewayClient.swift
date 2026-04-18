@@ -16,7 +16,7 @@ public actor GatewayClient {
             url: String,
             token: String,
             deviceToken: String? = nil,
-            clientMode: String = "cli",
+            clientMode: String = "desktop",
             clientInfo: ConnectParams.ClientInfo? = nil,
             requestTimeout: TimeInterval = 30.0,
             maxRetries: Int = 10,

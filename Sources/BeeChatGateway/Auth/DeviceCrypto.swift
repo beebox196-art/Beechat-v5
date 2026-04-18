@@ -94,6 +94,7 @@ public enum DeviceCrypto {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keyTag,
             kSecAttrAccount as String: "ed25519-private-key",
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
@@ -111,7 +112,8 @@ public enum DeviceCrypto {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keyTag,
-            kSecAttrAccount as String: "ed25519-private-key"
+            kSecAttrAccount as String: "ed25519-private-key",
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
 
         let attributes: [String: Any] = [kSecValueData as String: data]
