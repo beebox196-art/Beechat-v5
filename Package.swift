@@ -50,5 +50,13 @@ let package = Package(
             name: "BeeChatSyncBridgeTests",
             dependencies: ["BeeChatSyncBridge", "BeeChatPersistence", "BeeChatGateway"],
             path: "Tests/BeeChatSyncBridgeTests"),
+        .executableTarget(
+            name: "BeeChatIntegrationTest",
+            dependencies: [
+                .target(name: "BeeChatPersistence"),
+                .target(name: "BeeChatGateway"),
+                .target(name: "BeeChatSyncBridge"),
+            ],
+            path: "Sources/BeeChatIntegrationTest"),
     ]
 )
