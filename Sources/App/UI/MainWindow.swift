@@ -70,6 +70,9 @@ struct MainWindow: View {
             if newState == .connected, let bridge = appState.syncBridge {
                 rewireForGateway(bridge)
             }
+            if newState == .disconnected || newState == .error {
+                isGatewayWired = false
+            }
         }
         .alert("New Topic", isPresented: $showNewTopicDialog) {
             TextField("Topic name", text: $newTopicTitle)

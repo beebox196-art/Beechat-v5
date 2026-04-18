@@ -83,6 +83,14 @@ final class AppState {
                             try await bridge.start()
                             self.connectionState = .connected
                             print("[AppState] Connected to gateway")
+
+                            // Subscribe to live connection state so reconnections update the UI
+                            Task {
+                                let stream = await bridge.connectionStateStream()
+                                for await state in stream {
+                                    self.connectionState = state
+                                }
+                            }
                         } catch {
                             print("[AppState] Gateway unavailable — offline mode: \(error)")
                         }
