@@ -177,6 +177,36 @@ public actor SyncBridge {
     }
     
     // Internal helpers for EventRouter
+    
+    // MARK: - Chat event handlers (client-friendly format from gateway)
+    
+    /// Handle "chat" delta event — gateway sends accumulated text (replacement, not append)
+       internal func processChatDelta(sessionKey: String, text: String) async {
+        streamingBuffer[sessionKey] = text  // Replacement, not append
+        currentStreamingSessionKey = sessionKey
+        delegate?.syncBridge(self, didStartStreaming: sessionKey)
+    }
+    
+    /// Handle "chat" final event — streaming complete
+    internal func processChatFinal(sessionKey: String) async {
+        streamingBuffer.removeValue(forKey: sessionKey)
+        if currentStreamingSessionKey == sessionKey {
+            currentStreamingSessionKey = nil
+        }
+        delegate?.syncBridge(self, didStopStreaming: sessionKey)
+    }
+    
+    /// Handle "chat" error event
+    internal func processChatError(sessionKey: String, errorMessage: String) async {
+        streamingBuffer.removeValue(forKey: sessionKey)
+        if currentStreamingSessionKey == sessionKey {
+            currentStreamingSessionKey = nil
+        }
+        delegate?.syncBridge(self, didStopStreaming: sessionKey)
+    }
+    
+    // MARK: - Agent event handler (legacy, lower-level format)
+    
     internal func processAgentEvent(_ event: AgentEventPayload) async {
         // Seq tracking
         if let seq = event.seq {

@@ -11,6 +11,8 @@ public struct EventRouter {
     
     public func route(event: String, payload: [String: AnyCodable]?) async {
         switch event {
+        case "chat":
+            await handleChatEvent(payload: payload)
         case "agent":
             await handleAgentEvent(payload: payload)
         case "session.message":
@@ -23,6 +25,61 @@ public struct EventRouter {
             await handleTick()
         default:
             print("Unknown event received: \(event)")
+        }
+    }
+    
+    private func handleChatEvent(payload: [String: AnyCodable]?) async {
+        guard let payload = payload else { return }
+        
+        let runId = payload["runId"]?.value as? String ?? ""
+        let sessionKey = payload["sessionKey"]?.value as? String ?? ""
+        let state = payload["state"]?.value as? String ?? ""
+        let seq = payload["seq"]?.value as? Int
+        let errorMessage = payload["errorMessage"]?.value as? String
+        
+        // Extract message text from payload
+        let messageDict = payload["message"]?.value as? [String: Any]
+        let messageText: String?
+        if let msgDict = messageDict {
+            if let contentStr = msgDict["content"] as? String {
+                messageText = contentStr
+            } else if let contentBlocks = msgDict["content"] as? [[String: Any]] {
+                // ContentBlock[] format — extract text blocks
+                messageText = contentBlocks
+                    .filter { $0["type"] as? String == "text" }
+                    .compactMap { $0["text"] as? String }
+                    .joined()
+            } else {
+                messageText = nil
+            }
+        } else {
+            messageText = nil
+        }
+        
+        switch state {
+        case "delta":
+            // Gateway sends accumulated text (not incremental)
+            if let text = messageText {
+                await syncBridge.processChatDelta(sessionKey: sessionKey, text: text)
+            }
+        case "final":
+            if let text = messageText {
+                let messageId = messageDict?["id"] as? String ?? UUID().uuidString
+                let timestamp = messageDict?["timestamp"] as? Int64 ?? Int64(Date().timeIntervalSince1970 * 1000)
+                let message = Message(
+                    id: messageId,
+                    sessionId: sessionKey,
+                    role: "assistant",
+                    content: text,
+                    timestamp: Date(timeIntervalSince1970: Double(timestamp / 1000))
+                )
+                try? await syncBridge.config.persistenceStore.saveMessage(message)
+            }
+            await syncBridge.processChatFinal(sessionKey: sessionKey)
+        case "error":
+            await syncBridge.processChatError(sessionKey: sessionKey, errorMessage: errorMessage ?? "Unknown error")
+        default:
+            break
         }
     }
     
