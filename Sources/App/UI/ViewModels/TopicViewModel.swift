@@ -1,11 +1,10 @@
-import SwiftUI
+import Foundation
 import BeeChatPersistence
 
 /// UI-layer view model wrapping Session for topic display.
 /// Derives from Session, adds UI-only presentation fields.
 /// Topic ordering: alphabetical by title, case-insensitive.
-@Observable
-final class TopicViewModel: Identifiable {
+struct TopicViewModel: Identifiable, Hashable {
     let id: String          // = Session.id (session key)
     var title: String       // = Session.title ?? "Untitled"
     var icon: String?       // UI-only: SF Symbol name, stored in UserDefaults
@@ -16,13 +15,6 @@ final class TopicViewModel: Identifiable {
         self.id = session.id
         self.title = session.title ?? "Untitled"
         self.icon = icon
-        self.lastMessageAt = session.lastMessageAt
-        self.unreadCount = session.unreadCount
-    }
-
-    /// Update from a fresh Session object (keeps icon intact).
-    func update(from session: Session) {
-        self.title = session.title ?? "Untitled"
         self.lastMessageAt = session.lastMessageAt
         self.unreadCount = session.unreadCount
     }
