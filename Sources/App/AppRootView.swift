@@ -24,6 +24,12 @@ struct BeeChatApp: App {
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) { }
+            CommandGroup(after: .pasteboard) {
+                Button("Delete Topic") {
+                    NotificationCenter.default.post(name: .deleteSelectedTopic, object: nil)
+                }
+                .keyboardShortcut(.delete, modifiers: [])
+            }
             CommandMenu("Chat") {
                 Button("New Topic") { /* TODO: create topic */ }
                     .keyboardShortcut("n", modifiers: .command)

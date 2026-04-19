@@ -15,33 +15,68 @@ struct MainWindow: View {
     @State private var localSessionCancellable: DatabaseCancellable?
     @State private var showNewTopicDialog = false
     @State private var newTopicTitle = ""
+    @FocusState private var isNewTopicFieldFocused: Bool
 
     var body: some View {
         NavigationSplitView {
-            // SIDEBAR — topic list
-            List(selection: $messageViewModel.selectedTopicId) {
-                ForEach(messageViewModel.topics) { topic in
-                    NavigationLink(value: topic.id) {
-                        SessionRow(topic: topic)
-                    }
-                    .contextMenu {
-                        Button("Delete Topic", role: .destructive) {
-                            deleteTopic(topic.id)
+            // SIDEBAR — topic list + bottom action bar
+            VStack(spacing: 0) {
+                List(selection: $messageViewModel.selectedTopicId) {
+                    ForEach(messageViewModel.topics) { topic in
+                        NavigationLink(value: topic.id) {
+                            SessionRow(topic: topic)
+                        }
+                        .contextMenu {
+                            Button("Delete Topic", role: .destructive) {
+                                deleteTopic(topic.id)
+                            }
                         }
                     }
                 }
+                .listStyle(.sidebar)
+                .frame(maxHeight: .infinity)
+
+                Divider()
+
+                HStack(spacing: 12) {
+                    Button(action: { showNewTopicDialog = true }) {
+                        Image(systemName: "plus.circle")
+                            .font(.system(size: 16))
+                    }
+                    .buttonStyle(.plain)
+                    .help("New Topic")
+
+                    Spacer()
+
+                    if messageViewModel.selectedTopicId != nil {
+                        Button(action: {
+                            if let id = messageViewModel.selectedTopicId {
+                                deleteTopic(id)
+                            }
+                        }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 14))
+                                .foregroundColor(.red.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Delete Selected Topic")
+                        .transition(.opacity)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .animation(.easeInOut(duration: 0.2), value: messageViewModel.selectedTopicId)
             }
-            .listStyle(.sidebar)
-            .onDeleteCommand {
+            .onKeyPress(.delete) {
                 if let id = messageViewModel.selectedTopicId {
                     deleteTopic(id)
+                    return .handled
                 }
+                return .ignored
             }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: { showNewTopicDialog = true }) {
-                        Label("New Topic", systemImage: "plus.circle")
-                    }
+            .onReceive(NotificationCenter.default.publisher(for: .deleteSelectedTopic)) { _ in
+                if let id = messageViewModel.selectedTopicId {
+                    deleteTopic(id)
                 }
             }
         } detail: {
@@ -88,10 +123,32 @@ struct MainWindow: View {
                 isGatewayWired = false
             }
         }
-        .alert("New Topic", isPresented: $showNewTopicDialog) {
-            TextField("Topic name", text: $newTopicTitle)
-            Button("Cancel", role: .cancel) { newTopicTitle = "" }
-            Button("Create") { createNewTopic() }
+        .sheet(isPresented: $showNewTopicDialog) {
+            VStack(spacing: 16) {
+                Text("New Topic")
+                    .font(.headline)
+                TextField("Topic name", text: $newTopicTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 240)
+                    .focused($isNewTopicFieldFocused)
+                HStack(spacing: 12) {
+                    Button("Cancel") {
+                        newTopicTitle = ""
+                        showNewTopicDialog = false
+                    }
+                    .keyboardShortcut(.cancelAction)
+
+                    Button("Create") {
+                        createNewTopic()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(newTopicTitle.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .padding(24)
+            .onAppear {
+                isNewTopicFieldFocused = true
+            }
         }
     }
 
@@ -224,4 +281,8 @@ struct MainWindow: View {
             }
         }
     }
+}
+
+extension Notification.Name {
+    static let deleteSelectedTopic = Notification.Name("deleteSelectedTopic")
 }
