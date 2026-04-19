@@ -139,13 +139,16 @@ struct MainWindow: View {
 
         do {
             let writer = try DatabaseManager.shared.writer
-            localSessionCancellable = observation.start(in: writer) { error in
-                print("[MainWindow] Local session observation error: \(error)")
-            } onChange: { [weak messageViewModel] sessions in
-                Task { @MainActor in
+            localSessionCancellable = observation.start(
+                in: writer,
+                scheduling: .mainActor,
+                onError: { error in
+                    print("[MainWindow] Local session observation error: \(error)")
+                },
+                onChange: { [weak messageViewModel] sessions in
                     messageViewModel?.updateTopics(from: sessions)
                 }
-            }
+            )
         } catch {
             print("[MainWindow] Failed to start local session observation: \(error)")
         }
