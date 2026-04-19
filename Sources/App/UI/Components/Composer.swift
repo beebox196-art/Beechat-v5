@@ -50,9 +50,9 @@ struct Composer: View {
 
                 // Text input — AutoSizingTextView wrapper for reliable macOS auto-expand
                 MacTextView(text: $viewModel.inputText, onSend: sendMessageIfReady)
-                    .frame(minHeight: 40, maxHeight: 160)
+                    .frame(minHeight: 36, maxHeight: 160)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     .background(themeManager.color(.bgPanel))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
