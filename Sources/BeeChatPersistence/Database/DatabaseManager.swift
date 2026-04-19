@@ -116,6 +116,41 @@ public class DatabaseManager {
             try db.create(index: "idx_messages_session_id", on: "messages", columns: ["sessionId", "id"])
         }
         
+        migrator.registerMigration("Migration003_CreateAttachmentsIfMissing") { db in
+            if try !db.tableExists("attachments") {
+                try db.create(table: "attachments") { t in
+                    t.column("id", .text).primaryKey()
+                    t.column("messageId", .text).notNull()
+                    t.column("type", .text).notNull()
+                    t.column("url", .text)
+                    t.column("localPath", .text)
+                    t.column("mimeType", .text)
+                    t.column("fileName", .text)
+                    t.column("fileSize", .integer)
+                    t.column("createdAt", .datetime).notNull().defaults(to: Date())
+                }
+            }
+        }
+        
+        migrator.registerMigration("Migration004_CreateDeliveryLedger") { db in
+            if try !db.tableExists("delivery_ledger") {
+                try db.create(table: "delivery_ledger") { t in
+                    t.column("id", .text).primaryKey()
+                    t.column("sessionKey", .text).notNull()
+                    t.column("idempotencyKey", .text).notNull().unique()
+                    t.column("content", .text).notNull()
+                    t.column("status", .text).notNull()
+                    t.column("runId", .text)
+                    t.column("createdAt", .datetime).notNull()
+                    t.column("updatedAt", .datetime).notNull()
+                    t.column("retryCount", .integer).notNull().defaults(to: 0)
+                }
+                
+                try db.create(index: "idx_delivery_ledger_status", on: "delivery_ledger", columns: ["status"])
+                try db.create(index: "idx_delivery_ledger_session", on: "delivery_ledger", columns: ["sessionKey"])
+            }
+        }
+        
         try migrator.migrate(dbPool!)
     }
 }

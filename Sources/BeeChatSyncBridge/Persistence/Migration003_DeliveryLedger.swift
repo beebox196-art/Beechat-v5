@@ -3,6 +3,7 @@ import GRDB
 
 public struct Migration003_DeliveryLedger {
     public static func apply(db: Database) throws {
+        if try db.tableExists("delivery_ledger") { return }
         try db.create(table: "delivery_ledger") { t in
             t.column("id", .text).primaryKey()
             t.column("sessionKey", .text).notNull()
