@@ -31,11 +31,13 @@ struct TopicBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(topics) { topic in
-                        TopicPill(
-                            title: topic.title,
-                            isSelected: topic.id == selectedTopicId,
-                            action: { selectedTopicId = topic.id }
-                        )
+                        Group {
+                            TopicPill(
+                                title: topic.title,
+                                isSelected: topic.id == selectedTopicId,
+                                action: { selectedTopicId = topic.id }
+                            )
+                        }
                         .contextMenu {
                             Button("Delete Topic", role: .destructive) {
                                 onDeleteTopic(topic.id)
