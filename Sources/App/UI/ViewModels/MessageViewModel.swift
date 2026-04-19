@@ -60,7 +60,9 @@ final class MessageViewModel {
 
         // If selection changed, start observing messages for new session
         if let key = selectedTopicId, key != messageListObserver.sessionKey {
-            messageListObserver.startObserving(syncBridge: syncBridge!, sessionKey: key)
+            if let syncBridge {
+                messageListObserver.startObserving(syncBridge: syncBridge, sessionKey: key)
+            }
         }
     }
 
