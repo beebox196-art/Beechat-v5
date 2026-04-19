@@ -102,9 +102,14 @@ class AutoSizingTextView: NSTextView {
     private let placeholderText = "Type a message..."
 
     override var intrinsicContentSize: NSSize {
-        let containerWidth = textContainer?.containerSize.width ?? frame.width
-        let rect = layoutManager?.usedRect(for: textContainer!) ?? NSRect(x: 0, y: 0, width: containerWidth, height: minHeight)
-        let height = min(max(rect.height + textContainerInset.height * 2, minHeight), maxHeight)
+        guard let textContainer = textContainer else {
+            return NSSize(width: NSView.noIntrinsicMetric, height: minHeight)
+        }
+        guard let layoutManager = layoutManager else {
+            return NSSize(width: NSView.noIntrinsicMetric, height: minHeight)
+        }
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let height = min(max(usedRect.height + textContainerInset.height * 2, minHeight), maxHeight)
         return NSSize(width: NSView.noIntrinsicMetric, height: height)
     }
 
