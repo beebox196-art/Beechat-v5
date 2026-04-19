@@ -15,6 +15,9 @@ struct MainWindow: View {
     @State private var localSessionCancellable: DatabaseCancellable?
     @State private var showNewTopicDialog = false
     @State private var newTopicTitle = ""
+
+    @State private var showDeleteAlert = false
+    @State private var deleteErrorMsg: String?
     @FocusState private var isNewTopicFieldFocused: Bool
 
     var body: some View {
@@ -150,6 +153,12 @@ struct MainWindow: View {
                 isNewTopicFieldFocused = true
             }
         }
+        .alert("Delete Error", isPresented: $showDeleteAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(deleteErrorMsg ?? "Unknown error")
+        }
+
     }
 
     // MARK: - Wiring
@@ -269,15 +278,15 @@ struct MainWindow: View {
     }
 
     private func deleteTopic(_ id: String) {
-        Task {
+        Task { @MainActor in
             do {
-                // Delete session and its messages (cascading)
                 let repo = SessionRepository()
                 try repo.deleteCascading(id)
-                // ValueObservation will handle the list update
                 messageViewModel.removeTopic(id: id)
             } catch {
-                print("[MainWindow] Delete topic failed: \(error)")
+                print("🔴 Delete topic failed: \(error)")
+                deleteErrorMsg = error.localizedDescription
+                showDeleteAlert = true
             }
         }
     }
