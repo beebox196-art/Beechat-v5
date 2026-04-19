@@ -70,6 +70,10 @@ struct MainWindow: View {
         .onAppear {
             wireUpObservers()
         }
+        .onDisappear {
+            localSessionCancellable?.cancel()
+            localSessionCancellable = nil
+        }
         .onChange(of: appState.isReady) { _, ready in
             if ready {
                 wireUpObservers()
@@ -124,16 +128,7 @@ struct MainWindow: View {
         // Configure composer
         composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
 
-        // Start observing session list changes from gateway
-        // (ValueObservation via sessionListStream, which updates topics through the same path)
-        Task {
-            let stream = await bridge.sessionListStream()
-            for await sessions in stream {
-                await MainActor.run {
-                    messageViewModel.updateTopics(from: sessions)
-                }
-            }
-        }
+
     }
 
     /// Start a standalone GRDB ValueObservation on the sessions table.
