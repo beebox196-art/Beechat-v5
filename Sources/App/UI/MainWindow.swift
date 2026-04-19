@@ -3,8 +3,7 @@ import BeeChatSyncBridge
 import BeeChatPersistence
 import GRDB
 
-/// Main chat window — the single-canvas layout container.
-/// TopBar + MessageCanvas + Composer.
+/// Main chat window — NavigationSplitView layout with sidebar + detail.
 struct MainWindow: View {
     @Environment(ThemeManager.self) var themeManager
     @Environment(AppState.self) var appState
@@ -18,45 +17,56 @@ struct MainWindow: View {
     @State private var newTopicTitle = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Top Bar — topic navigation
-            TopicBar(
-                topics: messageViewModel.topics,
-                selectedTopicId: Binding(
-                    get: { messageViewModel.selectedTopicId },
-                    set: { id in if let id { messageViewModel.selectTopic(id: id) } }
-                ),
-                onCreateTopic: { showNewTopicDialog = true },
-                onDeleteTopic: { id in deleteTopic(id) }
-            )
-
-            Divider()
-
-            // Message Canvas — scrollable message list
-            if messageViewModel.selectedTopic != nil || messageViewModel.topics.isEmpty == false {
-                MessageCanvas(
-                    messages: messageViewModel.messages,
-                    isStreaming: syncBridgeObserver.isStreaming
-                )
-            } else {
-                // Empty state — no topic selected
-                VStack {
-                    Spacer()
-                    Text("Select a topic to start chatting")
-                        .font(themeManager.font(.subheading))
-                        .foregroundColor(themeManager.color(.textSecondary))
-                    Spacer()
+        NavigationSplitView {
+            // SIDEBAR — topic list
+            List(selection: $messageViewModel.selectedTopicId) {
+                ForEach(messageViewModel.topics) { topic in
+                    NavigationLink(value: topic.id) {
+                        SessionRow(topic: topic)
+                    }
+                    .contextMenu {
+                        Button("Delete Topic", role: .destructive) {
+                            deleteTopic(topic.id)
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(themeManager.color(.bgSurface))
             }
-
-            Divider()
-
-            // Composer — text input
-            Composer(viewModel: composerViewModel, onSend: sendMessage)
+            .listStyle(.sidebar)
+            .onDeleteCommand {
+                if let id = messageViewModel.selectedTopicId {
+                    deleteTopic(id)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: { showNewTopicDialog = true }) {
+                        Label("New Topic", systemImage: "plus.circle")
+                    }
+                }
+            }
+        } detail: {
+            // DETAIL — chat view
+            VStack(spacing: 0) {
+                if messageViewModel.selectedTopic != nil {
+                    MessageCanvas(
+                        messages: messageViewModel.messages,
+                        isStreaming: syncBridgeObserver.isStreaming
+                    )
+                    Divider()
+                    Composer(viewModel: composerViewModel, onSend: sendMessage)
+                } else {
+                    VStack {
+                        Spacer()
+                        Text("Select a topic to start chatting")
+                            .font(themeManager.font(.subheading))
+                            .foregroundColor(themeManager.color(.textSecondary))
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(themeManager.color(.bgSurface))
+                }
+            }
         }
-        .background(themeManager.color(.bgSurface))
         .onAppear {
             wireUpObservers()
         }
