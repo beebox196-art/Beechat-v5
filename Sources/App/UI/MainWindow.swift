@@ -85,6 +85,10 @@ struct MainWindow: View {
         } detail: {
             // DETAIL — chat view
             VStack(spacing: 0) {
+                // Thin status bar at top of detail pane
+                GatewayStatusBar(connectionState: appState.connectionState)
+                Divider()
+
                 if messageViewModel.selectedTopic != nil {
                     MessageCanvas(
                         messages: messageViewModel.messages,

@@ -3,8 +3,7 @@ import AppKit
 
 /// Auto-sizing NSTextView for macOS chat composer.
 /// Starts at single-line height (~36px), auto-expands up to ~160px (~6 lines).
-/// Enter = send, Shift+Enter = newline, Cmd+Enter = send.
-/// Wraps NSTextView in NSScrollView for internal scrolling past maxHeight.
+/// Enter = newline, Cmd+Enter = send (Telegram/WhatsApp/iMessage style).
 struct MacTextView: NSViewRepresentable {
     @Binding var text: String
     var onSend: (() -> Void)?
@@ -13,13 +12,61 @@ struct MacTextView: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
-    func makeNSView(context: Context) -> IntrinsicSizeScrollView {
-        let textView = AutoSizingTextView()
+    func makeNSView(context: Context) -> ComposerTextViewWrapper {
+        let wrapper = ComposerTextViewWrapper()
+        let textView = wrapper.textView
 
-        // Bare NSTextView config
+        // Wire delegate
+        textView.delegate = context.coordinator
+        context.coordinator.textView = textView
+        context.coordinator.wrapper = wrapper
+
+        // Wire onSend
+        textView.onSend = onSend
+
+        // Set initial text
+        if !text.isEmpty {
+            textView.string = text
+        }
+
+        return wrapper
+    }
+
+    func updateNSView(_ wrapper: ComposerTextViewWrapper, context: Context) {
+        let textView = wrapper.textView
+
+        // Update onSend callback
+        textView.onSend = onSend
+
+        // Sync text from binding to view (only if different)
+        if textView.string != text {
+            textView.string = text
+            wrapper.recalculateHeight()
+        }
+    }
+}
+
+// MARK: - ComposerTextViewWrapper
+
+/// NSView wrapper that contains an NSTextView and constrains its height.
+/// Uses explicit height constraints rather than intrinsicContentSize,
+/// which is more reliable for controlling size in SwiftUI.
+class ComposerTextViewWrapper: NSView {
+    let textView: AutoSizingTextView
+    private var heightConstraint: NSLayoutConstraint!
+
+    private let minHeight: CGFloat = 36
+    private let maxHeight: CGFloat = 160
+
+    init() {
+        textView = AutoSizingTextView()
+
+        super.init(frame: NSRect(x: 0, y: 0, width: 100, height: minHeight))
+
+        // Configure NSTextView
         textView.isEditable = true
         textView.isSelectable = true
-        textView.drawsBackground = true
+        textView.drawsBackground = false
         textView.backgroundColor = .clear
         textView.font = NSFont.systemFont(ofSize: 14)
         textView.textColor = NSColor.labelColor
@@ -39,99 +86,24 @@ struct MacTextView: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineBreakMode = .byWordWrapping
-        textView.minSize = NSSize(width: 0, height: 36)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainerInset = NSSize(width: 0, height: 4)
+        textView.textContainerInset = NSSize(width: 8, height: 6)
 
-        // Wire onSend
-        textView.onSend = onSend
-
-        // Set initial text
-        if !text.isEmpty {
-            textView.string = text
-        }
-
-        // Wire delegate
-        textView.delegate = context.coordinator
-
-        // Wrap in NSScrollView
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.borderType = .noBorder
-        scrollView.drawsBackground = false
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-
-        // Use flipped document view so text flows top-down
-        let clipView = scrollView.contentView
-        clipView.drawsBackground = false
-
-        scrollView.documentView = textView
-
-        // Pin text view width to scroll view width
+        // Add text view as subview
         textView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(textView)
+
+        // Constrain text view to fill wrapper
+        heightConstraint = textView.heightAnchor.constraint(equalToConstant: minHeight)
         NSLayoutConstraint.activate([
-            textView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            textView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            textView.topAnchor.constraint(equalTo: topAnchor),
+            textView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        // Store reference for coordinator updates
-        context.coordinator.textView = textView
-
-        // Wrap in IntrinsicSizeScrollView so SwiftUI sees the correct intrinsic size
-        let container = IntrinsicSizeScrollView(scrollView: scrollView, textView: textView)
-
-        return container
-    }
-
-    func updateNSView(_ container: IntrinsicSizeScrollView, context: Context) {
-        guard let textView = container.textView else { return }
-
-        // Update onSend callback
-        textView.onSend = onSend
-
-        // Sync text from binding to view (only if different)
-        if textView.string != text {
-            textView.string = text
-        }
-
-        // Recompute cached height for the container
-        container.updateCachedHeight()
-    }
-}
-
-// MARK: - IntrinsicSizeScrollView
-
-/// NSView container that wraps an NSScrollView and forwards intrinsicContentSize
-/// from the document view (AutoSizingTextView). This is necessary because
-/// NSScrollView returns noIntrinsicMetric for both dimensions, so SwiftUI
-/// cannot determine the correct size for the text input.
-class IntrinsicSizeScrollView: NSView {
-    let scrollView: NSScrollView
-    weak var textView: AutoSizingTextView?
-
-    private let minHeight: CGFloat = 36
-    private let maxHeight: CGFloat = 160
-
-    /// Cached height to avoid layout recursion. Updated by textView textDidChange.
-    private var cachedHeight: CGFloat = 36
-
-    init(scrollView: NSScrollView, textView: AutoSizingTextView) {
-        self.scrollView = scrollView
-        self.textView = textView
-        super.init(frame: .zero)
-        addSubview(scrollView)
-
-        // Pin scroll view to container edges
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        // Start with minimum height
+        self.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight).isActive = true
+        self.heightAnchor.constraint(lessThanOrEqualToConstant: maxHeight).isActive = true
     }
 
     required init?(coder: NSCoder) {
@@ -139,23 +111,30 @@ class IntrinsicSizeScrollView: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        return NSSize(width: NSView.noIntrinsicMetric, height: cachedHeight)
+        // Get current height from the text content
+        let height = calculateDesiredHeight()
+        return NSSize(width: NSView.noIntrinsicMetric, height: height)
     }
 
-    /// Recalculate cached height from the text view's layout manager.
-    /// Called from textDidChange, NOT from intrinsicContentSize (avoids recursion).
-    func updateCachedHeight() {
-        guard let textView = textView,
-              let textContainer = textView.textContainer,
+    /// Calculate the desired height based on text content
+    func recalculateHeight() {
+        let desiredHeight = calculateDesiredHeight()
+        invalidateIntrinsicContentSize()
+        // Force SwiftUI layout update
+        frame.size.height = desiredHeight
+        textView.frame.size.height = desiredHeight
+    }
+
+    private func calculateDesiredHeight() -> CGFloat {
+        guard let textContainer = textView.textContainer,
               let layoutManager = textView.layoutManager else {
-            cachedHeight = minHeight
-            invalidateIntrinsicContentSize()
-            return
+            return minHeight
         }
+
+        layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
         let textHeight = usedRect.height + textView.textContainerInset.height * 2
-        cachedHeight = min(max(textHeight, minHeight), maxHeight)
-        invalidateIntrinsicContentSize()
+        return min(max(textHeight, minHeight), maxHeight)
     }
 }
 
@@ -165,6 +144,7 @@ extension MacTextView {
     class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
         weak var textView: AutoSizingTextView?
+        weak var wrapper: ComposerTextViewWrapper?
 
         init(text: Binding<String>) {
             self.text = text
@@ -176,68 +156,61 @@ extension MacTextView {
             if text.wrappedValue != newText {
                 text.wrappedValue = newText
             }
-            textView.invalidateIntrinsicContentSize()
-            // Update the IntrinsicSizeScrollView's cached height
-            if let container = textView.enclosingScrollView?.superview as? IntrinsicSizeScrollView {
-                container.updateCachedHeight()
-            }
+            // Update wrapper height
+            wrapper?.recalculateHeight()
         }
     }
 }
 
 // MARK: - AutoSizingTextView
 
-/// Bare NSTextView that auto-sizes based on text content.
-/// Used as the document view inside an NSScrollView.
+/// NSTextView that handles key events for the composer.
 class AutoSizingTextView: NSTextView {
     var onSend: (() -> Void)?
-    private let minHeight: CGFloat = 36
-    private let maxHeight: CGFloat = 160
     private let placeholderText = "Type a message..."
 
-    override var intrinsicContentSize: NSSize {
-        guard let textContainer = textContainer,
-              let layoutManager = layoutManager else {
-            return NSSize(width: NSView.noIntrinsicMetric, height: minHeight)
-        }
-        let usedRect = layoutManager.usedRect(for: textContainer)
-        let textHeight = usedRect.height + textContainerInset.height * 2
-        let height = min(max(textHeight, minHeight), maxHeight)
-        return NSSize(width: NSView.noIntrinsicMetric, height: height)
-    }
-
     override func keyDown(with event: NSEvent) {
-        // Enter = send (no modifier), Shift+Enter = newline, Cmd+Enter = send
+        // Enter = newline, Cmd+Enter = send (Telegram/WhatsApp/iMessage style)
         if event.keyCode == 36 { // Return
-            if event.modifierFlags.contains(.shift) {
-                super.keyDown(with: event) // insert newline
+            if event.modifierFlags.contains(.command) {
+                onSend?()
                 return
             }
-            onSend?()
+            // Plain Enter inserts newline
+            super.keyDown(with: event)
             return
         }
         super.keyDown(with: event)
     }
 
-    /// Draw placeholder text when the text view is empty and not focused
+    /// Draw placeholder text when the text view is empty
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard string.isEmpty, !isFirstResponder else { return }
+        guard string.isEmpty else { return }
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.placeholderTextColor,
             .font: font ?? NSFont.systemFont(ofSize: 14)
         ]
         let inset = textContainerInset
+        let padding = textContainer?.lineFragmentPadding ?? 0
         let rect = NSRect(
-            x: inset.width,
+            x: inset.width + padding,
             y: inset.height,
-            width: bounds.width - inset.width * 2,
+            width: bounds.width - (inset.width * 2) - (padding * 2),
             height: bounds.height - inset.height * 2
         )
         (placeholderText as NSString).draw(in: rect, withAttributes: attrs)
     }
 
-    private var isFirstResponder: Bool {
-        window?.firstResponder === self
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        needsDisplay = true
+        return result
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        needsDisplay = true
+        return result
     }
 }
