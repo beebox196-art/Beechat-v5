@@ -37,6 +37,7 @@ struct MainWindow: View {
                     }
                 }
                 .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
                 .frame(maxHeight: .infinity)
 
                 Divider()
@@ -70,6 +71,8 @@ struct MainWindow: View {
                 .padding(.vertical, 8)
                 .animation(.easeInOut(duration: 0.2), value: messageViewModel.selectedTopicId)
             }
+            .background(themeManager.color(.bgSurface))
+            .overlay(WindowBackgroundFix(nsColor: NSColor(red: 0.973, green: 0.965, blue: 0.941, alpha: 1.0)))
             .onKeyPress(.delete) {
                 if let id = messageViewModel.selectedTopicId {
                     deleteTopic(id)
@@ -100,6 +103,8 @@ struct MainWindow: View {
                 Divider()
                 Composer(viewModel: composerViewModel, onSend: sendMessage)
             }
+            .background(themeManager.color(.bgSurface))
+            .overlay(WindowBackgroundFix(nsColor: NSColor(red: 0.973, green: 0.965, blue: 0.941, alpha: 1.0)))
         }
         .onAppear {
             wireUpObservers()

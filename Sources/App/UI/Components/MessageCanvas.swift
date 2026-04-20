@@ -15,49 +15,55 @@ struct MessageCanvas: View {
     @State private var measuredWidth: CGFloat = 800
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(messages, id: \.id) { message in
-                        MessageBubble(message: message)
-                            .id(message.id)
-                    }
+        ZStack {
+            // Solid background fills entire area — no system bleed-through
+            themeManager.color(.bgSurface)
+                .ignoresSafeArea()
 
-                    if isStreaming {
-                        TypingIndicator()
-                            .id("typing-indicator")
-                    }
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(messages, id: \.id) { message in
+                            MessageBubble(message: message)
+                                .id(message.id)
+                        }
 
-                    // Bottom anchor for auto-scroll
-                    Color.clear
-                        .frame(height: 1)
-                        .id("bottom-anchor")
+                        if isStreaming {
+                            TypingIndicator()
+                                .id("typing-indicator")
+                        }
+
+                        // Bottom anchor for auto-scroll
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom-anchor")
+                    }
                 }
-            }
-            .background(
-                WidthReader { width in
-                    Color.clear
-                        .preference(key: WidthPreferenceKey.self, value: width)
+                .scrollContentBackground(.hidden)
+                .background(
+                    WidthReader { width in
+                        Color.clear
+                            .preference(key: WidthPreferenceKey.self, value: width)
+                    }
+                )
+                .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
+                    measuredWidth = newWidth
                 }
-            )
-            .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
-                measuredWidth = newWidth
-            }
-            .onChange(of: messages.count) { _, _ in
-                scrollToBottom(proxy: proxy)
-            }
-            .onChange(of: isStreaming) { _, isNowStreaming in
-                if isNowStreaming {
+                .onChange(of: messages.count) { _, _ in
+                    scrollToBottom(proxy: proxy)
+                }
+                .onChange(of: isStreaming) { _, isNowStreaming in
+                    if isNowStreaming {
+                        scrollToBottom(proxy: proxy)
+                    }
+                }
+                .onAppear {
                     scrollToBottom(proxy: proxy)
                 }
             }
-            .onAppear {
-                scrollToBottom(proxy: proxy)
-            }
+            .environment(\.canvasWidth, measuredWidth)
         }
-        .environment(\.canvasWidth, measuredWidth)
         .frame(maxHeight: .infinity)
-        .background(themeManager.color(.bgSurface))
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
