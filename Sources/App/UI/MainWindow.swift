@@ -109,7 +109,8 @@ struct MainWindow: View {
                 if messageViewModel.selectedTopic != nil {
                     MessageCanvas(
                         messages: messageViewModel.messages,
-                        isStreaming: syncBridgeObserver.isStreaming
+                        isStreaming: syncBridgeObserver.isStreaming,
+                        streamingContent: syncBridgeObserver.streamingContent
                     )
                 } else {
                     Color.clear.frame(maxHeight: .infinity)

@@ -10,6 +10,7 @@ struct MessageCanvas: View {
 
     let messages: [Message]
     let isStreaming: Bool
+    var streamingContent: String = ""
 
     @State private var autoScroll = true
     @State private var measuredWidth: CGFloat = 800
@@ -29,8 +30,15 @@ struct MessageCanvas: View {
                         }
 
                         if isStreaming {
-                            TypingIndicator()
-                                .id("typing-indicator")
+                            if streamingContent.isEmpty {
+                                // No text yet — show animated dots
+                                TypingIndicator()
+                                    .id("typing-indicator")
+                            } else {
+                                // Partial text arriving — show as live assistant bubble
+                                StreamingBubble(content: streamingContent)
+                                    .id("streaming-bubble")
+                            }
                         }
 
                         // Bottom anchor for auto-scroll
