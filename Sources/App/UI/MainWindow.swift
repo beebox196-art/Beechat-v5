@@ -90,19 +90,11 @@ struct MainWindow: View {
                         messages: messageViewModel.messages,
                         isStreaming: syncBridgeObserver.isStreaming
                     )
-                    Divider()
-                    Composer(viewModel: composerViewModel, onSend: sendMessage)
                 } else {
-                    VStack {
-                        Spacer()
-                        Text("Select a topic to start chatting")
-                            .font(themeManager.font(.subheading))
-                            .foregroundColor(themeManager.color(.textSecondary))
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(themeManager.color(.bgSurface))
+                    Color.clear.frame(maxHeight: .infinity)
                 }
+                Divider()
+                Composer(viewModel: composerViewModel, onSend: sendMessage)
             }
         }
         .onAppear {

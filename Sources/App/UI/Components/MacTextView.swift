@@ -95,12 +95,10 @@ struct MacTextView: NSViewRepresentable {
         // Sync text from binding to view (only if different)
         if textView.string != text {
             textView.string = text
-            textView.invalidateIntrinsicContentSize()
         }
 
-        // Recompute intrinsic content size for the container
-        textView.invalidateIntrinsicContentSize()
-        container.invalidateIntrinsicContentSize()
+        // Recompute cached height for the container
+        container.updateCachedHeight()
     }
 }
 
@@ -116,6 +114,9 @@ class IntrinsicSizeScrollView: NSView {
 
     private let minHeight: CGFloat = 36
     private let maxHeight: CGFloat = 160
+
+    /// Cached height to avoid layout recursion. Updated by textView textDidChange.
+    private var cachedHeight: CGFloat = 36
 
     init(scrollView: NSScrollView, textView: AutoSizingTextView) {
         self.scrollView = scrollView
@@ -138,12 +139,23 @@ class IntrinsicSizeScrollView: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        guard let textView = textView else {
-            return NSSize(width: NSView.noIntrinsicMetric, height: minHeight)
+        return NSSize(width: NSView.noIntrinsicMetric, height: cachedHeight)
+    }
+
+    /// Recalculate cached height from the text view's layout manager.
+    /// Called from textDidChange, NOT from intrinsicContentSize (avoids recursion).
+    func updateCachedHeight() {
+        guard let textView = textView,
+              let textContainer = textView.textContainer,
+              let layoutManager = textView.layoutManager else {
+            cachedHeight = minHeight
+            invalidateIntrinsicContentSize()
+            return
         }
-        let textViewSize = textView.intrinsicContentSize
-        let height = min(max(textViewSize.height, minHeight), maxHeight)
-        return NSSize(width: NSView.noIntrinsicMetric, height: height)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let textHeight = usedRect.height + textView.textContainerInset.height * 2
+        cachedHeight = min(max(textHeight, minHeight), maxHeight)
+        invalidateIntrinsicContentSize()
     }
 }
 
@@ -165,9 +177,9 @@ extension MacTextView {
                 text.wrappedValue = newText
             }
             textView.invalidateIntrinsicContentSize()
-            // Invalidate the IntrinsicSizeScrollView container
+            // Update the IntrinsicSizeScrollView's cached height
             if let container = textView.enclosingScrollView?.superview as? IntrinsicSizeScrollView {
-                container.invalidateIntrinsicContentSize()
+                container.updateCachedHeight()
             }
         }
     }
