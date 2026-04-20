@@ -12,58 +12,10 @@ struct MacTextView: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
-    func makeNSView(context: Context) -> ComposerTextViewWrapper {
-        let wrapper = ComposerTextViewWrapper()
-        let textView = wrapper.textView
+    func makeNSView(context: Context) -> ComposerContainer {
+        let textView = ComposerTextView()
 
-        // Wire delegate
-        textView.delegate = context.coordinator
-        context.coordinator.textView = textView
-        context.coordinator.wrapper = wrapper
-
-        // Wire onSend
-        textView.onSend = onSend
-
-        // Set initial text
-        if !text.isEmpty {
-            textView.string = text
-        }
-
-        return wrapper
-    }
-
-    func updateNSView(_ wrapper: ComposerTextViewWrapper, context: Context) {
-        let textView = wrapper.textView
-
-        // Update onSend callback
-        textView.onSend = onSend
-
-        // Sync text from binding to view (only if different)
-        if textView.string != text {
-            textView.string = text
-            wrapper.recalculateHeight()
-        }
-    }
-}
-
-// MARK: - ComposerTextViewWrapper
-
-/// NSView wrapper that contains an NSTextView and constrains its height.
-/// Uses explicit height constraints rather than intrinsicContentSize,
-/// which is more reliable for controlling size in SwiftUI.
-class ComposerTextViewWrapper: NSView {
-    let textView: AutoSizingTextView
-    private var heightConstraint: NSLayoutConstraint!
-
-    private let minHeight: CGFloat = 36
-    private let maxHeight: CGFloat = 160
-
-    init() {
-        textView = AutoSizingTextView()
-
-        super.init(frame: NSRect(x: 0, y: 0, width: 100, height: minHeight))
-
-        // Configure NSTextView
+        // NSTextView config
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -81,29 +33,92 @@ class ComposerTextViewWrapper: NSView {
         textView.isContinuousSpellCheckingEnabled = false
         textView.isGrammarCheckingEnabled = false
 
-        // Auto-sizing configuration
+        // Auto-sizing: vertical growth, horizontal constrained
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineBreakMode = .byWordWrapping
         textView.textContainerInset = NSSize(width: 8, height: 6)
 
-        // Add text view as subview
-        textView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(textView)
+        // Wire onSend
+        textView.onSend = onSend
 
-        // Constrain text view to fill wrapper
-        heightConstraint = textView.heightAnchor.constraint(equalToConstant: minHeight)
+        // Set initial text
+        if !text.isEmpty {
+            textView.string = text
+        }
+
+        // Wire delegate
+        textView.delegate = context.coordinator
+        context.coordinator.textView = textView
+
+        // Create NSScrollView for proper text wrapping
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
+        scrollView.contentView.drawsBackground = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+
+        scrollView.documentView = textView
+
+        // Pin text view width to scroll view width
+        textView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            textView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            textView.topAnchor.constraint(equalTo: topAnchor),
-            textView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            textView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            textView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
         ])
 
-        // Start with minimum height
-        self.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight).isActive = true
-        self.heightAnchor.constraint(lessThanOrEqualToConstant: maxHeight).isActive = true
+        // Create container that provides intrinsicContentSize to SwiftUI
+        let container = ComposerContainer(scrollView: scrollView, textView: textView)
+
+        return container
+    }
+
+    func updateNSView(_ container: ComposerContainer, context: Context) {
+        guard let textView = container.textView else { return }
+
+        // Update onSend callback
+        textView.onSend = onSend
+
+        // Sync text from binding to view (only if different)
+        if textView.string != text {
+            textView.string = text
+        }
+
+        // Recalculate height
+        container.recalculateHeight()
+    }
+}
+
+// MARK: - ComposerContainer
+
+/// NSView wrapper that provides intrinsicContentSize to SwiftUI based on text content height.
+/// Wraps an NSScrollView containing the NSTextView for proper word wrapping.
+class ComposerContainer: NSView {
+    let scrollView: NSScrollView
+    weak var textView: ComposerTextView?
+
+    private let minHeight: CGFloat = 36
+    private let maxHeight: CGFloat = 160
+    private var currentHeight: CGFloat = 36
+
+    init(scrollView: NSScrollView, textView: ComposerTextView) {
+        self.scrollView = scrollView
+        self.textView = textView
+        super.init(frame: NSRect(x: 0, y: 0, width: 100, height: minHeight))
+
+        addSubview(scrollView)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
     }
 
     required init?(coder: NSCoder) {
@@ -111,30 +126,24 @@ class ComposerTextViewWrapper: NSView {
     }
 
     override var intrinsicContentSize: NSSize {
-        // Get current height from the text content
-        let height = calculateDesiredHeight()
-        return NSSize(width: NSView.noIntrinsicMetric, height: height)
+        return NSSize(width: NSView.noIntrinsicMetric, height: currentHeight)
     }
 
-    /// Calculate the desired height based on text content
     func recalculateHeight() {
-        let desiredHeight = calculateDesiredHeight()
-        invalidateIntrinsicContentSize()
-        // Force SwiftUI layout update
-        frame.size.height = desiredHeight
-        textView.frame.size.height = desiredHeight
-    }
-
-    private func calculateDesiredHeight() -> CGFloat {
-        guard let textContainer = textView.textContainer,
+        guard let textView = textView,
+              let textContainer = textView.textContainer,
               let layoutManager = textView.layoutManager else {
-            return minHeight
+            currentHeight = minHeight
+            invalidateIntrinsicContentSize()
+            return
         }
 
+        // Force layout to get accurate measurement
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
         let textHeight = usedRect.height + textView.textContainerInset.height * 2
-        return min(max(textHeight, minHeight), maxHeight)
+        currentHeight = min(max(textHeight, minHeight), maxHeight)
+        invalidateIntrinsicContentSize()
     }
 }
 
@@ -143,29 +152,30 @@ class ComposerTextViewWrapper: NSView {
 extension MacTextView {
     class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
-        weak var textView: AutoSizingTextView?
-        weak var wrapper: ComposerTextViewWrapper?
+        weak var textView: ComposerTextView?
 
         init(text: Binding<String>) {
             self.text = text
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? AutoSizingTextView else { return }
+            guard let textView = notification.object as? ComposerTextView else { return }
             let newText = textView.string
             if text.wrappedValue != newText {
                 text.wrappedValue = newText
             }
-            // Update wrapper height
-            wrapper?.recalculateHeight()
+            // Update the container's height
+            if let container = textView.enclosingScrollView?.superview as? ComposerContainer {
+                container.recalculateHeight()
+            }
         }
     }
 }
 
-// MARK: - AutoSizingTextView
+// MARK: - ComposerTextView
 
-/// NSTextView that handles key events for the composer.
-class AutoSizingTextView: NSTextView {
+/// NSTextView that handles key events and draws placeholder for the composer.
+class ComposerTextView: NSTextView {
     var onSend: (() -> Void)?
     private let placeholderText = "Type a message..."
 
