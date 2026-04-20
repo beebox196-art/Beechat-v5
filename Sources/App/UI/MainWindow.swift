@@ -24,20 +24,25 @@ struct MainWindow: View {
         NavigationSplitView {
             // SIDEBAR — topic list + bottom action bar
             VStack(spacing: 0) {
-                List(selection: $messageViewModel.selectedTopicId) {
-                    ForEach(messageViewModel.topics) { topic in
-                        NavigationLink(value: topic.id) {
-                            SessionRow(topic: topic)
-                        }
-                        .contextMenu {
-                            Button("Delete Topic", role: .destructive) {
-                                deleteTopic(topic.id)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(messageViewModel.topics) { topic in
+                            NavigationLink(value: topic.id) {
+                                SessionRow(topic: topic)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu {
+                                Button("Delete Topic", role: .destructive) {
+                                    deleteTopic(topic.id)
+                                }
                             }
                         }
                     }
                 }
-                .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
+                .background(themeManager.color(.bgSurface))
                 .frame(maxHeight: .infinity)
 
                 Divider()
