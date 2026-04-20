@@ -13,7 +13,7 @@ struct MacTextView: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> IntrinsicSizeScrollView {
         let textView = AutoSizingTextView()
 
         // Bare NSTextView config
@@ -80,11 +80,14 @@ struct MacTextView: NSViewRepresentable {
         // Store reference for coordinator updates
         context.coordinator.textView = textView
 
-        return scrollView
+        // Wrap in IntrinsicSizeScrollView so SwiftUI sees the correct intrinsic size
+        let container = IntrinsicSizeScrollView(scrollView: scrollView, textView: textView)
+
+        return container
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? AutoSizingTextView else { return }
+    func updateNSView(_ container: IntrinsicSizeScrollView, context: Context) {
+        guard let textView = container.textView else { return }
 
         // Update onSend callback
         textView.onSend = onSend
@@ -95,9 +98,52 @@ struct MacTextView: NSViewRepresentable {
             textView.invalidateIntrinsicContentSize()
         }
 
-        // Recompute intrinsic content size for the scroll view
+        // Recompute intrinsic content size for the container
         textView.invalidateIntrinsicContentSize()
-        scrollView.invalidateIntrinsicContentSize()
+        container.invalidateIntrinsicContentSize()
+    }
+}
+
+// MARK: - IntrinsicSizeScrollView
+
+/// NSView container that wraps an NSScrollView and forwards intrinsicContentSize
+/// from the document view (AutoSizingTextView). This is necessary because
+/// NSScrollView returns noIntrinsicMetric for both dimensions, so SwiftUI
+/// cannot determine the correct size for the text input.
+class IntrinsicSizeScrollView: NSView {
+    let scrollView: NSScrollView
+    weak var textView: AutoSizingTextView?
+
+    private let minHeight: CGFloat = 36
+    private let maxHeight: CGFloat = 160
+
+    init(scrollView: NSScrollView, textView: AutoSizingTextView) {
+        self.scrollView = scrollView
+        self.textView = textView
+        super.init(frame: .zero)
+        addSubview(scrollView)
+
+        // Pin scroll view to container edges
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var intrinsicContentSize: NSSize {
+        guard let textView = textView else {
+            return NSSize(width: NSView.noIntrinsicMetric, height: minHeight)
+        }
+        let textViewSize = textView.intrinsicContentSize
+        let height = min(max(textViewSize.height, minHeight), maxHeight)
+        return NSSize(width: NSView.noIntrinsicMetric, height: height)
     }
 }
 
@@ -119,8 +165,10 @@ extension MacTextView {
                 text.wrappedValue = newText
             }
             textView.invalidateIntrinsicContentSize()
-            // Also invalidate scroll view intrinsic size
-            textView.enclosingScrollView?.invalidateIntrinsicContentSize()
+            // Invalidate the IntrinsicSizeScrollView container
+            if let container = textView.enclosingScrollView?.superview as? IntrinsicSizeScrollView {
+                container.invalidateIntrinsicContentSize()
+            }
         }
     }
 }
