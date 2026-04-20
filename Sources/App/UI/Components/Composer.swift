@@ -8,7 +8,8 @@ enum AttachmentType {
 }
 
 /// Message composer — text input + send + attach + voice.
-/// Uses MacTextView (AutoSizingTextView wrapper) for reliable macOS multiline input.
+/// Uses native SwiftUI TextField with vertical axis for reliable auto-expand.
+/// Enter = newline, Cmd+Enter = send, or click Send button.
 struct Composer: View {
     @Environment(ThemeManager.self) var themeManager
     @Environment(AppState.self) var appState
@@ -17,6 +18,7 @@ struct Composer: View {
     let onSend: () -> Void
 
     @State private var showAttachmentPicker = false
+    @FocusState private var isTextFieldFocused: Bool
 
     private var isOffline: Bool {
         appState.connectionState != .connected
@@ -48,9 +50,15 @@ struct Composer: View {
                     Button("Voice Note") { viewModel.startRecording() }
                 }
 
-                // Text input — AutoSizingTextView wrapper for reliable macOS auto-expand
-                MacTextView(text: $viewModel.inputText, onSend: sendMessageIfReady)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Text input — native SwiftUI TextField with vertical axis for auto-expand
+                TextField("Type a message...", text: $viewModel.inputText, axis: .vertical)
+                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .focused($isTextFieldFocused)
+                    .onSubmit {
+                        sendMessageIfReady()
+                    }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(themeManager.color(.bgPanel))
@@ -100,7 +108,7 @@ struct Composer: View {
         .background(themeManager.color(.bgSurface))
     }
 
-    /// Called by MacTextView's Enter key and by the send button
+    /// Called by Cmd+Enter and by the send button
     private func sendMessageIfReady() {
         guard viewModel.canSend, !isOffline else { return }
         onSend()
