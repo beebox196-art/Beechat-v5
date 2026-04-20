@@ -76,8 +76,8 @@ struct MainWindow: View {
                 .padding(.vertical, 8)
                 .animation(.easeInOut(duration: 0.2), value: messageViewModel.selectedTopicId)
             }
+            .navigationSplitViewColumnWidth(220)
             .background(themeManager.color(.bgSurface))
-            .overlay(WindowBackgroundFix(nsColor: NSColor(red: 0.973, green: 0.965, blue: 0.941, alpha: 1.0)))
             .onKeyPress(.delete) {
                 if let id = messageViewModel.selectedTopicId {
                     deleteTopic(id)
@@ -109,8 +109,8 @@ struct MainWindow: View {
                 Composer(viewModel: composerViewModel, onSend: sendMessage)
             }
             .background(themeManager.color(.bgSurface))
-            .overlay(WindowBackgroundFix(nsColor: NSColor(red: 0.973, green: 0.965, blue: 0.941, alpha: 1.0)))
         }
+        .navigationSplitViewStyle(.automatic)
         .onAppear {
             wireUpObservers()
         }
