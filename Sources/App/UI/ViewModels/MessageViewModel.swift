@@ -1,6 +1,7 @@
 import SwiftUI
 import BeeChatPersistence
 import BeeChatSyncBridge
+import GRDB
 
 /// View model for the message list.
 /// Reads from MessageListObserver (GRDB-backed), NOT from SyncBridge directly.
@@ -10,9 +11,9 @@ final class MessageViewModel {
     var topics: [TopicViewModel] = []
     var selectedTopicId: String?
 
-    private let sessionListObserver = SessionListObserver()
     private let messageListObserver = MessageListObserver()
     private weak var syncBridge: SyncBridge?
+    private var localMessageCancellable: DatabaseCancellable?
 
     var selectedTopic: TopicViewModel? {
         topics.first { $0.id == selectedTopicId }
@@ -22,15 +23,35 @@ final class MessageViewModel {
         messageListObserver.messages
     }
 
+    /// Start gateway-dependent observation (session list via SyncBridge stream).
+    /// Note: Session list is now driven by the local GRDB ValueObservation in MainWindow,
+    /// so this only stores the syncBridge reference and starts gateway message streams.
     func start(syncBridge: SyncBridge) {
         self.syncBridge = syncBridge
-        sessionListObserver.startObserving(syncBridge: syncBridge)
     }
 
     func stop() {
-        sessionListObserver.stopObserving()
         messageListObserver.stopObserving()
+        localMessageCancellable?.cancel()
+        localMessageCancellable = nil
         syncBridge = nil
+    }
+
+    /// Start local GRDB message observation for the currently selected topic.
+    /// This works without a gateway connection — reads directly from the database.
+    func startLocalMessageObservation() {
+        guard let key = selectedTopicId else { return }
+        startLocalMessageObservation(for: key)
+    }
+
+    /// Start gateway message observation for a specific session.
+    /// Switches from local GRDB observation to the SyncBridge AsyncStream.
+    func startGatewayMessageObservation(sessionKey: String) {
+        guard let bridge = syncBridge else { return }
+        // Cancel local observation — gateway stream takes over
+        localMessageCancellable?.cancel()
+        localMessageCancellable = nil
+        messageListObserver.startObserving(syncBridge: bridge, sessionKey: sessionKey)
     }
 
     /// Called when session list changes — updates topic list.
@@ -58,10 +79,12 @@ final class MessageViewModel {
             selectedTopicId = topics.first?.id
         }
 
-        // If selection changed, start observing messages for new session
+        // Start message observation for selected topic
         if let key = selectedTopicId, key != messageListObserver.sessionKey {
             if let syncBridge {
                 messageListObserver.startObserving(syncBridge: syncBridge, sessionKey: key)
+            } else {
+                startLocalMessageObservation(for: key)
             }
         }
     }
@@ -72,6 +95,8 @@ final class MessageViewModel {
         selectedTopicId = id
         if let syncBridge = syncBridge {
             messageListObserver.startObserving(syncBridge: syncBridge, sessionKey: id)
+        } else {
+            startLocalMessageObservation(for: id)
         }
     }
 
@@ -95,6 +120,8 @@ final class MessageViewModel {
         selectedTopicId = topic.id
         if let syncBridge = syncBridge {
             messageListObserver.startObserving(syncBridge: syncBridge, sessionKey: topic.id)
+        } else {
+            startLocalMessageObservation(for: topic.id)
         }
     }
 
@@ -103,9 +130,46 @@ final class MessageViewModel {
         topics.removeAll { $0.id == id }
         if selectedTopicId == id {
             selectedTopicId = topics.first?.id
-            if let key = selectedTopicId, let syncBridge = syncBridge {
-                messageListObserver.startObserving(syncBridge: syncBridge, sessionKey: key)
+            if let key = selectedTopicId {
+                if let syncBridge = syncBridge {
+                    messageListObserver.startObserving(syncBridge: syncBridge, sessionKey: key)
+                } else {
+                    startLocalMessageObservation(for: key)
+                }
             }
+        }
+    }
+
+    // MARK: - Local GRDB Message Observation
+
+    /// Start a local GRDB ValueObservation for messages in a given session.
+    /// Used when there's no gateway connection — reads directly from the database.
+    private func startLocalMessageObservation(for sessionKey: String) {
+        // Cancel any existing local observation
+        localMessageCancellable?.cancel()
+
+        let observation = ValueObservation.tracking { db in
+            try Message
+                .filter(Column("sessionId") == sessionKey)
+                .order(Column("timestamp").asc)
+                .limit(500)
+                .fetchAll(db)
+        }
+
+        do {
+            let writer = try DatabaseManager.shared.writer
+            localMessageCancellable = observation.start(
+                in: writer,
+                scheduling: .mainActor,
+                onError: { error in
+                    print("[MessageViewModel] Local message observation error: \(error)")
+                },
+                onChange: { [weak self] messages in
+                    self?.messageListObserver.updateMessages(messages)
+                }
+            )
+        } catch {
+            print("[MessageViewModel] Failed to start local message observation: \(error)")
         }
     }
 }

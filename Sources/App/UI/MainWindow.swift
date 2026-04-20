@@ -20,27 +20,36 @@ struct MainWindow: View {
     @State private var deleteErrorMsg: String?
     @FocusState private var isNewTopicFieldFocused: Bool
 
+    /// Sidebar selection binding — two-way: reads from and writes to messageViewModel.selectedTopicId.
+    /// When the user clicks a topic, this sets the selectedTopicId which triggers
+    /// onChange → selectTopic() → message observation starts.
+    private var sidebarSelection: Binding<String?> {
+        Binding(
+            get: { messageViewModel.selectedTopicId },
+            set: { newId in
+                if let id = newId, id != messageViewModel.selectedTopicId {
+                    messageViewModel.selectTopic(id: id)
+                }
+            }
+        )
+    }
+
     var body: some View {
         NavigationSplitView {
             // SIDEBAR — topic list + bottom action bar
             VStack(spacing: 0) {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(messageViewModel.topics) { topic in
-                            NavigationLink(value: topic.id) {
-                                SessionRow(topic: topic)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 6)
-                            }
-                            .buttonStyle(.plain)
+                List(selection: sidebarSelection) {
+                    ForEach(messageViewModel.topics) { topic in
+                        SessionRow(topic: topic)
+                            .tag(topic.id as String?)
                             .contextMenu {
                                 Button("Delete Topic", role: .destructive) {
                                     deleteTopic(topic.id)
                                 }
                             }
-                        }
                     }
                 }
+                .listStyle(.sidebar)
                 .scrollContentBackground(.hidden)
                 .background(themeManager.color(.bgSurface))
                 .frame(maxHeight: .infinity)
@@ -106,7 +115,7 @@ struct MainWindow: View {
                     Color.clear.frame(maxHeight: .infinity)
                 }
                 Divider()
-                Composer(viewModel: composerViewModel, onSend: sendMessage)
+                Composer(viewModel: composerViewModel, onSend: composerSend)
             }
             .background(themeManager.color(.bgSurface))
         }
@@ -177,6 +186,9 @@ struct MainWindow: View {
         // This feeds into the same updateTopics() path regardless of gateway state.
         startLocalSessionObservation()
 
+        // Start local GRDB observation for messages (gateway-independent).
+        messageViewModel.startLocalMessageObservation()
+
         if let bridge = appState.syncBridge {
             rewireForGateway(bridge)
         } else {
@@ -194,13 +206,16 @@ struct MainWindow: View {
         // Attach SyncBridgeObserver as delegate
         syncBridgeObserver.attach(bridge)
 
-        // Start messageViewModel observing
+        // Start messageViewModel gateway-dependent observation
         messageViewModel.start(syncBridge: bridge)
 
         // Configure composer
         composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
 
-
+        // Re-observe messages for current topic via gateway stream
+        if let key = messageViewModel.selectedTopicId {
+            messageViewModel.startGatewayMessageObservation(sessionKey: key)
+        }
     }
 
     /// Start a standalone GRDB ValueObservation on the sessions table.
@@ -233,16 +248,11 @@ struct MainWindow: View {
 
     // MARK: - Actions
 
-    private func sendMessage() {
+    /// Composer send — delegates to ComposerViewModel.send() which handles
+    /// text clearing and error recovery internally.
+    private func composerSend() {
         Task {
-            do {
-                try await messageViewModel.sendMessage(
-                    text: composerViewModel.inputText
-                )
-                composerViewModel.inputText = ""
-            } catch {
-                print("[MainWindow] Send failed: \(error)")
-            }
+            await composerViewModel.send()
         }
     }
 

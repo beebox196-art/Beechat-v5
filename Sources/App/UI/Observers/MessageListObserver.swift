@@ -4,6 +4,8 @@ import BeeChatSyncBridge
 
 /// UI-layer observer for message list changes per session.
 /// Wraps the SyncBridge MessageObserver AsyncStream into @Observable state.
+/// Also supports direct message updates from local GRDB observations
+/// (for offline/no-gateway mode).
 @MainActor
 @Observable
 final class MessageListObserver {
@@ -25,6 +27,12 @@ final class MessageListObserver {
                 self?.messages = messages
             }
         }
+    }
+
+    /// Directly update messages from a local GRDB ValueObservation.
+    /// Used when there's no gateway connection.
+    func updateMessages(_ messages: [Message]) {
+        self.messages = messages
     }
 
     func stopObserving() {
