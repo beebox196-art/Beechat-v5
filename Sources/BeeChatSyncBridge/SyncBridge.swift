@@ -53,18 +53,25 @@ public actor SyncBridge {
     }
     
     public func start() async throws {
+        print("[SyncBridge] start() called")
         // Initialize router now that self is fully initialized
         if eventRouter == nil {
             self.eventRouter = EventRouter(syncBridge: self)
         }
 
+        print("[SyncBridge] Calling gatewayClient.connect()...")
         try await config.gatewayClient.connect()
+        print("[SyncBridge] gatewayClient.connect() succeeded — connected!")
         
         // Subscribe to session changes
+        print("[SyncBridge] Calling sessionsSubscribe()...")
         try await rpcClient.sessionsSubscribe()
+        print("[SyncBridge] sessionsSubscribe() succeeded")
         
         // Initial sync
+        print("[SyncBridge] Calling fetchSessions()...")
         _ = try await fetchSessions()
+        print("[SyncBridge] fetchSessions() succeeded")
         
         // Start event processing loop
         eventProcessingTask = Task {
