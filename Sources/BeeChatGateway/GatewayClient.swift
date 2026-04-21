@@ -313,15 +313,15 @@ public actor GatewayClient {
             client: config.clientInfo,
             role: role,
             scopes: scopes,
-            caps: nil,
+            caps: ["tool-events"],
             commands: nil,
             permissions: nil,
             auth: .init(
                 token: config.token,
                 deviceToken: currentDeviceToken
             ),
-            locale: nil,
-            userAgent: nil,
+            locale: Locale.current.identifier,
+            userAgent: "BeeChat/1.0 (macOS)",
             device: deviceIdentity
         )
         

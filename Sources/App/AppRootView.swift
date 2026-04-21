@@ -166,16 +166,28 @@ final class AppState {
             throw AppStateError.malformedConfig("Missing 'gateway.auth.token' in openclaw.json")
         }
 
-        // Determine gateway URL — default to localhost:18789 for local development
-        let host = gateway["host"] as? String ?? "127.0.0.1"
-        let port = gateway["port"] as? Int ?? 18789
+        // Determine gateway URL based on mode
+        let mode = gateway["mode"] as? String ?? "local"
+        let host: String
+        let port: Int
+
+        if mode == "local" {
+            // Local mode always uses default localhost gateway
+            host = "127.0.0.1"
+            port = 18789
+        } else {
+            // Remote mode — use configured host/port or defaults
+            host = gateway["host"] as? String ?? "127.0.0.1"
+            port = gateway["port"] as? Int ?? 18789
+        }
         let wsURL = "ws://\(host):\(port)"
 
         return GatewayClient.Configuration(
             url: wsURL,
             token: token,
             clientMode: "webchat",
-            clientInfo: .init(id: "beechat-macos", version: "1.0", platform: "macos", mode: "webchat")
+            // Gateway requires a known client ID — use "openclaw-macos" for native macOS apps
+            clientInfo: .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: "webchat")
         )
     }
 }
