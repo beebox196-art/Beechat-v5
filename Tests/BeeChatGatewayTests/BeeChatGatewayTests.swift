@@ -430,3 +430,150 @@ final class GatewayEventTests: XCTestCase {
         XCTAssertEqual(ids.sorted(), ids, "Incrementing IDs should sort naturally")
     }
 }
+
+final class HelloOkResilienceTests: XCTestCase {
+    
+    func testHelloOkWithEmptyAuth() throws {
+        // The gateway sends auth: {} on first connection (no deviceToken yet)
+        let json = """
+        {
+            "type": "hello-ok",
+            "protocol": 3,
+            "server": {"id": "srv-abc123", "version": "1.0.0"},
+            "features": {"methods": ["sessions.list"], "events": ["chat"]},
+            "policy": {"maxPayload": 1048576},
+            "auth": {}
+        }
+        """.data(using: .utf8)!
+        
+        let helloOk = try JSONDecoder().decode(HelloOk.self, from: json)
+        XCTAssertEqual(helloOk.protocol, 3)
+        XCTAssertEqual(helloOk.policy.maxPayload, 1048576)
+        XCTAssertNil(helloOk.auth?.deviceToken, "deviceToken should be nil for empty auth")
+        XCTAssertNil(helloOk.auth?.role, "role should be nil for empty auth")
+        XCTAssertNil(helloOk.auth?.scopes, "scopes should be nil for empty auth")
+        XCTAssertEqual(helloOk.server.version, "1.0.0")
+    }
+    
+    func testHelloOkWithServerIdInsteadOfConnId() throws {
+        // The gateway may send "id" instead of "connId" in the server object
+        let json = """
+        {
+            "type": "hello-ok",
+            "protocol": 3,
+            "server": {"id": "conn-xyz789", "version": "1.0.0"},
+            "features": {"methods": [], "events": []},
+            "policy": {"maxPayload": 2097152},
+            "auth": {"deviceToken": "dt-abc123", "role": "operator", "scopes": ["operator.read", "operator.write"]}
+        }
+        """.data(using: .utf8)!
+        
+        let helloOk = try JSONDecoder().decode(HelloOk.self, from: json)
+        XCTAssertEqual(helloOk.server.connId, "conn-xyz789", "Should map server.id to connId")
+        XCTAssertEqual(helloOk.server.version, "1.0.0")
+        XCTAssertEqual(helloOk.auth?.deviceToken, "dt-abc123")
+        XCTAssertEqual(helloOk.auth?.role, "operator")
+        XCTAssertEqual(helloOk.auth?.scopes, ["operator.read", "operator.write"])
+    }
+    
+    func testHelloOkWithMinimalFields() throws {
+        // Minimal hello-ok with just required fields
+        let json = """
+        {
+            "type": "hello-ok",
+            "protocol": 3,
+            "server": {"version": "0.1.0"},
+            "policy": {"maxPayload": 524288}
+        }
+        """.data(using: .utf8)!
+        
+        let helloOk = try JSONDecoder().decode(HelloOk.self, from: json)
+        XCTAssertEqual(helloOk.protocol, 3)
+        XCTAssertEqual(helloOk.server.version, "0.1.0")
+        XCTAssertNil(helloOk.server.connId)
+        XCTAssertEqual(helloOk.policy.maxPayload, 524288)
+        XCTAssertNil(helloOk.auth, "auth should be nil when not provided")
+        XCTAssertNil(helloOk.features.methods)
+        XCTAssertNil(helloOk.features.events)
+    }
+    
+    func testHelloOkWithDeviceToken() throws {
+        let json = """
+        {
+            "type": "hello-ok",
+            "protocol": 3,
+            "server": {"connId": "c-123", "version": "2.0.0"},
+            "features": {"methods": ["sessions.list", "chat.send"], "events": ["chat", "tick"]},
+            "policy": {"maxPayload": 1048576},
+            "auth": {"deviceToken": "dt-abc123", "role": "operator", "scopes": ["operator.read"]}
+        }
+        """.data(using: .utf8)!
+        
+        let helloOk = try JSONDecoder().decode(HelloOk.self, from: json)
+        XCTAssertEqual(helloOk.protocol, 3)
+        XCTAssertEqual(helloOk.policy.maxPayload, 1048576)
+        XCTAssertEqual(helloOk.auth?.deviceToken, "dt-abc123")
+        XCTAssertEqual(helloOk.server.connId, "c-123")
+    }
+    
+    func testHelloOkParsingFromRawJSON() throws {
+        // Original test from the test file
+        let rawJSON = """
+        {
+            "type": "hello-ok",
+            "protocol": 3,
+            "server": {"id": "test-server", "version": "1.0.0"},
+            "features": {"methods": ["sessions.list", "chat.send"], "events": ["chat", "tick"]},
+            "policy": {"maxPayload": 1048576},
+            "auth": {"deviceToken": "dt-abc123", "role": "operator", "scopes": ["operator.read"]}
+        }
+        """.data(using: .utf8)!
+        
+        let helloOk = try JSONDecoder().decode(HelloOk.self, from: rawJSON)
+        XCTAssertEqual(helloOk.protocol, 3)
+        XCTAssertEqual(helloOk.policy.maxPayload, 1048576)
+        XCTAssertEqual(helloOk.auth?.deviceToken, "dt-abc123")
+    }
+    
+    func testHelloOkViaAnyCodableRoundTrip() throws {
+        // Simulates the path: raw JSON → ResponseFrame → payload → encode → decode as HelloOk
+        let rawJSON = """
+        {
+            "type": "res",
+            "id": "handshake",
+            "ok": true,
+            "payload": {
+                "type": "hello-ok",
+                "protocol": 3,
+                "server": {"id": "conn-123", "version": "1.0.0"},
+                "features": {"methods": ["sessions.list"], "events": ["chat"]},
+                "policy": {"maxPayload": 1048576},
+                "auth": {}
+            }
+        }
+        """.data(using: .utf8)!
+        
+        // Decode as ResponseFrame (what GatewayClient receives)
+        var responseFrame = try JSONDecoder().decode(ResponseFrame.self, from: rawJSON)
+        responseFrame.rawData = rawJSON
+        
+        // Verify the frame
+        XCTAssertTrue(responseFrame.ok)
+        XCTAssertEqual(responseFrame.id, "handshake")
+        XCTAssertNotNil(responseFrame.payload)
+        
+        // Attempt 1: Decode from rawData (most reliable path)
+        let rawJson = try JSONSerialization.jsonObject(with: rawJSON) as! [String: Any]
+        let payloadObj = rawJson["payload"] as! [String: Any]
+        let payloadData = try JSONSerialization.data(withJSONObject: payloadObj)
+        let helloOk1 = try JSONDecoder().decode(HelloOk.self, from: payloadData)
+        XCTAssertEqual(helloOk1.protocol, 3)
+        XCTAssertNil(helloOk1.auth?.deviceToken, "Empty auth should decode with nil deviceToken")
+        XCTAssertEqual(helloOk1.server.connId, "conn-123", "server.id should map to connId")
+        
+        // Attempt 2: Decode from payload via AnyCodable round-trip
+        let payloadAnyCodableData = try JSONEncoder().encode(responseFrame.payload!)
+        let helloOk2 = try JSONDecoder().decode(HelloOk.self, from: payloadAnyCodableData)
+        XCTAssertEqual(helloOk2.protocol, 3)
+    }
+}
