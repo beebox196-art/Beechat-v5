@@ -31,17 +31,16 @@ struct StreamingBubble: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(themeManager.color(.bgSurface))
+                    .fill(themeManager.color(.bgPanel))
             )
             .foregroundColor(themeManager.color(.textPrimary))
             .shadow(
                 color: themeManager.color(.shadowMedium).opacity(0.1),
                 radius: 4, x: 0, y: 2
             )
-            .frame(maxWidth: .infinity)
             .modifier(BubbleWidthModifier())
 
             Spacer(minLength: 34)

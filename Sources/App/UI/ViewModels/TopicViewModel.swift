@@ -1,27 +1,29 @@
 import Foundation
 import BeeChatPersistence
 
-/// UI-layer view model wrapping Session for topic display.
-/// Derives from Session, adds UI-only presentation fields.
-/// Topic ordering: alphabetical by title, case-insensitive.
+/// UI-layer view model wrapping Topic for sidebar display.
+/// Derives from Topic (NOT Session), adds UI-only presentation fields.
+/// Topic ordering: alphabetical by name, case-insensitive.
 struct TopicViewModel: Identifiable, Hashable {
-    let id: String          // = Session.id (session key)
-    var title: String       // = Session.title ?? "Untitled"
+    let id: String          // = Topic.id
+    var title: String       // = Topic.name
     var icon: String?       // UI-only: SF Symbol name, stored in UserDefaults
-    var lastMessageAt: Date?
+    var sessionKey: String? // gateway session key for sending/observing messages
+    var lastActivityAt: Date?
     var unreadCount: Int
 
-    init(from session: Session, icon: String? = nil) {
-        self.id = session.id
-        self.title = session.title ?? "Untitled"
+    init(from topic: Topic, icon: String? = nil) {
+        self.id = topic.id
+        self.title = topic.name
         self.icon = icon
-        self.lastMessageAt = session.lastMessageAt
-        self.unreadCount = session.unreadCount
+        self.sessionKey = topic.sessionKey
+        self.lastActivityAt = topic.lastActivityAt
+        self.unreadCount = topic.unreadCount
     }
 
     /// Sorted list of TopicViewModels — alphabetical by title, case-insensitive.
-    static func sorted(from sessions: [Session]) -> [TopicViewModel] {
-        sessions
+    static func sorted(from topics: [Topic]) -> [TopicViewModel] {
+        topics
             .map { TopicViewModel(from: $0) }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }

@@ -9,6 +9,12 @@ public struct EventRouter {
         self.syncBridge = syncBridge
     }
     
+    /// Check whether a session key belongs to a BeeChat topic.
+    /// Events from non-BeeChat sessions (Telegram, cron, subagents) are silently dropped.
+    private func isBeeChatSession(_ sessionKey: String) async -> Bool {
+        return await syncBridge.isBeeChatSession(sessionKey)
+    }
+    
     public func route(event: String, payload: [String: AnyCodable]?) async {
         switch event {
         case "chat":
@@ -31,11 +37,12 @@ public struct EventRouter {
     private func handleChatEvent(payload: [String: AnyCodable]?) async {
         guard let payload = payload else { return }
         
-        let runId = payload["runId"]?.value as? String ?? ""
         let sessionKey = payload["sessionKey"]?.value as? String ?? ""
         let state = payload["state"]?.value as? String ?? ""
-        let seq = payload["seq"]?.value as? Int
         let errorMessage = payload["errorMessage"]?.value as? String
+        
+        // DROP all events from non-BeeChat sessions
+        guard await isBeeChatSession(sessionKey) else { return }
         
         // Extract message text from payload
         let messageDict = payload["message"]?.value as? [String: Any]
@@ -73,7 +80,7 @@ public struct EventRouter {
                     content: text,
                     timestamp: Date(timeIntervalSince1970: Double(timestamp / 1000))
                 )
-                try? await syncBridge.config.persistenceStore.saveMessage(message)
+                await syncBridge.saveGatewayMessage(message)
             }
             await syncBridge.processChatFinal(sessionKey: sessionKey)
         case "error":
@@ -93,6 +100,9 @@ public struct EventRouter {
             return
         }
         
+        // DROP all events from non-BeeChat sessions
+        guard await isBeeChatSession(sessionKey) else { return }
+        
         let ts = payload["ts"]?.value as? Int64 ?? 0
         let messageId = dataDict["id"] as? String ?? UUID().uuidString
         
@@ -104,7 +114,7 @@ public struct EventRouter {
             timestamp: Date(timeIntervalSince1970: Double(ts / 1000))
         )
         
-        try? await syncBridge.config.persistenceStore.saveMessage(message)
+        await syncBridge.saveGatewayMessage(message)
     }
     
     private func handleAgentEvent(payload: [String: AnyCodable]?) async {
@@ -117,6 +127,9 @@ public struct EventRouter {
               let dataDict = payload["data"]?.value as? [String: Any] else {
             return
         }
+        
+        // DROP all events from non-BeeChat sessions
+        guard await isBeeChatSession(sessionKey) else { return }
         
         let seq = payload["seq"]?.value as? Int
         let ts = payload["ts"]?.value as? Int64 ?? 0

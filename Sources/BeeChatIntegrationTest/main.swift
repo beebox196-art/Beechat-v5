@@ -51,9 +51,9 @@ struct IntegrationTest {
         // Second run: uses stored deviceToken to get operator scopes
         let tokenStore = KeychainTokenStore()
         
-        // Gateway validates client.id against known IDs: cli, openclaw-macos, openclaw-control-ui, etc.
+        // Gateway validates client.id against known IDs: cli, openclaw-control-ui, openclaw-control-ui, etc.
         // Gateway validates client.mode against known modes: cli, ui, webchat, backend, node, probe, test
-        // We use "openclaw-macos" (native macOS app) and "ui" (interactive UI mode)
+        // We use "openclaw-control-ui" (native macOS app) and "ui" (interactive UI mode)
         let config = GatewayClient.Configuration(
             url: "ws://127.0.0.1:18789",
             token: token,

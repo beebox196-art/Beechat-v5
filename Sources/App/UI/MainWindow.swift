@@ -12,7 +12,7 @@ struct MainWindow: View {
     @State private var syncBridgeObserver = SyncBridgeObserver()
     @State private var isObserving = false
     @State private var isGatewayWired = false
-    @State private var localSessionCancellable: DatabaseCancellable?
+    @State private var localTopicCancellable: DatabaseCancellable?
     @State private var showNewTopicDialog = false
     @State private var newTopicTitle = ""
 
@@ -103,14 +103,20 @@ struct MainWindow: View {
             // DETAIL — chat view
             VStack(spacing: 0) {
                 // Thin status bar at top of detail pane
-                GatewayStatusBar(connectionState: appState.connectionState)
+                GatewayStatusBar(connectionState: appState.connectionState, detailText: appState.offlineStatus ?? appState.errorMessage)
                 Divider()
 
                 if messageViewModel.selectedTopic != nil {
+                    // Filter streaming content to only show for the currently active topic
+                    let isActiveTopicStreaming = syncBridgeObserver.isStreaming
+                        && syncBridgeObserver.streamingSessionKey == messageViewModel.selectedTopicId
+                    let activeTopicStreamingContent = isActiveTopicStreaming
+                        ? syncBridgeObserver.streamingContent : ""
+
                     MessageCanvas(
                         messages: messageViewModel.messages,
-                        isStreaming: syncBridgeObserver.isStreaming,
-                        streamingContent: syncBridgeObserver.streamingContent
+                        isStreaming: isActiveTopicStreaming,
+                        streamingContent: activeTopicStreamingContent
                     )
                 } else {
                     Color.clear.frame(maxHeight: .infinity)
@@ -122,11 +128,13 @@ struct MainWindow: View {
         }
         .navigationSplitViewStyle(.automatic)
         .onAppear {
-            wireUpObservers()
+            if appState.isReady {
+                wireUpObservers()
+            }
         }
         .onDisappear {
-            localSessionCancellable?.cancel()
-            localSessionCancellable = nil
+            localTopicCancellable?.cancel()
+            localTopicCancellable = nil
         }
         .onChange(of: appState.isReady) { _, ready in
             if ready {
@@ -180,12 +188,13 @@ struct MainWindow: View {
     // MARK: - Wiring
 
     private func wireUpObservers() {
+        guard appState.isReady else { return }
         guard !isObserving else { return }
         isObserving = true
 
-        // Unified read path: start local GRDB ValueObservation for sessions.
-        // This feeds into the same updateTopics() path regardless of gateway state.
-        startLocalSessionObservation()
+        // Start local GRDB ValueObservation for TOPICS (not sessions).
+        // This feeds into updateTopics() — sidebar shows topics only.
+        startLocalTopicObservation()
 
         // Start local GRDB observation for messages (gateway-independent).
         messageViewModel.startLocalMessageObservation()
@@ -214,36 +223,39 @@ struct MainWindow: View {
         composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
 
         // Re-observe messages for current topic via gateway stream
-        if let key = messageViewModel.selectedTopicId {
-            messageViewModel.startGatewayMessageObservation(sessionKey: key)
+        if let topicId = messageViewModel.selectedTopicId {
+            let topicRepo = TopicRepository()
+            if let sessionKey = try? topicRepo.resolveSessionKey(topicId: topicId) {
+                messageViewModel.startGatewayMessageObservation(sessionKey: sessionKey)
+            }
         }
     }
 
-    /// Start a standalone GRDB ValueObservation on the sessions table.
-    /// This provides a unified read path (observer → updateTopics) whether or not
-    /// the gateway is connected. Replaces the old loadLocalSessions() direct fetch.
-    private func startLocalSessionObservation() {
+    /// Start a standalone GRDB ValueObservation on the TOPICS table.
+    /// This is the sidebar data source — topics only, zero sessions.
+    private func startLocalTopicObservation() {
         let observation = ValueObservation.tracking { db in
-            try Session
-                .order(Column("lastMessageAt").desc)
+            try Topic
+                .filter(Column("isArchived") == false)
+                .order(Column("lastActivityAt").desc)
                 .limit(100)
                 .fetchAll(db)
         }
 
         do {
             let writer = try DatabaseManager.shared.writer
-            localSessionCancellable = observation.start(
+            localTopicCancellable = observation.start(
                 in: writer,
                 scheduling: .mainActor,
                 onError: { error in
-                    print("[MainWindow] Local session observation error: \(error)")
+                    print("[MainWindow] Local topic observation error: \(error)")
                 },
-                onChange: { [weak messageViewModel] sessions in
-                    messageViewModel?.updateTopics(from: sessions)
+                onChange: { [weak messageViewModel] topics in
+                    messageViewModel?.updateTopics(from: topics)
                 }
             )
         } catch {
-            print("[MainWindow] Failed to start local session observation: \(error)")
+            print("[MainWindow] Failed to start local topic observation: \(error)")
         }
     }
 
@@ -257,6 +269,8 @@ struct MainWindow: View {
         }
     }
 
+    /// Create a new topic — persists to the topics table.
+    /// If the gateway is connected, sends an initial message to create a session.
     private func createNewTopic() {
         guard !newTopicTitle.isEmpty else { return }
         let title = newTopicTitle
@@ -264,25 +278,38 @@ struct MainWindow: View {
 
         Task {
             do {
-                // Create a local session and persist it
-                let newSession = Session(
-                    id: "local-\(UUID().uuidString)",
-                    agentId: "bee",
-                    channel: "beechat",
-                    title: title,
-                    lastMessageAt: Date(),
-                    unreadCount: 0,
-                    isPinned: false
+                // Create a Topic and persist it
+                let newTopic = Topic(
+                    id: UUID().uuidString,
+                    name: title,
+                    lastActivityAt: Date()
                 )
 
-                // Persist to database — the ValueObservation will pick it up
-                let repo = SessionRepository()
-                try repo.save(newSession)
-                print("[MainWindow] Created topic: \(title) (\(newSession.id))")
+                let topicRepo = TopicRepository()
+                try topicRepo.save(newTopic)
+                print("[MainWindow] Created topic: \(title) (\(newTopic.id))")
 
                 // Select the new topic (ValueObservation handles the list update)
                 await MainActor.run {
-                    messageViewModel.addLocalTopic(newSession)
+                    messageViewModel.addLocalTopic(newTopic)
+                }
+
+                // If gateway is connected, send an initial message to create a gateway session
+                if let bridge = appState.syncBridge {
+                    do {
+                        let runId = try await bridge.sendMessage(
+                            sessionKey: newTopic.id,
+                            text: "Start",
+                            thinking: nil
+                        )
+                        // Update the topic with the session key (which is the topic id for now)
+                        try topicRepo.updateSessionKey(topicId: newTopic.id, sessionKey: newTopic.id)
+                        try topicRepo.saveBridge(topicId: newTopic.id, sessionKey: newTopic.id)
+                        print("[MainWindow] Gateway session created for topic \(newTopic.id), runId: \(runId)")
+                    } catch {
+                        // Session creation failed — topic still exists locally
+                        print("[MainWindow] Gateway session creation failed (topic still local): \(error)")
+                    }
                 }
             } catch {
                 print("[MainWindow] Create topic failed: \(error)")
@@ -297,8 +324,8 @@ struct MainWindow: View {
     private func deleteTopic(_ id: String) {
         Task { @MainActor in
             do {
-                let repo = SessionRepository()
-                try repo.deleteCascading(id)
+                let topicRepo = TopicRepository()
+                try topicRepo.deleteCascading(id)
                 messageViewModel.removeTopic(id: id)
             } catch {
                 print("🔴 Delete topic failed: \(error)")

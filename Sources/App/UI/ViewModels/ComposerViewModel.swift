@@ -28,9 +28,10 @@ final class ComposerViewModel {
         do {
             try await messageViewModel?.sendMessage(text: text)
         } catch {
-            // Restore text on failure so user doesn't lose their message
-            inputText = text
-            print("[ComposerViewModel] Send failed: \(error)")
+            // Don't restore text — the message was already persisted locally.
+            // If the RPC failed, the message appears in the list but wasn't delivered.
+            // A future reconciliation pass will retry failed deliveries.
+            print("[ComposerViewModel] Send RPC failed (message persisted locally): \(error)")
         }
     }
 

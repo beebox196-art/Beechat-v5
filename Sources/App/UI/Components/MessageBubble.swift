@@ -43,7 +43,7 @@ struct MessageBubble: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Chat bubble (left/right aligned, 66% width)
+    // MARK: - Chat bubble (dynamically sized, 66% max width)
 
     private var chatBubble: some View {
         HStack {
@@ -67,19 +67,17 @@ struct MessageBubble: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: isFromUser ? .trailing : .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(isFromUser ? themeManager.color(.accentPrimary) : themeManager.color(.bgSurface))
+                    .fill(isFromUser ? themeManager.color(.accentPrimary) : themeManager.color(.bgPanel))
             )
             .foregroundColor(isFromUser ? themeManager.color(.textOnAccent) : themeManager.color(.textPrimary))
             .shadow(
                 color: themeManager.color(.shadowMedium).opacity(0.1),
                 radius: 4, x: 0, y: 2
             )
-            // 66% fixed bubble width constraint
-            .frame(maxWidth: .infinity)
-            .modifier(BubbleWidthModifier())
+            .modifier(BubbleWidthModifier(alignment: isFromUser ? .trailing : .leading))
 
             if !isFromUser { Spacer(minLength: 34) }
         }
@@ -93,16 +91,27 @@ struct MessageBubble: View {
 /// regardless of HStack spacer widths.
 struct BubbleWidthModifier: ViewModifier {
     @Environment(\.canvasWidth) var canvasWidth
+    var alignment: Alignment = .leading
     
     func body(content: Content) -> some View {
         content
-            .frame(maxWidth: canvasWidth * 0.66, alignment: .leading)
+            .frame(maxWidth: canvasWidth * 0.66, alignment: alignment)
+    }
+}
+
+/// Convenience initializers
+extension BubbleWidthModifier {
+    static func leading(canvasWidth: CGFloat = 1200) -> BubbleWidthModifier {
+        BubbleWidthModifier(alignment: .leading)
+    }
+    static func trailing(canvasWidth: CGFloat = 1200) -> BubbleWidthModifier {
+        BubbleWidthModifier(alignment: .trailing)
     }
 }
 
 /// Environment key for the canvas width, measured at the MessageCanvas level.
 struct CanvasWidthKey: EnvironmentKey {
-    static let defaultValue: CGFloat = 800 // fallback
+    static let defaultValue: CGFloat = 1200 // fallback — supports 100-char lines at 66%
 }
 
 extension EnvironmentValues {

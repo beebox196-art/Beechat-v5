@@ -6,12 +6,16 @@ import BeeChatGateway
 struct GatewayStatusBar: View {
     @Environment(ThemeManager.self) var themeManager
     let connectionState: ConnectionState
+    var detailText: String? = nil
 
     private var isConnected: Bool {
         connectionState == .connected
     }
 
     private var statusText: String {
+        if let detail = detailText, !detail.isEmpty {
+            return detail
+        }
         switch connectionState {
         case .connected:
             return "Connected"

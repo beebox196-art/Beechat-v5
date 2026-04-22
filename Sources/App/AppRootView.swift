@@ -2,6 +2,7 @@ import SwiftUI
 import BeeChatSyncBridge
 import BeeChatPersistence
 import BeeChatGateway
+import os
 
 /// App root view — entry point for the BeeChat window.
 /// Sets up the theme environment and wires the main window.
@@ -52,7 +53,13 @@ final class AppState {
     var errorMessage: String?
     var offlineStatus: String?
 
+    private var hasStarted = false
+
+    init() {}
+
     func startup() {
+        guard !hasStarted else { return }
+        hasStarted = true
         Task {
             do {
                 // Open database
@@ -66,6 +73,7 @@ final class AppState {
                 // Try to load gateway config from openclaw.json — surface errors properly
                 let configPath = FileManager.default.homeDirectoryForCurrentUser
                     .appendingPathComponent(".openclaw/openclaw.json")
+
 
                 if FileManager.default.fileExists(atPath: configPath.path) {
                     // Config file exists — parse it, surface errors if malformed
@@ -88,7 +96,6 @@ final class AppState {
                         do {
                             try await bridge.start()
                             self.connectionState = .connected
-                            print("[AppState] Connected to gateway")
 
                             // Subscribe to live connection state so reconnections update the UI
                             Task {
@@ -98,7 +105,8 @@ final class AppState {
                                 }
                             }
                         } catch {
-                            print("[AppState] Gateway unavailable — offline mode: \(error)")
+                            self.connectionState = .error
+                            self.offlineStatus = "Offline — \(error.localizedDescription)"
                         }
                     } catch {
                         // Config file exists but is malformed — surface the error
@@ -186,8 +194,9 @@ final class AppState {
             url: wsURL,
             token: token,
             clientMode: "webchat",
-            // Gateway requires a known client ID — use "openclaw-macos" for native macOS apps
-            clientInfo: .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: "webchat")
+            // Gateway auto-approves control-ui from localhost — use this for now
+            // (openclaw-macos requires device pairing which isn't implemented yet)
+            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "webchat")
         )
     }
 }
@@ -202,4 +211,8 @@ enum AppStateError: LocalizedError {
         case .malformedConfig(let msg): return msg
         }
     }
+}
+
+extension Logger {
+    static let appState = Logger(subsystem: "com.beechat.v5", category: "AppState")
 }

@@ -19,13 +19,16 @@ final class MessageListObserver {
         streamTask?.cancel()
         self.sessionKey = sessionKey
         self.messages = []
+        print("[MessageListObserver] 🐝 startObserving — sessionKey=\(sessionKey)")
 
         streamTask = Task { [weak self] in
             let stream = await syncBridge.messageStream(sessionKey: sessionKey)
             for await messages in stream {
                 guard !Task.isCancelled else { return }
+                print("[MessageListObserver] 🐝 Received \(messages.count) messages from stream — roles: \(messages.map { $0.role }.joined(separator: ","))")
                 self?.messages = messages
             }
+            print("[MessageListObserver] 🐝 Stream ended for sessionKey=\(sessionKey)")
         }
     }
 

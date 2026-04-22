@@ -10,6 +10,14 @@ public protocol MessageStore {
     func deleteSessionCascading(id: String) throws
     func updateUnreadCount(sessionId: String, count: Int) throws
     
+    // Topic operations
+    func saveTopic(_ topic: Topic) throws
+    func fetchAllActiveTopics(limit: Int) throws -> [Topic]
+    func deleteTopicCascading(id: String) throws
+    func updateTopicSessionKey(topicId: String, sessionKey: String) throws
+    func saveTopicBridge(topicId: String, sessionKey: String) throws
+    func resolveSessionKeyForTopic(topicId: String) throws -> String?
+    
     // Message operations
     func saveMessage(_ message: Message) throws
     func fetchMessages(sessionId: String, limit: Int, before: Date?) throws -> [Message]

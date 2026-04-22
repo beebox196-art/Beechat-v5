@@ -12,16 +12,25 @@ public struct MessageObserver {
     public func observeMessages(sessionKey: String) -> AsyncStream<[Message]> {
         AsyncStream { continuation in
             let observation = ValueObservation.tracking { db in
-                try Message.filter(Column("sessionId") == sessionKey).fetchAll(db)
+                try Message
+                    .filter(Column("sessionId") == sessionKey)
+                    .order(Column("timestamp").asc)
+                    .limit(500)
+                    .fetchAll(db)
             }
             
             do {
                 let writer = try dbManager.writer
-                let cancellable = observation.start(in: writer) { error in
-                    print("Message observation error: \(error)")
-                } onChange: { messages in
-                    continuation.yield(messages)
-                }
+                let cancellable = observation.start(
+                    in: writer,
+                    scheduling: .mainActor,
+                    onError: { error in
+                        print("Message observation error: \(error)")
+                    },
+                    onChange: { messages in
+                        continuation.yield(messages)
+                    }
+                )
                 
                 continuation.onTermination = { _ in
                     cancellable.cancel()

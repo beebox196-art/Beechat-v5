@@ -41,6 +41,7 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         Task { @MainActor in
             self.isStreaming = true
             self.streamingSessionKey = sessionKey
+            self.streamingContent = "" // Reset for new streaming session
             self.startStreamingPoll()
         }
     }
@@ -49,7 +50,10 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         Task { @MainActor in
             self.isStreaming = false
             self.streamingSessionKey = nil
-            self.streamingContent = ""
+            // Keep streamingContent intact so the streaming bubble remains visible
+            // until the GRDB ValueObservation delivers the persisted message.
+            // MessageCanvas dedup logic will hide the streaming bubble once the
+            // persisted assistant message matches.
             self.stopStreamingPoll()
         }
     }

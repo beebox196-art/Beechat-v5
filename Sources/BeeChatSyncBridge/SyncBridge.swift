@@ -13,6 +13,15 @@ public actor SyncBridge {
     private let sessionObserver: SessionObserver
     private let messageObserver: MessageObserver
     
+    /// Maps gateway session keys (e.g. "agent:main:05549141-d6da-...") to local topic IDs
+    /// (e.g. "05549141-D6DA-..."). Populated during fetchSessions and on demand.
+    private var sessionKeyMap: [String: String] = [:]
+    
+    /// Cache of session keys that belong to BeeChat topics.
+    /// Populated during fetchSessions and on demand. Used by EventRouter
+    /// to filter out non-BeeChat events (Telegram, cron, subagent sessions).
+    private var beechatSessionKeys: Set<String> = []
+    
     public weak var delegate: SyncBridgeDelegate?
     
     /// Set the delegate from outside the actor. Needed because the delegate property
@@ -53,25 +62,18 @@ public actor SyncBridge {
     }
     
     public func start() async throws {
-        print("[SyncBridge] start() called")
         // Initialize router now that self is fully initialized
         if eventRouter == nil {
             self.eventRouter = EventRouter(syncBridge: self)
         }
 
-        print("[SyncBridge] Calling gatewayClient.connect()...")
         try await config.gatewayClient.connect()
-        print("[SyncBridge] gatewayClient.connect() succeeded — connected!")
         
         // Subscribe to session changes
-        print("[SyncBridge] Calling sessionsSubscribe()...")
         try await rpcClient.sessionsSubscribe()
-        print("[SyncBridge] sessionsSubscribe() succeeded")
         
         // Initial sync
-        print("[SyncBridge] Calling fetchSessions()...")
         _ = try await fetchSessions()
-        print("[SyncBridge] fetchSessions() succeeded")
         
         // Start event processing loop
         eventProcessingTask = Task {
@@ -118,30 +120,147 @@ public actor SyncBridge {
         currentStreamingSessionKey = nil
     }
     
+    // MARK: - BeeChat session filtering
+    
+    /// Check whether a gateway session key belongs to a BeeChat topic.
+    /// Returns true only if the session key maps to a known topic (via sessionKeyMap,
+    /// topics table, or topic_session_bridge table). All other sessions (Telegram,
+    /// cron, subagent) return false so their events are silently dropped.
+    func isBeeChatSession(_ sessionKey: String) -> Bool {
+        // Direct map hit
+        if sessionKeyMap[sessionKey] != nil { return true }
+        
+        // Check the in-memory set
+        if beechatSessionKeys.contains(sessionKey) { return true }
+        
+        // Database lookup via TopicRepository
+        let topicRepo = TopicRepository()
+        if (try? topicRepo.resolveTopicId(for: sessionKey)) != nil {
+            beechatSessionKeys.insert(sessionKey)
+            return true
+        }
+        
+        // Also try suffix matching (handles "agent:main:<uuid>" format)
+        let stripped: String
+        if sessionKey.hasPrefix("agent:main:") {
+            stripped = String(sessionKey.dropFirst("agent:main:".count))
+        } else {
+            stripped = sessionKey
+        }
+        if stripped != sessionKey, let topicId = try? topicRepo.resolveTopicIdBySuffix(gatewayKey: sessionKey, stripped: stripped) {
+            sessionKeyMap[sessionKey] = topicId
+            beechatSessionKeys.insert(sessionKey)
+            return true
+        }
+        
+        return false
+    }
+    
+    // MARK: - Session key normalization
+    
+    /// Normalize a gateway session key to the local topic ID.
+    /// Gateway keys look like "agent:main:<uuid>" (lowercase). Local topic IDs
+    /// are the original UUID (may differ in case). This method strips the
+    /// "agent:main:" prefix and resolves to the correct local topic ID.
+    func normalizeSessionKey(_ gatewayKey: String) -> String {
+        // Check the map first (O(1))
+        if let localId = sessionKeyMap[gatewayKey] {
+            return localId
+        }
+        
+        // Strip "agent:main:" prefix if present
+        let stripped: String
+        if gatewayKey.hasPrefix("agent:main:") {
+            stripped = String(gatewayKey.dropFirst("agent:main:".count))
+        } else {
+            stripped = gatewayKey
+        }
+        
+        // Try to find a topic whose ID matches case-insensitively
+        let topicRepo = TopicRepository()
+        if let topicId = try? topicRepo.resolveTopicIdBySuffix(gatewayKey: gatewayKey, stripped: stripped) {
+            sessionKeyMap[gatewayKey] = topicId
+            return topicId
+        }
+        
+        // No mapping found — return the original key unchanged
+        return gatewayKey
+    }
+    
     public func fetchSessions() async throws -> [Session] {
         let infos = try await rpcClient.sessionsList()
-        let sessions = infos.map { info in
-            let lastMsgDate = info.lastMessageAt.flatMap { ISO8601DateFormatter().date(from: $0) }
-            return Session(
-                id: info.key,
-                agentId: info.key,
-                channel: info.channel,
-                title: info.label,
-                lastMessageAt: lastMsgDate,
-                updatedAt: Date()
-            )
+        
+        // Populate the session key map and beechatSessionKeys from topics FIRST
+        let topicRepo = TopicRepository()
+        let allTopics = (try? topicRepo.fetchAllActive(limit: 500)) ?? []
+        let topicIdMap = Dictionary(uniqueKeysWithValues: allTopics.map { ($0.id.uppercased(), $0.id) })
+        
+        // Also index by sessionKey column (which stores gateway-format keys)
+        var sessionKeyToTopicId: [String: String] = [:]
+        for topic in allTopics {
+            if let sk = topic.sessionKey, !sk.isEmpty {
+                sessionKeyToTopicId[sk] = topic.id
+            }
         }
-        try config.persistenceStore.upsertSessions(sessions)
-        return sessions
+        
+        // Also index the bridge table entries
+        let bridgeEntries = (try? topicRepo.listAllBridgeSessionKeys()) ?? []
+        for (sessionKey, topicId) in bridgeEntries {
+            sessionKeyToTopicId[sessionKey] = topicId
+        }
+        
+        // Filter sessions: only keep those that map to BeeChat topics
+        var beechatSessions: [Session] = []
+        for info in infos {
+            let gatewayKey = info.key
+            let stripped: String
+            if gatewayKey.hasPrefix("agent:main:") {
+                stripped = String(gatewayKey.dropFirst("agent:main:".count))
+            } else {
+                stripped = gatewayKey
+            }
+            
+            // Check if this session belongs to a BeeChat topic
+            let topicId: String? = sessionKeyToTopicId[gatewayKey]
+                ?? topicIdMap[stripped.uppercased()]
+            
+            if let topicId = topicId {
+                // This session maps to a BeeChat topic — keep it
+                sessionKeyMap[gatewayKey] = topicId
+                beechatSessionKeys.insert(gatewayKey)
+                
+                let lastMsgDate = info.lastMessageAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+                beechatSessions.append(Session(
+                    id: info.key,
+                    agentId: info.key,
+                    channel: info.channel,
+                    title: info.label,
+                    lastMessageAt: lastMsgDate,
+                    updatedAt: Date()
+                ))
+            }
+            // Non-BeeChat sessions are silently ignored
+        }
+        
+        // Only persist BeeChat topic sessions (sidebar is topic-driven, not session-driven)
+        try config.persistenceStore.upsertSessions(beechatSessions)
+        
+        return beechatSessions
     }
     
     public func fetchHistory(sessionKey: String, limit: Int? = nil) async throws -> [Message] {
+        // Only fetch history for sessions that belong to BeeChat topics
+        guard isBeeChatSession(sessionKey) else {
+            return []
+        }
+        
         let fetchLimit = limit ?? config.historyFetchLimit
         let history = try await rpcClient.chatHistory(sessionKey: sessionKey, limit: fetchLimit)
+        let localSessionKey = normalizeSessionKey(sessionKey)
         let messages = history.map { payload in
             Message(
                 id: payload.id,
-                sessionId: payload.sessionKey,
+                sessionId: localSessionKey,
                 role: payload.role,
                 content: payload.content,
                 timestamp: payload.timestamp
@@ -210,6 +329,25 @@ public actor SyncBridge {
     
     // Internal helpers for EventRouter
     
+    /// Save a message from the gateway, normalizing the session key to the local topic ID.
+    internal func saveGatewayMessage(_ message: Message) {
+        let localKey = normalizeSessionKey(message.sessionId)
+        let normalized = Message(
+            id: message.id,
+            sessionId: localKey,
+            role: message.role,
+            content: message.content,
+            senderName: message.senderName,
+            senderId: message.senderId,
+            timestamp: message.timestamp,
+            editedAt: message.editedAt,
+            isRead: message.isRead,
+            metadata: message.metadata,
+            createdAt: message.createdAt
+        )
+        try? config.persistenceStore.saveMessage(normalized)
+    }
+    
     // MARK: - Chat event handlers (client-friendly format from gateway)
     
     /// Handle "chat" delta event — gateway sends accumulated text (replacement, not append)
@@ -227,6 +365,17 @@ public actor SyncBridge {
         if currentStreamingSessionKey == sessionKey {
             currentStreamingSessionKey = nil
         }
+        
+        // Fetch history BEFORE notifying the delegate so the persisted message
+        // is in the DB when the UI clears the streaming content.
+        // This prevents the visual gap where streaming content disappears
+        // before the persisted message appears.
+        do {
+            _ = try await fetchHistory(sessionKey: sessionKey)
+        } catch {
+            // Post-stream fetchHistory failed — non-critical
+        }
+        
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
     
@@ -237,6 +386,10 @@ public actor SyncBridge {
         if currentStreamingSessionKey == sessionKey {
             currentStreamingSessionKey = nil
         }
+        
+        // Fetch history before notifying the delegate so persisted messages are in the DB
+        try? await fetchHistory(sessionKey: sessionKey)
+        
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
     
@@ -255,7 +408,7 @@ public actor SyncBridge {
             lastSeenEventSeq = seq
         }
         
-        let runId = event.runId
+        _ = event.runId
         let sessionKey = event.sessionKey
         
         switch event.data.phase {
@@ -276,13 +429,17 @@ public actor SyncBridge {
                     content: text,
                     timestamp: Date(timeIntervalSince1970: Double(event.ts / 1000))
                 )
-                try? config.persistenceStore.saveMessage(message)
-                streamingBuffer.removeValue(forKey: sessionKey)
-                delegate?.syncBridge(self, didStopStreaming: sessionKey)
+                saveGatewayMessage(message)
             }
+            streamingBuffer.removeValue(forKey: sessionKey)
+            // Fetch history before notifying the delegate so persisted messages are in the DB
+            try? await fetchHistory(sessionKey: sessionKey)
+            delegate?.syncBridge(self, didStopStreaming: sessionKey)
         case "error":
             cancelStallTimer()
             streamingBuffer.removeValue(forKey: sessionKey)
+            // Fetch history before notifying the delegate
+            try? await fetchHistory(sessionKey: sessionKey)
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
         default:
             break
@@ -314,10 +471,11 @@ public actor SyncBridge {
     /// Clear stuck streaming state — marks the current stream as errored
     internal func clearStalledStream(reason: String) async {
         guard let sessionKey = currentStreamingSessionKey else { return }
-        print("[SyncBridge] \(reason) — clearing streaming state for session: \(sessionKey)")
         cancelStallTimer()
         streamingBuffer.removeValue(forKey: sessionKey)
         currentStreamingSessionKey = nil
+        // Fetch history before notifying so any partial message is persisted
+        try? await fetchHistory(sessionKey: sessionKey)
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
 }

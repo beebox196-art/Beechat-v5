@@ -12,8 +12,25 @@ struct MessageCanvas: View {
     let isStreaming: Bool
     var streamingContent: String = ""
 
+    /// Whether to show the streaming bubble.
+    /// Keeps the streaming bubble visible after streaming ends (isStreaming → false)
+    /// until the GRDB ValueObservation delivers the persisted assistant message.
+    /// Dedup: if the last persisted assistant message already contains the same
+    /// content, the streaming bubble is hidden to avoid duplication.
+    private var showStreamingBubble: Bool {
+        guard !streamingContent.isEmpty else { return false }
+        // Check if the last persisted assistant message already matches
+        if let lastAssistant = messages.last(where: { $0.role == "assistant" }),
+           let content = lastAssistant.content,
+           !content.isEmpty,
+           content == streamingContent {
+            return false
+        }
+        return true
+    }
+
     @State private var autoScroll = true
-    @State private var measuredWidth: CGFloat = 800
+    @State private var measuredWidth: CGFloat = 1200
 
     var body: some View {
         ZStack {
@@ -29,16 +46,15 @@ struct MessageCanvas: View {
                                 .id(message.id)
                         }
 
-                        if isStreaming {
-                            if streamingContent.isEmpty {
-                                // No text yet — show animated dots
-                                TypingIndicator()
-                                    .id("typing-indicator")
-                            } else {
-                                // Partial text arriving — show as live assistant bubble
-                                StreamingBubble(content: streamingContent)
-                                    .id("streaming-bubble")
-                            }
+                        if isStreaming && streamingContent.isEmpty {
+                            // Streaming just started — no text yet, show animated dots
+                            TypingIndicator()
+                                .id("typing-indicator")
+                        } else if showStreamingBubble {
+                            // Streaming text arriving, or streaming finished but persisted
+                            // message hasn't arrived yet — keep the bubble visible.
+                            StreamingBubble(content: streamingContent)
+                                .id("streaming-bubble")
                         }
 
                         // Bottom anchor for auto-scroll
@@ -62,6 +78,11 @@ struct MessageCanvas: View {
                 }
                 .onChange(of: isStreaming) { _, isNowStreaming in
                     if isNowStreaming {
+                        scrollToBottom(proxy: proxy)
+                    }
+                }
+                .onChange(of: showStreamingBubble) { _, isShowing in
+                    if isShowing {
                         scrollToBottom(proxy: proxy)
                     }
                 }
@@ -97,7 +118,7 @@ private struct WidthReader<Content: View>: View {
 
 /// Preference key for passing measured width up the view hierarchy.
 private struct WidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 800
+    static let defaultValue: CGFloat = 1200
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }

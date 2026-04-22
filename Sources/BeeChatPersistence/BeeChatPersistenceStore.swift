@@ -52,6 +52,34 @@ public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
         try sessionRepo.upsert(sessions)
     }
     
+    // MARK: - Topic operations
+    
+    private let topicRepo = TopicRepository()
+    
+    public func saveTopic(_ topic: Topic) throws {
+        try topicRepo.save(topic)
+    }
+    
+    public func fetchAllActiveTopics(limit: Int = 100) throws -> [Topic] {
+        try topicRepo.fetchAllActive(limit: limit)
+    }
+    
+    public func deleteTopicCascading(id: String) throws {
+        try topicRepo.deleteCascading(id)
+    }
+    
+    public func updateTopicSessionKey(topicId: String, sessionKey: String) throws {
+        try topicRepo.updateSessionKey(topicId: topicId, sessionKey: sessionKey)
+    }
+    
+    public func saveTopicBridge(topicId: String, sessionKey: String) throws {
+        try topicRepo.saveBridge(topicId: topicId, sessionKey: sessionKey)
+    }
+    
+    public func resolveSessionKeyForTopic(topicId: String) throws -> String? {
+        try topicRepo.resolveSessionKey(topicId: topicId)
+    }
+    
     // MARK: - Message operations
     
     public func saveMessage(_ message: Message) throws {
