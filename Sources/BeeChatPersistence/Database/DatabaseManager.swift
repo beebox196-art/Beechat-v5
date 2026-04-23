@@ -270,6 +270,20 @@ public class DatabaseManager {
                 """)
         }
 
+        migrator.registerMigration("Migration008_CreateBookmarks") { db in
+            if try !db.tableExists("bookmarks") {
+                try db.create(table: "bookmarks") { t in
+                    t.column("id", .text).primaryKey()
+                    t.column("name", .text).notNull()
+                    t.column("path", .text).notNull().unique()
+                    t.column("securityBookmark", .blob)
+                    t.column("iconName", .text).defaults(to: "folder")
+                    t.column("sortOrder", .integer).defaults(to: 0)
+                    t.column("createdAt", .datetime).notNull().defaults(to: Date())
+                }
+            }
+        }
+
         try migrator.migrate(dbPool!)
     }
 }

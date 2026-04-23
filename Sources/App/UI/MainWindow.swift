@@ -18,6 +18,7 @@ struct MainWindow: View {
     @State private var showDeleteAlert = false
     @State private var deleteErrorMsg: String?
     @State private var showThemePicker = false
+    @State private var showFolderPicker = false
     @FocusState private var isNewTopicFieldFocused: Bool
 
     private var sidebarSelection: Binding<String?> {
@@ -61,6 +62,16 @@ struct MainWindow: View {
                     .help("New Topic")
                     .accessibilityLabel("New Topic")
                     .accessibilityHint("Create a new conversation topic")
+
+                    Button(action: { showFolderPicker = true }) {
+                        Image(systemName: "folder.badge.plus")
+                            .font(themeManager.font(.subheading))
+                            .foregroundColor(themeManager.color(.textSecondary))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Folders")
+                    .accessibilityLabel("Folders")
+                    .accessibilityHint("Open favourite folders")
 
                     Spacer()
 
@@ -194,6 +205,10 @@ struct MainWindow: View {
         }
         .sheet(isPresented: $showThemePicker) {
             ThemePicker()
+                .environment(themeManager)
+        }
+        .sheet(isPresented: $showFolderPicker) {
+            FolderPicker()
                 .environment(themeManager)
         }
 
