@@ -13,7 +13,7 @@ struct Composer: View {
         HStack(alignment: .bottom, spacing: 12) {
             Button(action: { showAttachmentPicker = true }) {
                 Image(systemName: "plus.circle")
-                    .font(.system(size: 24))
+                    .font(themeManager.font(.display))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
             .buttonStyle(.borderless)
@@ -40,20 +40,20 @@ struct Composer: View {
 
             Button(action: toggleRecording) {
                 Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(viewModel.isRecording ? .red : themeManager.color(.textSecondary))
+                    .font(themeManager.font(.heading))
+                    .foregroundColor(viewModel.isRecording ? themeManager.color(.error) : themeManager.color(.textSecondary))
             }
             .buttonStyle(.borderless)
             .frame(width: 40, height: 40)
             .background(
                 Circle()
-                    .fill(viewModel.isRecording ? Color.red.opacity(0.1) : Color.clear)
+                    .fill(viewModel.isRecording ? themeManager.color(.error).opacity(0.1) : Color.clear)
             )
             .accessibilityLabel(viewModel.isRecording ? "Stop recording" : "Start recording")
 
             Button(action: { onSend() }) {
                 Image(systemName: "paperplane.fill")
-                    .font(.system(size: 20))
+                    .font(themeManager.font(.heading))
                     .foregroundColor(
                         viewModel.canSend
                             ? themeManager.color(.textOnAccent)
@@ -74,8 +74,8 @@ struct Composer: View {
             .help("Send message")
             .accessibilityLabel("Send message")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.vertical, themeManager.spacing(.md))
         .background(themeManager.color(.bgSurface))
     }
 

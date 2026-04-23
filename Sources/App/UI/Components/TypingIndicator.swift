@@ -12,7 +12,7 @@ struct TypingIndicator: View {
                     .frame(width: 8, height: 8)
                     .scaleEffect(animations[index] ? 1.2 : 1.0)
                     .animation(
-                        .easeInOut(duration: 0.6)
+                        themeManager.animation(.slow)
                             .repeatForever(autoreverses: true)
                             .delay(Double(index) * 0.15),
                         value: animations[index]
@@ -22,13 +22,13 @@ struct TypingIndicator: View {
                     }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.vertical, themeManager.spacing(.md))
         .background(themeManager.color(.bgPanel))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.xl), style: .continuous))
         .frame(maxWidth: 100, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 8)
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.bottom, themeManager.spacing(.sm))
         .transition(.opacity)
     }
 }

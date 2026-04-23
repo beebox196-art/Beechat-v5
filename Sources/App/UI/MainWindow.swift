@@ -54,7 +54,7 @@ struct MainWindow: View {
                 HStack(spacing: 12) {
                     Button(action: { showNewTopicDialog = true }) {
                         Image(systemName: "plus.circle")
-                            .font(.system(size: 16))
+                            .font(themeManager.font(.subheading))
                     }
                     .buttonStyle(.plain)
                     .help("New Topic")
@@ -68,8 +68,8 @@ struct MainWindow: View {
                             }
                         }) {
                             Image(systemName: "trash")
-                                .font(.system(size: 14))
-                                .foregroundColor(.red.opacity(0.7))
+                                .font(themeManager.font(.body))
+                                .foregroundColor(themeManager.color(.error).opacity(0.7))
                         }
                         .buttonStyle(.plain)
                         .help("Delete Selected Topic")

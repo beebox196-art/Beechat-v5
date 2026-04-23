@@ -20,14 +20,14 @@ struct StreamingBubble: View {
                         .font(themeManager.font(.body))
                         .foregroundColor(themeManager.color(.accentPrimary))
                         .opacity(cursorVisible ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: cursorVisible)
+                        .animation(themeManager.animation(.slow).repeatForever(autoreverses: true), value: cursorVisible)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, themeManager.spacing(.lg))
+            .padding(.vertical, themeManager.spacing(.md))
             .fixedSize(horizontal: false, vertical: true)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: themeManager.radius(.xl), style: .continuous)
                     .fill(themeManager.color(.bgPanel))
             )
             .foregroundColor(themeManager.color(.textPrimary))
@@ -39,8 +39,8 @@ struct StreamingBubble: View {
 
             Spacer(minLength: 34)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.vertical, themeManager.spacing(.xs))
         .onAppear { cursorVisible = true }
     }
 

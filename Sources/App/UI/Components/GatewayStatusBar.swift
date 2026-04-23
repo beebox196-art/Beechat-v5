@@ -31,13 +31,13 @@ struct GatewayStatusBar: View {
     private var dotColor: Color {
         switch connectionState {
         case .connected:
-            return .green
+            return themeManager.color(.success)
         case .connecting, .handshaking:
-            return .yellow
+            return themeManager.color(.warning)
         case .disconnected:
             return themeManager.color(.textSecondary).opacity(0.6)
         case .error:
-            return .red
+            return themeManager.color(.error)
         }
     }
 

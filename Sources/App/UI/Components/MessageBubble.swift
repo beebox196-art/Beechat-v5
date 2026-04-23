@@ -30,11 +30,11 @@ struct MessageBubble: View {
                 .font(themeManager.font(.caption))
                 .italic()
                 .foregroundColor(themeManager.color(.textSecondary))
-                .padding(.vertical, 8)
+                .padding(.vertical, themeManager.spacing(.sm))
             Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.vertical, themeManager.spacing(.xs))
     }
 
 
@@ -55,11 +55,11 @@ struct MessageBubble: View {
                     .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.horizontal, themeManager.spacing(.lg))
+            .padding(.vertical, themeManager.spacing(.md))
             .fixedSize(horizontal: false, vertical: true)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: themeManager.radius(.xl), style: .continuous)
                     .fill(isFromUser ? themeManager.color(.accentPrimary) : themeManager.color(.bgPanel))
             )
             .foregroundColor(isFromUser ? themeManager.color(.textOnAccent) : themeManager.color(.textPrimary))
@@ -71,8 +71,8 @@ struct MessageBubble: View {
 
             if !isFromUser { Spacer(minLength: 34) }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 4)
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.vertical, themeManager.spacing(.xs))
     }
 }
 
