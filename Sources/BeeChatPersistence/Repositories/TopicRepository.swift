@@ -38,13 +38,6 @@ public class TopicRepository {
         }
     }
 
-    /// Fetch a topic by id.
-    public func fetchById(_ id: String) throws -> Topic? {
-        try dbManager.reader.read { db in
-            try Topic.fetchOne(db, key: id)
-        }
-    }
-
     /// Delete a topic and all associated data (messages, bridge entries).
     public func deleteCascading(_ id: String) throws {
         try dbManager.write { db in
@@ -73,27 +66,6 @@ public class TopicRepository {
     public func updateSessionKey(topicId: String, sessionKey: String) throws {
         try dbManager.write { db in
             try db.execute(sql: "UPDATE topics SET sessionKey = ?, updatedAt = ? WHERE id = ?", arguments: [sessionKey, Date(), topicId])
-        }
-    }
-
-    /// Update the lastActivityAt timestamp for a topic.
-    public func updateActivity(topicId: String, at date: Date = Date()) throws {
-        try dbManager.write { db in
-            try db.execute(sql: "UPDATE topics SET lastActivityAt = ?, updatedAt = ? WHERE id = ?", arguments: [date, Date(), topicId])
-        }
-    }
-
-    /// Increment unread count for a topic.
-    public func incrementUnread(topicId: String) throws {
-        try dbManager.write { db in
-            try db.execute(sql: "UPDATE topics SET unreadCount = unreadCount + 1, updatedAt = ? WHERE id = ?", arguments: [Date(), topicId])
-        }
-    }
-
-    /// Reset unread count for a topic.
-    public func resetUnread(topicId: String) throws {
-        try dbManager.write { db in
-            try db.execute(sql: "UPDATE topics SET unreadCount = 0, updatedAt = ? WHERE id = ?", arguments: [Date(), topicId])
         }
     }
 

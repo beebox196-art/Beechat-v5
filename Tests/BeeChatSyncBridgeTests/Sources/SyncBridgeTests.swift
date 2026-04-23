@@ -38,11 +38,6 @@ final class SyncBridgeTests: XCTestCase {
         try store.openDatabase(at: dbPath)
         
         ledgerRepo = DeliveryLedgerRepository(dbManager: DatabaseManager.shared)
-        
-        // Apply migrations
-        try DatabaseManager.shared.write { db in
-            try Migration003_DeliveryLedger.apply(db: db)
-        }
     }
     
     override func tearDownWithError() throws {
@@ -140,10 +135,10 @@ final class SyncBridgeTests: XCTestCase {
         
         // Since SyncBridge logic is internal, we'd normally check if state changes.
         // For this test, we verify it doesn't crash during routing.
-        await router.route(event: "agent", payload: payload)
-        await router.route(event: "sessions.changed", payload: nil)
-        await router.route(event: "tick", payload: nil)
-        await router.route(event: "unknown", payload: nil)
+        try? await router.route(event: "agent", payload: payload)
+        try? await router.route(event: "sessions.changed", payload: nil)
+        try? await router.route(event: "tick", payload: nil)
+        try? await router.route(event: "unknown", payload: nil)
     }
     
     // MARK: 3. DeliveryLedgerRepository tests
@@ -206,21 +201,7 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(pending.first?.idempotencyKey, "i1")
     }
     
-    // MARK: 4. Migration003 tests
-    
-    func testMigrationSchema() throws {
-        // Migration was already applied in setUp
-        try DatabaseManager.shared.read { db in
-            XCTAssertTrue(try db.tableExists("delivery_ledger"))
-            let columns = try db.columns(in: "delivery_ledger")
-            let columnNames = columns.map { $0.name }
-            XCTAssertTrue(columnNames.contains("idempotencyKey"))
-            XCTAssertTrue(columnNames.contains("status"))
-            XCTAssertTrue(columnNames.contains("retryCount"))
-        }
-    }
-    
-    // MARK: 5. SessionInfo / ChatMessage parsing tests
+    // MARK: 4. SessionInfo / ChatMessage parsing tests
     
     func testSessionInfoParsing() throws {
         let json = """

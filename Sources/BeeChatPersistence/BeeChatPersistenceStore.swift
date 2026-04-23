@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
+public class BeeChatPersistenceStore {
     private let dbManager: DatabaseManager
     private let sessionRepo: SessionRepository
     private let messageRepo: MessageRepository
@@ -116,21 +116,5 @@ public class BeeChatPersistenceStore: MessageStore, GatewayEventConsumer {
         try attachmentRepo.fetchByMessage(messageId: messageId)
     }
     
-    // MARK: - GatewayEventConsumer
-    
-    public func handleSessionList(_ sessions: [Session]) throws {
-        try upsertSessions(sessions)
-    }
-    
-    public func handleNewMessage(_ message: Message) throws {
-        try saveMessage(message)
-    }
-    
-    public func handleMessageUpdate(_ message: Message) throws {
-        try saveMessage(message)
-    }
-    
-    public func handleSessionUpdate(_ session: Session) throws {
-        try saveSession(session)
-    }
+
 }

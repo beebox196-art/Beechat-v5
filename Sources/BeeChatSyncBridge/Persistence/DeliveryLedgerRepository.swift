@@ -2,6 +2,16 @@ import Foundation
 import GRDB
 import BeeChatPersistence
 
+public enum DeliveryLedgerError: LocalizedError {
+    case malformedRow(String)
+    
+    public var errorDescription: String? {
+        switch self {
+        case .malformedRow(let msg): return "Malformed delivery ledger row: \(msg)"
+        }
+    }
+}
+
 public struct DeliveryLedgerRepository {
     private let dbManager: DatabaseManager
     
@@ -27,23 +37,51 @@ public struct DeliveryLedgerRepository {
         }
     }
     
+    /// Safely extract a Date from a GRDB Row, handling both Date and String (ISO8601) storage formats.
+    private func extractDate(_ row: Row, column: String) throws -> Date {
+        // GRDB stores Date values as Date objects — try that first
+        if let dateVal: Date = row[column] {
+            return dateVal
+        }
+        // Fallback: ISO8601 string (for legacy data or manual SQL inserts)
+        if let strVal: String = row[column],
+           let parsed = ISO8601DateFormatter().date(from: strVal) {
+            return parsed
+        }
+        throw DeliveryLedgerError.malformedRow("invalid or missing \(column)")
+    }
+    
     public func fetchPending() throws -> [DeliveryLedgerEntry] {
         try dbManager.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT * FROM delivery_ledger WHERE status = 'pending'")
-            return rows.map { row in
-                let createdAtStr = row["createdAt"] as! String
-                let updatedAtStr = row["updatedAt"] as! String
+            return try rows.map { row in
+                let createdAt = try extractDate(row, column: "createdAt")
+                let updatedAt = try extractDate(row, column: "updatedAt")
                 
-                let formatter = ISO8601DateFormatter()
-                let createdAt = formatter.date(from: createdAtStr) ?? Date()
-                let updatedAt = formatter.date(from: updatedAtStr) ?? Date()
+                guard let idString: String = row["id"],
+                      let id = UUID(uuidString: idString) else {
+                    throw DeliveryLedgerError.malformedRow("invalid id")
+                }
+                guard let sessionKey: String = row["sessionKey"], !sessionKey.isEmpty else {
+                    throw DeliveryLedgerError.malformedRow("missing sessionKey")
+                }
+                guard let idempotencyKey: String = row["idempotencyKey"], !idempotencyKey.isEmpty else {
+                    throw DeliveryLedgerError.malformedRow("missing idempotencyKey")
+                }
+                guard let content: String = row["content"] else {
+                    throw DeliveryLedgerError.malformedRow("missing content")
+                }
+                guard let statusRaw: String = row["status"],
+                      let status = DeliveryLedgerEntry.DeliveryStatus(rawValue: statusRaw) else {
+                    throw DeliveryLedgerError.malformedRow("invalid status")
+                }
                 
                 return DeliveryLedgerEntry(
-                    id: UUID(uuidString: row["id"] as? String ?? "") ?? UUID(),
-                    sessionKey: row["sessionKey"] as? String ?? "",
-                    idempotencyKey: row["idempotencyKey"] as? String ?? "",
-                    content: row["content"] as? String ?? "",
-                    status: DeliveryLedgerEntry.DeliveryStatus(rawValue: row["status"] as? String ?? "pending") ?? .pending,
+                    id: id,
+                    sessionKey: sessionKey,
+                    idempotencyKey: idempotencyKey,
+                    content: content,
+                    status: status,
                     runId: row["runId"] as? String,
                     createdAt: createdAt,
                     updatedAt: updatedAt,
@@ -57,18 +95,33 @@ public struct DeliveryLedgerRepository {
         try dbManager.read { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM delivery_ledger WHERE idempotencyKey = ?", arguments: [key]) else { return nil }
             
-            let createdAtStr = row["createdAt"] as! String
-            let updatedAtStr = row["updatedAt"] as! String
-            let formatter = ISO8601DateFormatter()
-            let createdAt = formatter.date(from: createdAtStr) ?? Date()
-            let updatedAt = formatter.date(from: updatedAtStr) ?? Date()
+            let createdAt = try extractDate(row, column: "createdAt")
+            let updatedAt = try extractDate(row, column: "updatedAt")
+            
+            guard let idString: String = row["id"],
+                  let id = UUID(uuidString: idString) else {
+                throw DeliveryLedgerError.malformedRow("invalid id")
+            }
+            guard let sessionKey: String = row["sessionKey"], !sessionKey.isEmpty else {
+                throw DeliveryLedgerError.malformedRow("missing sessionKey")
+            }
+            guard let idempotencyKey: String = row["idempotencyKey"], !idempotencyKey.isEmpty else {
+                throw DeliveryLedgerError.malformedRow("missing idempotencyKey")
+            }
+            guard let content: String = row["content"] else {
+                throw DeliveryLedgerError.malformedRow("missing content")
+            }
+            guard let statusRaw: String = row["status"],
+                  let status = DeliveryLedgerEntry.DeliveryStatus(rawValue: statusRaw) else {
+                throw DeliveryLedgerError.malformedRow("invalid status")
+            }
             
             return DeliveryLedgerEntry(
-                id: UUID(uuidString: row["id"] as? String ?? "") ?? UUID(),
-                sessionKey: row["sessionKey"] as? String ?? "",
-                idempotencyKey: row["idempotencyKey"] as? String ?? "",
-                content: row["content"] as? String ?? "",
-                status: DeliveryLedgerEntry.DeliveryStatus(rawValue: row["status"] as? String ?? "pending") ?? .pending,
+                id: id,
+                sessionKey: sessionKey,
+                idempotencyKey: idempotencyKey,
+                content: content,
+                status: status,
                 runId: row["runId"] as? String,
                 createdAt: createdAt,
                 updatedAt: updatedAt,

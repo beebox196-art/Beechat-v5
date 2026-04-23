@@ -212,7 +212,3 @@ enum AppStateError: LocalizedError {
         }
     }
 }
-
-extension Logger {
-    static let appState = Logger(subsystem: "com.beechat.v5", category: "AppState")
-}

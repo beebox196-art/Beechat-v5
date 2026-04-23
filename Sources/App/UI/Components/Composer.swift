@@ -1,12 +1,5 @@
 import SwiftUI
 
-/// Attachment type enum for the composer.
-enum AttachmentType {
-    case image
-    case file
-    case voiceNote
-}
-
 /// Message composer — clean input row only.
 /// Enter = newline, Cmd+Enter = send, or click Send button.
 /// Gateway status lives in GatewayStatusBar (top of detail pane), not here.

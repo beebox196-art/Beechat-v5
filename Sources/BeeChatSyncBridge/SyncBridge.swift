@@ -10,8 +10,6 @@ public actor SyncBridge {
 
     private let reconciler: Reconciler
     private let ledgerRepo: DeliveryLedgerRepository
-    private let sessionObserver: SessionObserver
-    private let messageObserver: MessageObserver
     
     /// Maps gateway session keys (e.g. "agent:main:05549141-d6da-...") to local topic IDs
     /// (e.g. "05549141-D6DA-..."). Populated during fetchSessions and on demand.
@@ -54,36 +52,24 @@ public actor SyncBridge {
             persistenceStore: config.persistenceStore,
             ledgerRepo: self.ledgerRepo
         )
-        
-        self.sessionObserver = SessionObserver(dbManager: DatabaseManager.shared)
-        self.messageObserver = MessageObserver(dbManager: DatabaseManager.shared)
-        
-        // Deferred initialization of router to avoid 'self' in init
     }
     
     public func start() async throws {
-        // Initialize router now that self is fully initialized
         if eventRouter == nil {
             self.eventRouter = EventRouter(syncBridge: self)
         }
 
         try await config.gatewayClient.connect()
-        
-        // Subscribe to session changes
         try await rpcClient.sessionsSubscribe()
-        
-        // Initial sync
         _ = try await fetchSessions()
         
-        // Start event processing loop
         eventProcessingTask = Task {
             let stream = await config.gatewayClient.eventStream()
             for await event in stream {
-                await eventRouter?.route(event: event.event, payload: event.payload)
+                try? await eventRouter?.route(event: event.event, payload: event.payload)
             }
         }
         
-        // Reconciliation on reconnect
         reconnectWatchTask = Task {
             for await state in connectionStateStream() {
                 if state == .connected {
@@ -92,11 +78,10 @@ public actor SyncBridge {
             }
         }
         
-        // A2: Connection loss during streaming — clear stuck state immediately
         connectionWatchTask = Task {
             for await state in connectionStateStream() {
                 if state != .connected, currentStreamingSessionKey != nil {
-                    await clearStalledStream(reason: "Connection lost while streaming")
+                    try? await clearStalledStream(reason: "Connection lost while streaming")
                 }
             }
         }
@@ -126,7 +111,7 @@ public actor SyncBridge {
     /// Returns true only if the session key maps to a known topic (via sessionKeyMap,
     /// topics table, or topic_session_bridge table). All other sessions (Telegram,
     /// cron, subagent) return false so their events are silently dropped.
-    func isBeeChatSession(_ sessionKey: String) -> Bool {
+    func isBeeChatSession(_ sessionKey: String) throws -> Bool {
         // Direct map hit
         if sessionKeyMap[sessionKey] != nil { return true }
         
@@ -135,7 +120,7 @@ public actor SyncBridge {
         
         // Database lookup via TopicRepository
         let topicRepo = TopicRepository()
-        if (try? topicRepo.resolveTopicId(for: sessionKey)) != nil {
+        if try topicRepo.resolveTopicId(for: sessionKey) != nil {
             beechatSessionKeys.insert(sessionKey)
             return true
         }
@@ -147,7 +132,7 @@ public actor SyncBridge {
         } else {
             stripped = sessionKey
         }
-        if stripped != sessionKey, let topicId = try? topicRepo.resolveTopicIdBySuffix(gatewayKey: sessionKey, stripped: stripped) {
+        if stripped != sessionKey, let topicId = try topicRepo.resolveTopicIdBySuffix(gatewayKey: sessionKey, stripped: stripped) {
             sessionKeyMap[sessionKey] = topicId
             beechatSessionKeys.insert(sessionKey)
             return true
@@ -162,7 +147,7 @@ public actor SyncBridge {
     /// Gateway keys look like "agent:main:<uuid>" (lowercase). Local topic IDs
     /// are the original UUID (may differ in case). This method strips the
     /// "agent:main:" prefix and resolves to the correct local topic ID.
-    func normalizeSessionKey(_ gatewayKey: String) -> String {
+    func normalizeSessionKey(_ gatewayKey: String) throws -> String {
         // Check the map first (O(1))
         if let localId = sessionKeyMap[gatewayKey] {
             return localId
@@ -178,7 +163,7 @@ public actor SyncBridge {
         
         // Try to find a topic whose ID matches case-insensitively
         let topicRepo = TopicRepository()
-        if let topicId = try? topicRepo.resolveTopicIdBySuffix(gatewayKey: gatewayKey, stripped: stripped) {
+        if let topicId = try topicRepo.resolveTopicIdBySuffix(gatewayKey: gatewayKey, stripped: stripped) {
             sessionKeyMap[gatewayKey] = topicId
             return topicId
         }
@@ -192,7 +177,7 @@ public actor SyncBridge {
         
         // Populate the session key map and beechatSessionKeys from topics FIRST
         let topicRepo = TopicRepository()
-        let allTopics = (try? topicRepo.fetchAllActive(limit: 500)) ?? []
+        let allTopics = try topicRepo.fetchAllActive(limit: 500)
         let topicIdMap = Dictionary(uniqueKeysWithValues: allTopics.map { ($0.id.uppercased(), $0.id) })
         
         // Also index by sessionKey column (which stores gateway-format keys)
@@ -204,7 +189,7 @@ public actor SyncBridge {
         }
         
         // Also index the bridge table entries
-        let bridgeEntries = (try? topicRepo.listAllBridgeSessionKeys()) ?? []
+        let bridgeEntries = try topicRepo.listAllBridgeSessionKeys()
         for (sessionKey, topicId) in bridgeEntries {
             sessionKeyToTopicId[sessionKey] = topicId
         }
@@ -250,13 +235,13 @@ public actor SyncBridge {
     
     public func fetchHistory(sessionKey: String, limit: Int? = nil) async throws -> [Message] {
         // Only fetch history for sessions that belong to BeeChat topics
-        guard isBeeChatSession(sessionKey) else {
+        guard try isBeeChatSession(sessionKey) else {
             return []
         }
         
         let fetchLimit = limit ?? config.historyFetchLimit
         let history = try await rpcClient.chatHistory(sessionKey: sessionKey, limit: fetchLimit)
-        let localSessionKey = normalizeSessionKey(sessionKey)
+        let localSessionKey = (try? normalizeSessionKey(sessionKey)) ?? sessionKey
         let messages = history.map { payload in
             Message(
                 id: payload.id,
@@ -303,18 +288,39 @@ public actor SyncBridge {
         }
     }
     
-    public func sessionListStream() -> AsyncStream<[Session]> {
-        return sessionObserver.observeSessions()
-    }
-    
     public func messageStream(sessionKey: String) -> AsyncStream<[Message]> {
-        return messageObserver.observeMessages(sessionKey: sessionKey)
+        AsyncStream { continuation in
+            let observation = ValueObservation.tracking { db in
+                try Message
+                    .filter(Column("sessionId") == sessionKey)
+                    .order(Column("timestamp").asc)
+                    .limit(500)
+                    .fetchAll(db)
+            }
+            
+            do {
+                let writer = try DatabaseManager.shared.writer
+                let cancellable = observation.start(
+                    in: writer,
+                    scheduling: .mainActor,
+                    onError: { error in
+                        print("[SyncBridge] Message observation error: \(error)")
+                    },
+                    onChange: { messages in
+                        continuation.yield(messages)
+                    }
+                )
+                continuation.onTermination = { _ in cancellable.cancel() }
+            } catch {
+                print("[SyncBridge] Message observation setup error: \(error)")
+            }
+        }
     }
     
     public func connectionStateStream() -> AsyncStream<ConnectionState> {
         AsyncStream(ConnectionState.self, bufferingPolicy: .unbounded) { continuation in
             Task {
-                await config.gatewayClient.updateOnStatusChange { state in
+                await config.gatewayClient.updateConnectionStateObserver { state in
                     continuation.yield(state)
                 }
             }
@@ -330,8 +336,8 @@ public actor SyncBridge {
     // Internal helpers for EventRouter
     
     /// Save a message from the gateway, normalizing the session key to the local topic ID.
-    internal func saveGatewayMessage(_ message: Message) {
-        let localKey = normalizeSessionKey(message.sessionId)
+    internal func saveGatewayMessage(_ message: Message) throws {
+        let localKey = try normalizeSessionKey(message.sessionId)
         let normalized = Message(
             id: message.id,
             sessionId: localKey,
@@ -345,7 +351,7 @@ public actor SyncBridge {
             metadata: message.metadata,
             createdAt: message.createdAt
         )
-        try? config.persistenceStore.saveMessage(normalized)
+        try config.persistenceStore.saveMessage(normalized)
     }
     
     // MARK: - Chat event handlers (client-friendly format from gateway)
@@ -359,7 +365,7 @@ public actor SyncBridge {
     }
     
     /// Handle "chat" final event — streaming complete
-    internal func processChatFinal(sessionKey: String) async {
+    internal func processChatFinal(sessionKey: String) async throws {
         cancelStallTimer()
         streamingBuffer.removeValue(forKey: sessionKey)
         if currentStreamingSessionKey == sessionKey {
@@ -370,17 +376,13 @@ public actor SyncBridge {
         // is in the DB when the UI clears the streaming content.
         // This prevents the visual gap where streaming content disappears
         // before the persisted message appears.
-        do {
-            _ = try await fetchHistory(sessionKey: sessionKey)
-        } catch {
-            // Post-stream fetchHistory failed — non-critical
-        }
+        _ = try await fetchHistory(sessionKey: sessionKey)
         
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
     
     /// Handle "chat" error event
-    internal func processChatError(sessionKey: String, errorMessage: String) async {
+    internal func processChatError(sessionKey: String, errorMessage: String) async throws {
         cancelStallTimer()
         streamingBuffer.removeValue(forKey: sessionKey)
         if currentStreamingSessionKey == sessionKey {
@@ -388,27 +390,26 @@ public actor SyncBridge {
         }
         
         // Fetch history before notifying the delegate so persisted messages are in the DB
-        try? await fetchHistory(sessionKey: sessionKey)
+        try await fetchHistory(sessionKey: sessionKey)
         
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
     
     // MARK: - Agent event handler (legacy, lower-level format)
     
-    internal func processAgentEvent(_ event: AgentEventPayload) async {
+    internal func processAgentEvent(_ event: AgentEventPayload) async throws {
         // Seq tracking
         if let seq = event.seq {
             if let last = lastSeenEventSeq, seq <= last { return }
             
             if let last = lastSeenEventSeq, seq > last + 1 {
                 // Gap detected
-                try? await reconciler.reconcile(activeSessionKey: event.sessionKey)
+                try await reconciler.reconcile(activeSessionKey: event.sessionKey)
             }
             
             lastSeenEventSeq = seq
         }
         
-        _ = event.runId
         let sessionKey = event.sessionKey
         
         switch event.data.phase {
@@ -429,17 +430,17 @@ public actor SyncBridge {
                     content: text,
                     timestamp: Date(timeIntervalSince1970: Double(event.ts / 1000))
                 )
-                saveGatewayMessage(message)
+                try saveGatewayMessage(message)
             }
             streamingBuffer.removeValue(forKey: sessionKey)
             // Fetch history before notifying the delegate so persisted messages are in the DB
-            try? await fetchHistory(sessionKey: sessionKey)
+            try await fetchHistory(sessionKey: sessionKey)
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
         case "error":
             cancelStallTimer()
             streamingBuffer.removeValue(forKey: sessionKey)
             // Fetch history before notifying the delegate
-            try? await fetchHistory(sessionKey: sessionKey)
+            try await fetchHistory(sessionKey: sessionKey)
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
         default:
             break
@@ -447,7 +448,7 @@ public actor SyncBridge {
     }
     
     internal func updateLiveness() async {
-        // Update internal liveness clock
+        // Placeholder for liveness tracking — not yet implemented
     }
     
     // MARK: - Stream stall detection (A1)
@@ -458,7 +459,7 @@ public actor SyncBridge {
         stallTimerTask = Task {
             try? await Task.sleep(nanoseconds: UInt64(Self.streamStallInterval * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await clearStalledStream(reason: "Stream stalled — no delta for \(Int(Self.streamStallInterval))s")
+            try? await clearStalledStream(reason: "Stream stalled — no delta for \(Int(Self.streamStallInterval))s")
         }
     }
     
@@ -469,13 +470,13 @@ public actor SyncBridge {
     }
     
     /// Clear stuck streaming state — marks the current stream as errored
-    internal func clearStalledStream(reason: String) async {
+    internal func clearStalledStream(reason: String) async throws {
         guard let sessionKey = currentStreamingSessionKey else { return }
         cancelStallTimer()
         streamingBuffer.removeValue(forKey: sessionKey)
         currentStreamingSessionKey = nil
         // Fetch history before notifying so any partial message is persisted
-        try? await fetchHistory(sessionKey: sessionKey)
+        try await fetchHistory(sessionKey: sessionKey)
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
 }

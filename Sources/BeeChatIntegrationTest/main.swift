@@ -79,7 +79,7 @@ struct IntegrationTest {
 
         // Track state transitions
         var stateTransitions: [String] = []
-        await gateway.updateOnStatusChange { newState in
+        await gateway.updateConnectionStateObserver { newState in
             print("      📡 State changed: \(newState.rawValue)")
             stateTransitions.append(newState.rawValue)
         }

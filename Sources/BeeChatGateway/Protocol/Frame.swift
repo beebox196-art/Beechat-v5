@@ -1,11 +1,5 @@
 import Foundation
 
-public enum FrameType: String, Codable, Sendable {
-    case req = "req"
-    case res = "res"
-    case event = "event"
-}
-
 public struct RequestFrame: Codable, Sendable {
     public let type: String = "req"
     public let id: String

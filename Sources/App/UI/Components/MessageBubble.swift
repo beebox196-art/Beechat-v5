@@ -101,10 +101,10 @@ struct BubbleWidthModifier: ViewModifier {
 
 /// Convenience initializers
 extension BubbleWidthModifier {
-    static func leading(canvasWidth: CGFloat = 1200) -> BubbleWidthModifier {
+    static func leading() -> BubbleWidthModifier {
         BubbleWidthModifier(alignment: .leading)
     }
-    static func trailing(canvasWidth: CGFloat = 1200) -> BubbleWidthModifier {
+    static func trailing() -> BubbleWidthModifier {
         BubbleWidthModifier(alignment: .trailing)
     }
 }
