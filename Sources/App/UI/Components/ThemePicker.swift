@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ThemePicker: View {
     @Environment(ThemeManager.self) var themeManager
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,7 +15,7 @@ struct ThemePicker: View {
                     .foregroundColor(themeManager.color(.textPrimary))
                 Spacer()
                 Button("Done") {
-                    // Dismissed by parent sheet
+                    dismiss()
                 }
                 .font(themeManager.font(.subheading))
                 .foregroundColor(themeManager.color(.accentPrimary))
