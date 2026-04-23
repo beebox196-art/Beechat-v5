@@ -3,6 +3,8 @@ import SwiftUI
 @MainActor
 @Observable
 final class ThemeManager {
+    static let shared = ThemeManager()
+
     var currentTheme: Theme
     var availableThemes: [ThemeMetadata]
 
