@@ -8,39 +8,16 @@ public class SessionRepository {
         self.dbManager = dbManager
     }
     
-    /// Upsert a session — preserves createdAt on conflict.
     public func save(_ session: Session) throws {
         try dbManager.write { db in
             var session = session
-            try session.upsertAndFetch(
-                db,
-                onConflict: ["id"],
-                updating: .noColumnUnlessSpecified,
-                doUpdate: { excluded in
-                    Session.upsertColumns.map { column in
-                        column.set(to: excluded[column])
-                    }
-                }
-            )
+            try session.upsertPreservingCreatedAt(db)
         }
     }
-    
-    /// Bulk upsert sessions — preserves createdAt on conflict.
+
     public func upsert(_ sessions: [Session]) throws {
         try dbManager.write { db in
-            for session in sessions {
-                var session = session
-                try session.upsertAndFetch(
-                    db,
-                    onConflict: ["id"],
-                    updating: .noColumnUnlessSpecified,
-                    doUpdate: { excluded in
-                        Session.upsertColumns.map { column in
-                            column.set(to: excluded[column])
-                        }
-                    }
-                )
-            }
+            try upsertBatch(sessions, into: db)
         }
     }
     

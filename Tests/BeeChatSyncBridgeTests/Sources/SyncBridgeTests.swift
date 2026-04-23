@@ -5,7 +5,6 @@ import GRDB
 @testable import BeeChatGateway
 @testable import BeeChatPersistence
 
-// MARK: - Mocks
 
 final class MockRPCClient: RPCClientProtocol {
     var sessionsListHandler: (() -> [SessionInfo])?
@@ -21,11 +20,10 @@ final class MockRPCClient: RPCClientProtocol {
         return try chatHistoryHandler?(sessionKey) ?? []
     }
     
-    func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [[String: Any]]? = nil) async throws -> String { return "run-id" }
+    func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String { return "run-id" }
     func chatAbort(sessionKey: String) async throws -> Bool { return true }
 }
 
-// MARK: - Tests
 
 final class SyncBridgeTests: XCTestCase {
     var store: BeeChatPersistenceStore!
@@ -48,7 +46,6 @@ final class SyncBridgeTests: XCTestCase {
         ledgerRepo = nil
     }
     
-    // MARK: 1. AgentEvent parsing tests
     
     func testAgentEventParsing() throws {
         let json = """
@@ -111,10 +108,8 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(event.data.text, "Hello world")
     }
     
-    // MARK: 2. EventRouter tests
     
     func testEventRouterRouting() async {
-        // We need a SyncBridge to test the router
         let config = SyncBridgeConfiguration(
             gatewayClient: GatewayClient(config: .init(url: "http://localhost", token: "test")),
             persistenceStore: store
@@ -122,7 +117,6 @@ final class SyncBridgeTests: XCTestCase {
         let bridge = SyncBridge(config: config)
         let router = EventRouter(syncBridge: bridge)
         
-        // Use a simple payload
         let payload: [String: AnyCodable] = [
             "runId": AnyCodable("run-1"),
             "stream": AnyCodable("item"),
@@ -133,15 +127,12 @@ final class SyncBridgeTests: XCTestCase {
             ] as [String: Any])
         ]
         
-        // Since SyncBridge logic is internal, we'd normally check if state changes.
-        // For this test, we verify it doesn't crash during routing.
         try? await router.route(event: "agent", payload: payload)
         try? await router.route(event: "sessions.changed", payload: nil)
         try? await router.route(event: "tick", payload: nil)
         try? await router.route(event: "unknown", payload: nil)
     }
     
-    // MARK: 3. DeliveryLedgerRepository tests
     
     func testDeliveryLedgerCRUD() throws {
         let entry = DeliveryLedgerEntry(
@@ -185,7 +176,6 @@ final class SyncBridgeTests: XCTestCase {
         
         try ledgerRepo.save(entry1)
         XCTAssertThrowsError(try ledgerRepo.save(entry2)) { error in
-            // GRDB error for unique constraint
         }
     }
     
@@ -201,7 +191,6 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(pending.first?.idempotencyKey, "i1")
     }
     
-    // MARK: 4. SessionInfo / ChatMessage parsing tests
     
     func testSessionInfoParsing() throws {
         let json = """
@@ -240,7 +229,6 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(msg.content, "Hello")
     }
     
-    // MARK: 6. Reconciler logic tests
     
     func testReconcilerDeliversPending() async throws {
         let mockRPC = MockRPCClient()
@@ -252,7 +240,6 @@ final class SyncBridgeTests: XCTestCase {
         )
         try ledgerRepo.save(entry)
         
-        // Mock RPC to return this message in history
         mockRPC.sessionsListHandler = { [] }
         mockRPC.chatHistoryHandler = { key in
             [ChatMessagePayload(id: "idem-1", sessionKey: key, role: "user", content: "hello", timestamp: Date(), runId: "run-1")]
@@ -274,7 +261,6 @@ final class SyncBridgeTests: XCTestCase {
         )
         try ledgerRepo.save(entry)
         
-        // Mock RPC to return empty history
         mockRPC.sessionsListHandler = { [] }
         mockRPC.chatHistoryHandler = { _ in [] }
         

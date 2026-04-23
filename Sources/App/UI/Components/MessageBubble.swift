@@ -2,19 +2,14 @@ import SwiftUI
 import BeeChatPersistence
 
 /// Single message bubble — 66% fixed width, left or right aligned.
-/// Adam's messages (role == "user") are right-aligned with accent colour.
-/// Bee's messages (role == "assistant") are left-aligned with surface colour.
-/// System messages are centred with secondary text.
 struct MessageBubble: View {
     @Environment(ThemeManager.self) var themeManager
     let message: Message
 
-    /// Whether this message is from the user (Adam).
     private var isFromUser: Bool {
         message.role == "user"
     }
 
-    /// Whether this is a system message.
     private var isSystem: Bool {
         message.role == "system"
     }
@@ -27,7 +22,6 @@ struct MessageBubble: View {
         }
     }
 
-    // MARK: - System bubble (centred, subtle)
 
     private var systemBubble: some View {
         HStack {
@@ -43,24 +37,20 @@ struct MessageBubble: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Chat bubble (dynamically sized, 66% max width)
 
     private var chatBubble: some View {
         HStack {
             if isFromUser { Spacer(minLength: 34) }
 
             VStack(alignment: isFromUser ? .trailing : .leading, spacing: 4) {
-                // Sender name (for assistant messages)
                 if !isFromUser, let senderName = message.senderName {
                     Text(senderName)
                         .font(themeManager.font(.caption2))
                         .foregroundColor(themeManager.color(.textSecondary))
                 }
 
-                // Message content
                 MessageContent(message: message)
 
-                // Timestamp
                 Text(message.timestamp, style: .time)
                     .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
@@ -87,8 +77,6 @@ struct MessageBubble: View {
 }
 
 /// Enforces the 66% max width constraint on message bubbles.
-/// Uses the canvas width from the environment to ensure consistent sizing
-/// regardless of HStack spacer widths.
 struct BubbleWidthModifier: ViewModifier {
     @Environment(\.canvasWidth) var canvasWidth
     var alignment: Alignment = .leading
@@ -99,7 +87,6 @@ struct BubbleWidthModifier: ViewModifier {
     }
 }
 
-/// Convenience initializers
 extension BubbleWidthModifier {
     static func leading() -> BubbleWidthModifier {
         BubbleWidthModifier(alignment: .leading)

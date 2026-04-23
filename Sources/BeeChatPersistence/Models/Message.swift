@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct Message: Codable, FetchableRecord, MutablePersistableRecord {
+public struct Message: Codable, UpsertableRecord {
     public static let databaseTableName = "messages"
     
     public var id: String
@@ -13,7 +13,7 @@ public struct Message: Codable, FetchableRecord, MutablePersistableRecord {
     public var timestamp: Date
     public var editedAt: Date?
     public var isRead: Bool = false
-    public var metadata: String? // JSON blob
+    public var metadata: String?
     public var createdAt: Date
     
     public init(id: String, sessionId: String, role: String, content: String? = nil, senderName: String? = nil, senderId: String? = nil, timestamp: Date, editedAt: Date? = nil, isRead: Bool = false, metadata: String? = nil, createdAt: Date = Date()) {
@@ -30,7 +30,6 @@ public struct Message: Codable, FetchableRecord, MutablePersistableRecord {
         self.createdAt = createdAt
     }
     
-    /// Columns that should be updated on conflict (upsert). Excludes createdAt and id.
     public static let upsertColumns: [Column] = [
         Column("sessionId"), Column("role"), Column("content"),
         Column("senderName"), Column("senderId"), Column("timestamp"),

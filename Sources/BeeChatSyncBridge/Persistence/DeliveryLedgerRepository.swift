@@ -37,13 +37,10 @@ public struct DeliveryLedgerRepository {
         }
     }
     
-    /// Safely extract a Date from a GRDB Row, handling both Date and String (ISO8601) storage formats.
-    private func extractDate(_ row: Row, column: String) throws -> Date {
-        // GRDB stores Date values as Date objects — try that first
+    static func extractDate(_ row: Row, column: String) throws -> Date {
         if let dateVal: Date = row[column] {
             return dateVal
         }
-        // Fallback: ISO8601 string (for legacy data or manual SQL inserts)
         if let strVal: String = row[column],
            let parsed = ISO8601DateFormatter().date(from: strVal) {
             return parsed
@@ -54,79 +51,53 @@ public struct DeliveryLedgerRepository {
     public func fetchPending() throws -> [DeliveryLedgerEntry] {
         try dbManager.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT * FROM delivery_ledger WHERE status = 'pending'")
-            return try rows.map { row in
-                let createdAt = try extractDate(row, column: "createdAt")
-                let updatedAt = try extractDate(row, column: "updatedAt")
-                
-                guard let idString: String = row["id"],
-                      let id = UUID(uuidString: idString) else {
-                    throw DeliveryLedgerError.malformedRow("invalid id")
-                }
-                guard let sessionKey: String = row["sessionKey"], !sessionKey.isEmpty else {
-                    throw DeliveryLedgerError.malformedRow("missing sessionKey")
-                }
-                guard let idempotencyKey: String = row["idempotencyKey"], !idempotencyKey.isEmpty else {
-                    throw DeliveryLedgerError.malformedRow("missing idempotencyKey")
-                }
-                guard let content: String = row["content"] else {
-                    throw DeliveryLedgerError.malformedRow("missing content")
-                }
-                guard let statusRaw: String = row["status"],
-                      let status = DeliveryLedgerEntry.DeliveryStatus(rawValue: statusRaw) else {
-                    throw DeliveryLedgerError.malformedRow("invalid status")
-                }
-                
-                return DeliveryLedgerEntry(
-                    id: id,
-                    sessionKey: sessionKey,
-                    idempotencyKey: idempotencyKey,
-                    content: content,
-                    status: status,
-                    runId: row["runId"] as? String,
-                    createdAt: createdAt,
-                    updatedAt: updatedAt,
-                    retryCount: Int(row["retryCount"] as? Int64 ?? 0)
-                )
-            }
+            return try rows.map { try DeliveryLedgerEntry(from: $0) }
         }
     }
     
     public func fetchByIdempotencyKey(_ key: String) throws -> DeliveryLedgerEntry? {
         try dbManager.read { db in
             guard let row = try Row.fetchOne(db, sql: "SELECT * FROM delivery_ledger WHERE idempotencyKey = ?", arguments: [key]) else { return nil }
-            
-            let createdAt = try extractDate(row, column: "createdAt")
-            let updatedAt = try extractDate(row, column: "updatedAt")
-            
-            guard let idString: String = row["id"],
-                  let id = UUID(uuidString: idString) else {
-                throw DeliveryLedgerError.malformedRow("invalid id")
-            }
-            guard let sessionKey: String = row["sessionKey"], !sessionKey.isEmpty else {
-                throw DeliveryLedgerError.malformedRow("missing sessionKey")
-            }
-            guard let idempotencyKey: String = row["idempotencyKey"], !idempotencyKey.isEmpty else {
-                throw DeliveryLedgerError.malformedRow("missing idempotencyKey")
-            }
-            guard let content: String = row["content"] else {
-                throw DeliveryLedgerError.malformedRow("missing content")
-            }
-            guard let statusRaw: String = row["status"],
-                  let status = DeliveryLedgerEntry.DeliveryStatus(rawValue: statusRaw) else {
-                throw DeliveryLedgerError.malformedRow("invalid status")
-            }
-            
-            return DeliveryLedgerEntry(
-                id: id,
-                sessionKey: sessionKey,
-                idempotencyKey: idempotencyKey,
-                content: content,
-                status: status,
-                runId: row["runId"] as? String,
-                createdAt: createdAt,
-                updatedAt: updatedAt,
-                retryCount: Int(row["retryCount"] as? Int64 ?? 0)
-            )
+            return try DeliveryLedgerEntry(from: row)
         }
+    }
+}
+
+// MARK: - Row Parsing
+
+extension DeliveryLedgerEntry {
+    /// Initialise from a GRDB Row (used by DeliveryLedgerRepository).
+    /// Centralises the ~30 lines of duplicated parsing logic.
+    init(from row: Row) throws {
+        let createdAt = try DeliveryLedgerRepository.extractDate(row, column: "createdAt")
+        let updatedAt = try DeliveryLedgerRepository.extractDate(row, column: "updatedAt")
+        
+        guard let idString: String = row["id"],
+              let id = UUID(uuidString: idString) else {
+            throw DeliveryLedgerError.malformedRow("invalid id")
+        }
+        guard let sessionKey: String = row["sessionKey"], !sessionKey.isEmpty else {
+            throw DeliveryLedgerError.malformedRow("missing sessionKey")
+        }
+        guard let idempotencyKey: String = row["idempotencyKey"], !idempotencyKey.isEmpty else {
+            throw DeliveryLedgerError.malformedRow("missing idempotencyKey")
+        }
+        guard let content: String = row["content"] else {
+            throw DeliveryLedgerError.malformedRow("missing content")
+        }
+        guard let statusRaw: String = row["status"],
+              let status = DeliveryStatus(rawValue: statusRaw) else {
+            throw DeliveryLedgerError.malformedRow("invalid status")
+        }
+        
+        self.id = id
+        self.sessionKey = sessionKey
+        self.idempotencyKey = idempotencyKey
+        self.content = content
+        self.status = status
+        self.runId = row["runId"] as? String
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.retryCount = Int(row["retryCount"] as? Int64 ?? 0)
     }
 }

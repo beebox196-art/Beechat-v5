@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct Attachment: Codable, FetchableRecord, MutablePersistableRecord {
+public struct Attachment: Codable, UpsertableRecord {
     public static let databaseTableName = "attachments"
     
     public var id: String
@@ -26,7 +26,6 @@ public struct Attachment: Codable, FetchableRecord, MutablePersistableRecord {
         self.createdAt = createdAt
     }
     
-    /// Columns that should be updated on conflict (upsert). Excludes createdAt and id.
     public static let upsertColumns: [Column] = [
         Column("messageId"), Column("type"), Column("url"),
         Column("localPath"), Column("mimeType"), Column("fileName"),

@@ -22,7 +22,6 @@ public class BeeChatPersistenceStore {
         dbManager.closeDatabase()
     }
     
-    // MARK: - Session operations
     
     public func saveSession(_ session: Session) throws {
         try sessionRepo.save(session)
@@ -52,7 +51,6 @@ public class BeeChatPersistenceStore {
         try sessionRepo.upsert(sessions)
     }
     
-    // MARK: - Topic operations
     
     private let topicRepo = TopicRepository()
     
@@ -80,7 +78,6 @@ public class BeeChatPersistenceStore {
         try topicRepo.resolveSessionKey(topicId: topicId)
     }
     
-    // MARK: - Message operations
     
     public func saveMessage(_ message: Message) throws {
         try messageRepo.save(message)
@@ -106,7 +103,6 @@ public class BeeChatPersistenceStore {
         try messageRepo.upsert(messages)
     }
     
-    // MARK: - Attachment operations
     
     public func saveAttachment(_ attachment: Attachment) throws {
         try attachmentRepo.save(attachment)

@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// A partial assistant message bubble shown during streaming.
-/// Displays the accumulated streaming text with a blinking cursor to indicate
-/// that the response is still being generated.
 struct StreamingBubble: View {
     @Environment(ThemeManager.self) var themeManager
     let content: String
@@ -10,18 +7,15 @@ struct StreamingBubble: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                // Sender name
                 Text("Bee")
                     .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
 
-                // Streaming content with cursor
                 HStack(spacing: 0) {
                     Text(content)
                         .font(themeManager.font(.body))
                         .textSelection(.enabled)
 
-                    // Blinking cursor
                     Text("▌")
                         .font(themeManager.font(.body))
                         .foregroundColor(themeManager.color(.accentPrimary))

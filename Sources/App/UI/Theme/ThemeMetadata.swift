@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// Metadata for theme picker display (avoids loading full theme data into lists).
 struct ThemeMetadata: Identifiable, Sendable {
     let id: String
     let name: String
-    let previewColors: [Color]  // 3-4 swatches for preview card
+    let previewColors: [Color]
 }
 
 extension ThemeMetadata {

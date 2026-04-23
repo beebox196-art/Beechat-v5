@@ -2,9 +2,7 @@ import Foundation
 import GRDB
 
 /// A user-facing topic in the BeeChat sidebar.
-/// Topics are what the user sees — NOT gateway sessions.
-/// Each topic maps to a gateway session via the topic_session_bridge table.
-public struct Topic: Codable, FetchableRecord, MutablePersistableRecord {
+public struct Topic: Codable, UpsertableRecord {
     public static let databaseTableName = "topics"
 
     public var id: String
@@ -12,11 +10,11 @@ public struct Topic: Codable, FetchableRecord, MutablePersistableRecord {
     public var lastMessagePreview: String?
     public var lastActivityAt: Date?
     public var unreadCount: Int = 0
-    public var sessionKey: String?       // gateway session key (nullable until first message creates one)
+    public var sessionKey: String?   
     public var isArchived: Bool = false
     public var createdAt: Date
     public var updatedAt: Date
-    public var metadataJSON: String?    // optional JSON blob for extensibility
+    public var metadataJSON: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -42,7 +40,6 @@ public struct Topic: Codable, FetchableRecord, MutablePersistableRecord {
         self.metadataJSON = metadataJSON
     }
 
-    /// Columns that should be updated on conflict (upsert). Excludes createdAt and id.
     public static let upsertColumns: [Column] = [
         Column("name"), Column("lastMessagePreview"), Column("lastActivityAt"),
         Column("unreadCount"), Column("sessionKey"), Column("isArchived"),
@@ -50,12 +47,7 @@ public struct Topic: Codable, FetchableRecord, MutablePersistableRecord {
     ]
 }
 
-/// Bridge table mapping topics to gateway sessions.
-/// A topic maps to one gateway session key.
-/// When a user creates a topic, it starts with no session key.
-/// The first message sent via chat.send creates a gateway session,
-/// and we store the mapping here.
-public struct TopicSessionBridge: Codable, FetchableRecord, MutablePersistableRecord {
+public struct TopicSessionBridge: Codable, UpsertableRecord {
     public static let databaseTableName = "topic_session_bridge"
 
     public var topicId: String
@@ -92,4 +84,10 @@ public struct TopicSessionBridge: Codable, FetchableRecord, MutablePersistableRe
         self.lastError = lastError
         self.retryCount = retryCount
     }
+
+    public static let upsertColumns: [Column] = [
+        Column("spaceId"), Column("openclawSessionKey"), Column("bridgeVersion"),
+        Column("status"), Column("updatedAt"), Column("lastSyncAt"),
+        Column("lastError"), Column("retryCount")
+    ]
 }

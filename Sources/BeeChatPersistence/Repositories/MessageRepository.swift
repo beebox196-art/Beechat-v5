@@ -8,39 +8,16 @@ public class MessageRepository {
         self.dbManager = dbManager
     }
     
-    /// Upsert a message — preserves createdAt on conflict.
     public func save(_ message: Message) throws {
         try dbManager.write { db in
             var message = message
-            try message.upsertAndFetch(
-                db,
-                onConflict: ["id"],
-                updating: .noColumnUnlessSpecified,
-                doUpdate: { excluded in
-                    Message.upsertColumns.map { column in
-                        column.set(to: excluded[column])
-                    }
-                }
-            )
+            try message.upsertPreservingCreatedAt(db)
         }
     }
     
-    /// Bulk upsert messages — preserves createdAt on conflict.
     public func upsert(_ messages: [Message]) throws {
         try dbManager.write { db in
-            for message in messages {
-                var message = message
-                try message.upsertAndFetch(
-                    db,
-                    onConflict: ["id"],
-                    updating: .noColumnUnlessSpecified,
-                    doUpdate: { excluded in
-                        Message.upsertColumns.map { column in
-                            column.set(to: excluded[column])
-                        }
-                    }
-                )
-            }
+            try upsertBatch(messages, into: db)
         }
     }
     

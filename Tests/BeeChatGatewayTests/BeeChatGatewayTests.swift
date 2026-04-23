@@ -5,7 +5,6 @@ import CryptoKit
 final class ConnectionStateTests: XCTestCase {
     
     func testAllStatesExist() {
-        // Verify all states are representable
         let states: [ConnectionState] = [.disconnected, .connecting, .handshaking, .connected, .error]
         XCTAssertEqual(states.count, 5)
     }
@@ -30,8 +29,6 @@ final class BackoffCalculatorTests: XCTestCase {
     
     func testFirstAttemptDelay() {
         let calc = BackoffCalculator(baseDelay: 1.0, maxDelay: 30.0, maxRetries: 10)
-        // First attempt: base * 2^0 = 1.0, with jitter ±0.2
-        // Run multiple times to verify range
         for _ in 0..<100 {
             let delay = calc.delay(forAttempt: 0)
             XCTAssertGreaterThanOrEqual(delay, 0.8, "Delay should be >= 0.8 (1.0 - 20%)")
@@ -41,19 +38,16 @@ final class BackoffCalculatorTests: XCTestCase {
     
     func testExponentialGrowth() {
         let calc = BackoffCalculator(baseDelay: 1.0, maxDelay: 30.0, maxRetries: 10)
-        // Attempt 0: ~1s, Attempt 3: ~8s, Attempt 5: ~32s (capped at 30)
         let delay0 = calc.delay(forAttempt: 0)
         let delay3 = calc.delay(forAttempt: 3)
         
-        // delay3 should be significantly larger than delay0 (even with jitter)
         XCTAssertGreaterThan(delay3, delay0 * 2, "Backoff should grow exponentially")
     }
     
     func testMaxDelayCap() {
         let calc = BackoffCalculator(baseDelay: 1.0, maxDelay: 30.0, maxRetries: 10)
-        // Even at high attempt numbers, delay should not exceed maxDelay + jitter
         for _ in 0..<100 {
-            let delay = calc.delay(forAttempt: 20) // Very high attempt
+            let delay = calc.delay(forAttempt: 20)
             XCTAssertLessThanOrEqual(delay, 36.0, "Delay should not exceed maxDelay + 20% jitter")
             XCTAssertGreaterThanOrEqual(delay, 24.0, "Delay should be at least maxDelay - 20% jitter")
         }
@@ -62,7 +56,6 @@ final class BackoffCalculatorTests: XCTestCase {
     func testCustomConfiguration() {
         let calc = BackoffCalculator(baseDelay: 2.0, maxDelay: 60.0, maxRetries: 5)
         XCTAssertEqual(calc.maxRetries, 5)
-        // Attempt 0: ~2s
         let delay = calc.delay(forAttempt: 0)
         XCTAssertGreaterThanOrEqual(delay, 1.6)
         XCTAssertLessThanOrEqual(delay, 2.4)
@@ -72,9 +65,7 @@ final class BackoffCalculatorTests: XCTestCase {
 final class DeviceCryptoTests: XCTestCase {
     
     func testKeyGeneration() throws {
-        // Generate a keypair — should not throw
         let key = try DeviceCrypto.getOrCreateKeyPair()
-        // Public key should be extractable
         let rawPubKey = key.publicKey.rawRepresentation
         XCTAssertEqual(rawPubKey.count, 32, "Ed25519 public key should be 32 bytes")
     }
@@ -82,7 +73,6 @@ final class DeviceCryptoTests: XCTestCase {
     func testDeviceIdDerivation() throws {
         let key = try DeviceCrypto.getOrCreateKeyPair()
         let deviceId = DeviceCrypto.getDeviceId(key)
-        // Device ID should be a hex string (SHA-256 = 64 hex chars)
         XCTAssertEqual(deviceId.count, 64, "Device ID should be 64 hex characters (SHA-256)")
         XCTAssertNotNil(deviceId.range(of: "^[0-9a-f]+$", options: .regularExpression), "Device ID should be lowercase hex")
     }
@@ -97,9 +87,7 @@ final class DeviceCryptoTests: XCTestCase {
     func testPublicKeyExport() throws {
         let key = try DeviceCrypto.getOrCreateKeyPair()
         let exported = DeviceCrypto.exportPublicKey(key)
-        // Should be valid base64url (no +, /, or =)
         XCTAssertNil(exported.range(of: "[+/=]", options: .regularExpression), "Exported public key should be base64url (no +, /, =)")
-        // Should decode back to 32 bytes
         let decoded = DeviceCrypto.fromBase64URL(exported)
         XCTAssertNotNil(decoded, "base64url decode should succeed")
         XCTAssertEqual(decoded?.count, 32, "Decoded public key should be 32 bytes")
@@ -121,11 +109,9 @@ final class DeviceCryptoTests: XCTestCase {
             nonce: "test-nonce-12345"
         )
         
-        // Signature should be valid base64url (no +, /, or =)
         XCTAssertNil(signature.range(of: "[+/=]", options: .regularExpression), "Signature should be base64url (no +, /, =)")
         XCTAssertGreaterThan(signature.count, 0, "Signature should not be empty")
         
-        // Should decode to 64 bytes (Ed25519 signature)
         let decoded = DeviceCrypto.fromBase64URL(signature)
         XCTAssertNotNil(decoded, "base64url decode should succeed")
         XCTAssertEqual(decoded?.count, 64, "Ed25519 signature should be 64 bytes")
@@ -143,7 +129,6 @@ final class DeviceCryptoTests: XCTestCase {
             token: nil, nonce: "test-nonce"
         )
         
-        // Ed25519 produces deterministic signatures for the same input
         XCTAssertNotNil(DeviceCrypto.fromBase64URL(signature), "Signature should be valid base64url")
         XCTAssertGreaterThan(signature.count, 0, "Signature should not be empty")
     }
@@ -161,7 +146,6 @@ final class DeviceCryptoTests: XCTestCase {
             platform: "macos", deviceFamily: "desktop"
         )
         
-        // Verify signature is valid base64url and 64 bytes
         let decoded = DeviceCrypto.fromBase64URL(signature)
         XCTAssertEqual(decoded?.count, 64, "Ed25519 signature should be 64 bytes")
     }
@@ -241,7 +225,6 @@ final class FrameTests: XCTestCase {
     }
     
     func testEventFrameStateVersionAsDict() throws {
-        // Gateway sometimes sends stateVersion as a dictionary — should decode as AnyCodable
         let json = """
         {
             "type": "event",
@@ -255,7 +238,6 @@ final class FrameTests: XCTestCase {
         let frame = try JSONDecoder().decode(EventFrame.self, from: json)
         XCTAssertEqual(frame.event, "chat")
         XCTAssertEqual(frame.seq, 42)
-        // stateVersion should decode as a dictionary without error
         XCTAssertNotNil(frame.stateVersion)
         XCTAssertEqual(frame.stateVersion?.value as? [String: Int], ["major": 1, "minor": 0])
     }
@@ -287,18 +269,15 @@ final class KeychainTokenStoreTests: XCTestCase {
     }
     
     func testDeleteAll() throws {
-        // Use unique accounts to avoid interference with other tests
         let testStore = KeychainTokenStore()
         try testStore.setGatewayToken("gw-delete-test")
         try testStore.setDeviceToken("dt-delete-test")
         
-        // Verify they exist
         XCTAssertEqual(try testStore.getGatewayToken(), "gw-delete-test")
         XCTAssertEqual(try testStore.getDeviceToken(), "dt-delete-test")
         
         try testStore.deleteAll()
         
-        // Verify BOTH are gone
         XCTAssertNil(try testStore.getGatewayToken(), "Gateway token should be deleted")
         XCTAssertNil(try testStore.getDeviceToken(), "Device token should be deleted")
     }
@@ -377,7 +356,6 @@ final class PendingRequestMapTests: XCTestCase {
 final class HelloOkParsingTests: XCTestCase {
     
     func testHelloOkParsingFromRawJSON() throws {
-        // Simulates handleHelloOk: decode HelloOk directly from raw JSON bytes
         let rawJSON = """
         {
             "type": "hello-ok",
@@ -399,7 +377,6 @@ final class HelloOkParsingTests: XCTestCase {
 final class GatewayEventTests: XCTestCase {
     
     func testGatewayEventEnum() throws {
-        // Verify all cases exist and have correct raw values
         XCTAssertEqual(GatewayEvent.chat.rawValue, "chat")
         XCTAssertEqual(GatewayEvent.agent.rawValue, "agent")
         XCTAssertEqual(GatewayEvent.health.rawValue, "health")
@@ -411,21 +388,18 @@ final class GatewayEventTests: XCTestCase {
         XCTAssertEqual(GatewayEvent.sessionMessage.rawValue, "session.message")
         XCTAssertEqual(GatewayEvent.sessionTool.rawValue, "session.tool")
         
-        // Codable round-trip
         let encoded = try JSONEncoder().encode(GatewayEvent.chat)
         let decoded = try JSONDecoder().decode(GatewayEvent.self, from: encoded)
         XCTAssertEqual(decoded, .chat)
     }
     
     func testRequestIdIncrementing() {
-        // Verify the request ID format is bc-N with incrementing N
         let id0 = "bc-\(0)"
         let id1 = "bc-\(1)"
         let id2 = "bc-\(2)"
         XCTAssertEqual(id0, "bc-0")
         XCTAssertEqual(id1, "bc-1")
         XCTAssertEqual(id2, "bc-2")
-        // Verify the IDs sort correctly (monotonically increasing)
         let ids = [id0, id1, id2]
         XCTAssertEqual(ids.sorted(), ids, "Incrementing IDs should sort naturally")
     }
@@ -434,7 +408,6 @@ final class GatewayEventTests: XCTestCase {
 final class HelloOkResilienceTests: XCTestCase {
     
     func testHelloOkWithEmptyAuth() throws {
-        // The gateway sends auth: {} on first connection (no deviceToken yet)
         let json = """
         {
             "type": "hello-ok",
@@ -456,7 +429,6 @@ final class HelloOkResilienceTests: XCTestCase {
     }
     
     func testHelloOkWithServerIdInsteadOfConnId() throws {
-        // The gateway may send "id" instead of "connId" in the server object
         let json = """
         {
             "type": "hello-ok",
@@ -477,7 +449,6 @@ final class HelloOkResilienceTests: XCTestCase {
     }
     
     func testHelloOkWithMinimalFields() throws {
-        // Minimal hello-ok with just required fields
         let json = """
         {
             "type": "hello-ok",
@@ -517,7 +488,6 @@ final class HelloOkResilienceTests: XCTestCase {
     }
     
     func testHelloOkParsingFromRawJSON() throws {
-        // Original test from the test file
         let rawJSON = """
         {
             "type": "hello-ok",
@@ -536,7 +506,6 @@ final class HelloOkResilienceTests: XCTestCase {
     }
     
     func testHelloOkViaAnyCodableRoundTrip() throws {
-        // Simulates the path: raw JSON → ResponseFrame → payload → encode → decode as HelloOk
         let rawJSON = """
         {
             "type": "res",
@@ -553,16 +522,13 @@ final class HelloOkResilienceTests: XCTestCase {
         }
         """.data(using: .utf8)!
         
-        // Decode as ResponseFrame (what GatewayClient receives)
         var responseFrame = try JSONDecoder().decode(ResponseFrame.self, from: rawJSON)
         responseFrame.rawData = rawJSON
         
-        // Verify the frame
         XCTAssertTrue(responseFrame.ok)
         XCTAssertEqual(responseFrame.id, "handshake")
         XCTAssertNotNil(responseFrame.payload)
         
-        // Attempt 1: Decode from rawData (most reliable path)
         let rawJson = try JSONSerialization.jsonObject(with: rawJSON) as! [String: Any]
         let payloadObj = rawJson["payload"] as! [String: Any]
         let payloadData = try JSONSerialization.data(withJSONObject: payloadObj)
@@ -571,7 +537,6 @@ final class HelloOkResilienceTests: XCTestCase {
         XCTAssertNil(helloOk1.auth?.deviceToken, "Empty auth should decode with nil deviceToken")
         XCTAssertEqual(helloOk1.server.connId, "conn-123", "server.id should map to connId")
         
-        // Attempt 2: Decode from payload via AnyCodable round-trip
         let payloadAnyCodableData = try JSONEncoder().encode(responseFrame.payload!)
         let helloOk2 = try JSONDecoder().decode(HelloOk.self, from: payloadAnyCodableData)
         XCTAssertEqual(helloOk2.protocol, 3)

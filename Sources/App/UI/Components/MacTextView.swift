@@ -3,7 +3,6 @@ import AppKit
 
 /// Auto-sizing NSTextView for macOS chat composer.
 /// Starts at single-line height (~36px), auto-expands up to ~160px (~6 lines).
-/// Enter = newline, Cmd+Enter = send (Telegram/WhatsApp/iMessage style).
 struct MacTextView: NSViewRepresentable {
     @Binding var text: String
     var onSend: (() -> Void)?
@@ -15,7 +14,6 @@ struct MacTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> ComposerContainer {
         let textView = ComposerTextView()
 
-        // NSTextView config
         textView.isEditable = true
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -33,26 +31,21 @@ struct MacTextView: NSViewRepresentable {
         textView.isContinuousSpellCheckingEnabled = false
         textView.isGrammarCheckingEnabled = false
 
-        // Auto-sizing: vertical growth, horizontal constrained
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineBreakMode = .byWordWrapping
         textView.textContainerInset = NSSize(width: 8, height: 6)
 
-        // Wire onSend
         textView.onSend = onSend
 
-        // Set initial text
         if !text.isEmpty {
             textView.string = text
         }
 
-        // Wire delegate
         textView.delegate = context.coordinator
         context.coordinator.textView = textView
 
-        // Create NSScrollView for proper text wrapping
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -65,14 +58,12 @@ struct MacTextView: NSViewRepresentable {
 
         scrollView.documentView = textView
 
-        // Pin text view width to scroll view width
         textView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             textView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
         ])
 
-        // Create container that provides intrinsicContentSize to SwiftUI
         let container = ComposerContainer(scrollView: scrollView, textView: textView)
 
         return container
@@ -81,23 +72,18 @@ struct MacTextView: NSViewRepresentable {
     func updateNSView(_ container: ComposerContainer, context: Context) {
         guard let textView = container.textView else { return }
 
-        // Update onSend callback
         textView.onSend = onSend
 
-        // Sync text from binding to view (only if different)
         if textView.string != text {
             textView.string = text
         }
 
-        // Recalculate height
         container.recalculateHeight()
     }
 }
 
 // MARK: - ComposerContainer
 
-/// NSView wrapper that provides intrinsicContentSize to SwiftUI based on text content height.
-/// Wraps an NSScrollView containing the NSTextView for proper word wrapping.
 class ComposerContainer: NSView {
     let scrollView: NSScrollView
     weak var textView: ComposerTextView?
@@ -138,7 +124,6 @@ class ComposerContainer: NSView {
             return
         }
 
-        // Force layout to get accurate measurement
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
         let textHeight = usedRect.height + textView.textContainerInset.height * 2
@@ -164,7 +149,6 @@ extension MacTextView {
             if text.wrappedValue != newText {
                 text.wrappedValue = newText
             }
-            // Update the container's height
             if let container = textView.enclosingScrollView?.superview as? ComposerContainer {
                 container.recalculateHeight()
             }
@@ -174,26 +158,22 @@ extension MacTextView {
 
 // MARK: - ComposerTextView
 
-/// NSTextView that handles key events and draws placeholder for the composer.
 class ComposerTextView: NSTextView {
     var onSend: (() -> Void)?
     private let placeholderText = "Type a message..."
 
     override func keyDown(with event: NSEvent) {
-        // Enter = newline, Cmd+Enter = send (Telegram/WhatsApp/iMessage style)
         if event.keyCode == 36 { // Return
             if event.modifierFlags.contains(.command) {
                 onSend?()
                 return
             }
-            // Plain Enter inserts newline
             super.keyDown(with: event)
             return
         }
         super.keyDown(with: event)
     }
 
-    /// Draw placeholder text when the text view is empty
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard string.isEmpty else { return }

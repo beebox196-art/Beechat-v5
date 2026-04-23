@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Typing indicator — three animated dots shown when Bee is generating a response.
-/// HARD CONSTRAINT: streaming buffer content is NEVER displayed. Only this indicator.
 struct TypingIndicator: View {
     @Environment(ThemeManager.self) var themeManager
     @State private var animations: [Bool] = [false, false, false]

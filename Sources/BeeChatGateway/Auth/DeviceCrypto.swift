@@ -4,9 +4,6 @@ import CryptoKit
 public enum DeviceCrypto {
     private static let keyTag = "com.beechat.device-identity"
 
-    // MARK: - Base64url Encoding/Decoding
-
-    /// Encode data to base64url (no padding, URL-safe alphabet).
     public static func toBase64URL(_ data: Data) -> String {
         return data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
@@ -14,12 +11,10 @@ public enum DeviceCrypto {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    /// Decode base64url string to data.
     public static func fromBase64URL(_ string: String) -> Data? {
         var base64 = string
             .replacingOccurrences(of: "-", with: "+")
             .replacingOccurrences(of: "_", with: "/")
-        // Add padding
         let remainder = base64.count % 4
         if remainder > 0 {
             base64 += String(repeating: "=", count: 4 - remainder)
@@ -27,42 +22,30 @@ public enum DeviceCrypto {
         return Data(base64Encoded: base64)
     }
 
-    // MARK: - Key Management
-
-    /// Get or create the persistent Ed25519 keypair.
-    /// Stores private key rawRepresentation (32 bytes) in Keychain; reconstructs on subsequent calls.
+    /// Persistent Ed25519 keypair stored in Keychain.
     public static func getOrCreateKeyPair() throws -> Curve25519.Signing.PrivateKey {
-        // Try to load existing key from Keychain
         if let existingData = readKeyFromKeychain() {
-            // Reconstruct private key from stored raw bytes
             return try Curve25519.Signing.PrivateKey(rawRepresentation: existingData)
         }
 
-        // Generate new Ed25519 keypair
         let privateKey = Curve25519.Signing.PrivateKey()
-
-        // Persist raw representation to Keychain
         let rawBytes = privateKey.rawRepresentation
         try storeKeyInKeychain(rawBytes)
 
         return privateKey
     }
 
-    /// Derive device ID from SHA-256 hash of the public key raw bytes, hex-encoded.
     public static func getDeviceId(_ key: Curve25519.Signing.PrivateKey) -> String {
         let publicKeyData = key.publicKey.rawRepresentation
         let hash = SHA256.hash(data: publicKeyData)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 
-    /// Export public key as base64url-encoded raw bytes (32 bytes) for transport.
     public static func exportPublicKey(_ key: Curve25519.Signing.PrivateKey) -> String {
         return toBase64URL(key.publicKey.rawRepresentation)
     }
 
-    /// Sign the challenge payload using Ed25519.
-    /// Uses v3 signature payload format:
-    ///   v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily
+    /// v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily
     public static func signChallenge(
         _ key: Curve25519.Signing.PrivateKey,
         deviceId: String,
@@ -76,7 +59,6 @@ public enum DeviceCrypto {
         platform: String = "macos",
         deviceFamily: String = "desktop"
     ) throws -> String {
-        // v3 canonical string (11 fields)
         let canonical = "v3|\(deviceId)|\(clientId)|\(clientMode)|\(role)|\(scopes.joined(separator: ","))|\(signedAtMs)|\(token ?? "")|\(nonce)|\(platform)|\(deviceFamily)"
 
         guard let data = canonical.data(using: .utf8) else {
@@ -86,8 +68,6 @@ public enum DeviceCrypto {
         let signature = try key.signature(for: data)
         return toBase64URL(signature)
     }
-
-    // MARK: - Keychain Helpers
 
     private static func readKeyFromKeychain() -> Data? {
         let query: [String: Any] = [
@@ -131,8 +111,6 @@ public enum DeviceCrypto {
         }
     }
 }
-
-// MARK: - Errors
 
 public enum DeviceCryptoError: LocalizedError {
     case keyGenerationFailed(String)

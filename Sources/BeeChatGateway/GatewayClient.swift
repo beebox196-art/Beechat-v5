@@ -49,11 +49,8 @@ public actor GatewayClient {
     
     private var eventContinuation: AsyncStream<(event: String, payload: [String: AnyCodable]?)>.Continuation?
     
-    /// Continuation that fires when the state machine reaches .connected or .error,
-    /// used by connect() to await handshake completion.
     private var handshakeContinuation: CheckedContinuation<Void, Error>?
     
-    /// Whether the handshake continuation has already been resumed (prevents double-resume)
     private var handshakeContinuationResumed = false
     
     private var nextRequestId: Int = 0
@@ -88,7 +85,6 @@ public actor GatewayClient {
     public init(config: Configuration, tokenStore: TokenStore = KeychainTokenStore()) {
         self.config = config
         self.tokenStore = tokenStore
-        // Load stored device token from Keychain if available
         self.currentDeviceToken = config.deviceToken ?? (try? tokenStore.getDeviceToken())
         self.backoff = BackoffCalculator(baseDelay: config.baseRetryDelay, maxDelay: config.maxRetryDelay, maxRetries: config.maxRetries)
     }
@@ -140,7 +136,13 @@ public actor GatewayClient {
                 
                 do {
                     let data = try JSONEncoder().encode(frame)
-                    try await transport.send(String(data: data, encoding: .utf8)!) 
+                    guard let text = String(data: data, encoding: .utf8) else {
+                        let error = NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode request frame as UTF-8"])
+                        await pendingRequests.remove(id: id, reason: error.localizedDescription)
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    try await transport.send(text) 
                 } catch {
                     await pendingRequests.remove(id: id, reason: error.localizedDescription)
                     continuation.resume(throwing: error)
@@ -163,7 +165,6 @@ public actor GatewayClient {
             return
         }
         
-        // Native app — set Origin to gateway host so it passes validation
         let origin: String
         if config.url.contains("127.0.0.1") || config.url.contains("localhost") {
             origin = "http://localhost:18789"
@@ -274,26 +275,26 @@ public actor GatewayClient {
         
         var helloOk: HelloOk?
         
-        // Attempt 1: Decode from rawData
+        // Attempt 1: Decode from rawData using Codable
         if let rawData = frame.rawData {
             do {
-                let rawJson = try JSONSerialization.jsonObject(with: rawData) as? [String: Any]
-                if let payloadObj = rawJson?["payload"] as? [String: Any] {
-                    let payloadData = try JSONSerialization.data(withJSONObject: payloadObj)
-                    helloOk = try JSONDecoder().decode(HelloOk.self, from: payloadData)
-                }
-            } catch {}
+                helloOk = try JSONDecoder().decode(HelloOk.self, from: rawData)
+            } catch {
+                print("[GW] Handshake decode from rawData failed: \(error)")
+            }
         }
         
         // Attempt 2: Decode from frame.payload via AnyCodable round-trip
         if helloOk == nil, let payload = frame.payload {
             do {
-                let payloadData = try JSONEncoder().encode(payload)
-                helloOk = try JSONDecoder().decode(HelloOk.self, from: payloadData)
-            } catch {}
+                let encoded = try JSONEncoder().encode(payload)
+                helloOk = try JSONDecoder().decode(HelloOk.self, from: encoded)
+            } catch {
+                print("[GW] Handshake decode from payload failed: \(error)")
+            }
         }
         
-        // Attempt 3: Manual partial decode
+        // Attempt 3: Manual partial decode (fallback for gateway compatibility)
         if helloOk == nil, let payload = frame.payload {
             helloOk = manuallyDecodeHelloOk(payload: payload)
         }
@@ -303,7 +304,11 @@ public actor GatewayClient {
             
             if let deviceToken = helloOk.auth?.deviceToken {
                 self.currentDeviceToken = deviceToken
-                try? tokenStore.setDeviceToken(deviceToken)
+                do {
+                    try tokenStore.setDeviceToken(deviceToken)
+                } catch {
+                    print("[GW] Failed to store device token: \(error)")
+                }
                 onDeviceToken?(deviceToken)
             }
         }
@@ -362,7 +367,6 @@ public actor GatewayClient {
             }
         }
         
-        // Build the HelloOk struct
         let helloOk = HelloOk(
             type: (payload["type"]?.value as? String) ?? "hello-ok",
             protocol: protocolVersion,
@@ -419,7 +423,7 @@ public actor GatewayClient {
                     nonce: nonce
                 )
             } catch {
-                // Device identity optional — connect without it
+                print("[GW] Device identity build failed: \(error)")
             }
         }
         
@@ -442,7 +446,10 @@ public actor GatewayClient {
         do {
             let frame = RequestFrame(id: "handshake", method: "connect", params: try encodeParams(params))
             let data = try JSONEncoder().encode(frame)
-            try await transport.send(String(data: data, encoding: .utf8)!)
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode handshake frame as UTF-8"])
+            }
+            try await transport.send(text)
             
             let timeoutSeconds = config.requestTimeout
             Task {

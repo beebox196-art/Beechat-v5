@@ -1,8 +1,6 @@
 import SwiftUI
 import BeeChatGateway
 
-/// Thin status bar showing gateway connection state.
-/// Lives at the top of the detail pane — subtle, one line.
 struct GatewayStatusBar: View {
     @Environment(ThemeManager.self) var themeManager
     let connectionState: ConnectionState

@@ -1,8 +1,6 @@
 import SwiftUI
 
 /// Message composer — clean input row only.
-/// Enter = newline, Cmd+Enter = send, or click Send button.
-/// Gateway status lives in GatewayStatusBar (top of detail pane), not here.
 struct Composer: View {
     @Environment(ThemeManager.self) var themeManager
 
@@ -13,7 +11,6 @@ struct Composer: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
-            // Attachment button
             Button(action: { showAttachmentPicker = true }) {
                 Image(systemName: "plus.circle")
                     .font(.system(size: 24))
@@ -27,7 +24,6 @@ struct Composer: View {
                 Button("Voice Note") { viewModel.startRecording() }
             }
 
-            // Text input — MacTextView (NSTextView wrapper) for auto-expand
             MacTextView(
                 text: $viewModel.inputText,
                 onSend: {
@@ -42,7 +38,6 @@ struct Composer: View {
             .background(themeManager.color(.bgPanel))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            // Voice recording button
             Button(action: toggleRecording) {
                 Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")
                     .font(.system(size: 20))
@@ -56,7 +51,6 @@ struct Composer: View {
             )
             .accessibilityLabel(viewModel.isRecording ? "Stop recording" : "Start recording")
 
-            // Send button
             Button(action: { onSend() }) {
                 Image(systemName: "paperplane.fill")
                     .font(.system(size: 20))

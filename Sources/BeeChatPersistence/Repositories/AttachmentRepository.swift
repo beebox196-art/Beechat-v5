@@ -8,20 +8,10 @@ public class AttachmentRepository {
         self.dbManager = dbManager
     }
     
-    /// Upsert an attachment — preserves createdAt on conflict.
     public func save(_ attachment: Attachment) throws {
         try dbManager.write { db in
             var attachment = attachment
-            try attachment.upsertAndFetch(
-                db,
-                onConflict: ["id"],
-                updating: .noColumnUnlessSpecified,
-                doUpdate: { excluded in
-                    Attachment.upsertColumns.map { column in
-                        column.set(to: excluded[column])
-                    }
-                }
-            )
+            try attachment.upsertPreservingCreatedAt(db)
         }
     }
     

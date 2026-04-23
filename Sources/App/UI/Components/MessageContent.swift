@@ -1,7 +1,6 @@
 import SwiftUI
 import BeeChatPersistence
 
-/// Renders the content inside a message bubble — text and future media.
 struct MessageContent: View {
     @Environment(ThemeManager.self) var themeManager
     let message: Message

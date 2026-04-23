@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct Session: Codable, FetchableRecord, MutablePersistableRecord {
+public struct Session: Codable, UpsertableRecord {
     public static let databaseTableName = "sessions"
     
     public var id: String
@@ -26,7 +26,6 @@ public struct Session: Codable, FetchableRecord, MutablePersistableRecord {
         self.createdAt = createdAt
     }
     
-    /// Columns that should be updated on conflict (upsert). Excludes createdAt and id.
     public static let upsertColumns: [Column] = [
         Column("agentId"), Column("channel"), Column("title"),
         Column("lastMessageAt"), Column("unreadCount"), Column("isPinned"),

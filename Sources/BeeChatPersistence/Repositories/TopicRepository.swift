@@ -8,26 +8,14 @@ public class TopicRepository {
         self.dbManager = dbManager
     }
 
-    // MARK: - Topic CRUD
 
-    /// Save a topic — upserts on conflict by id.
     public func save(_ topic: Topic) throws {
         try dbManager.write { db in
             var topic = topic
-            try topic.upsertAndFetch(
-                db,
-                onConflict: ["id"],
-                updating: .noColumnUnlessSpecified,
-                doUpdate: { excluded in
-                    Topic.upsertColumns.map { column in
-                        column.set(to: excluded[column])
-                    }
-                }
-            )
+            try topic.upsertPreservingCreatedAt(db)
         }
     }
 
-    /// Fetch all non-archived topics, ordered by lastActivityAt descending.
     public func fetchAllActive(limit: Int = 100) throws -> [Topic] {
         try dbManager.reader.read { db in
             try Topic
@@ -38,7 +26,6 @@ public class TopicRepository {
         }
     }
 
-    /// Delete a topic and all associated data (messages, bridge entries).
     public func deleteCascading(_ id: String) throws {
         try dbManager.write { db in
             // Find the session key for this topic (if any)
@@ -62,16 +49,13 @@ public class TopicRepository {
         }
     }
 
-    /// Update the session key for a topic.
     public func updateSessionKey(topicId: String, sessionKey: String) throws {
         try dbManager.write { db in
             try db.execute(sql: "UPDATE topics SET sessionKey = ?, updatedAt = ? WHERE id = ?", arguments: [sessionKey, Date(), topicId])
         }
     }
 
-    // MARK: - Bridge CRUD
 
-    /// Save a bridge entry mapping topicId → sessionKey.
     public func saveBridge(topicId: String, sessionKey: String) throws {
         try dbManager.write { db in
             var bridge = TopicSessionBridge(
@@ -82,8 +66,6 @@ public class TopicRepository {
         }
     }
 
-    /// Resolve the gateway session key for a topic.
-    /// Checks the topics table first (sessionKey column), then falls back to the bridge table.
     public func resolveSessionKey(topicId: String) throws -> String? {
         try dbManager.reader.read { db in
             // Try topics.sessionKey first
@@ -95,7 +77,6 @@ public class TopicRepository {
         }
     }
 
-    /// Resolve the topic ID for a gateway session key.
     public func resolveTopicId(for sessionKey: String) throws -> String? {
         try dbManager.reader.read { db in
             // Try topics table first
@@ -138,7 +119,6 @@ public class TopicRepository {
     }
     
     /// List all bridge entries as (sessionKey, topicId) pairs.
-    /// Used to build the BeeChat session filter.
     public func listAllBridgeSessionKeys() throws -> [(String, String)] {
         try dbManager.reader.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT openclawSessionKey, topicId FROM topic_session_bridge")

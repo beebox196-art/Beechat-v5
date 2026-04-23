@@ -3,6 +3,18 @@ import BeeChatGateway
 import BeeChatPersistence
 import BeeChatSyncBridge
 
+private struct OpenClawConfig: Codable {
+    let gateway: GatewayConfig
+}
+
+private struct GatewayConfig: Codable {
+    let auth: AuthConfig
+    
+    struct AuthConfig: Codable {
+        let token: String
+    }
+}
+
 @main
 struct IntegrationTest {
     static func main() async {
@@ -10,7 +22,6 @@ struct IntegrationTest {
         print("==============================================")
         print()
 
-        // Overall timeout
         let timeoutTask = Task {
             try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s
             print("⏰ TIMEOUT: Test exceeded 30 seconds — aborting")
@@ -28,14 +39,8 @@ struct IntegrationTest {
             let configPath = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".openclaw/openclaw.json")
             let configData = try Data(contentsOf: configPath)
-            guard let json = try JSONSerialization.jsonObject(with: configData) as? [String: Any],
-                  let gateway = json["gateway"] as? [String: Any],
-                  let auth = gateway["auth"] as? [String: Any],
-                  let gwToken = auth["token"] as? String else {
-                print("   ❌ FAILED: Could not extract gateway.auth.token from openclaw.json")
-                Foundation.exit(1)
-            }
-            token = gwToken
+            let openClawConfig = try JSONDecoder().decode(OpenClawConfig.self, from: configData)
+            token = openClawConfig.gateway.auth.token
             print("   ✅ Token loaded (\(token.prefix(8))...\(token.suffix(4)))")
         } catch {
             print("   ❌ FAILED: Could not read openclaw.json — \(error)")
@@ -46,14 +51,8 @@ struct IntegrationTest {
         print()
         print("🌐 Step 2: Creating GatewayClient (control-ui mode for localhost auto-pairing)...")
 
-        // Use KeychainTokenStore so device pairing persists between runs
-        // First run: pairs device, gets deviceToken stored in keychain
-        // Second run: uses stored deviceToken to get operator scopes
         let tokenStore = KeychainTokenStore()
         
-        // Gateway validates client.id against known IDs: cli, openclaw-control-ui, openclaw-control-ui, etc.
-        // Gateway validates client.mode against known modes: cli, ui, webchat, backend, node, probe, test
-        // We use "openclaw-control-ui" (native macOS app) and "ui" (interactive UI mode)
         let config = GatewayClient.Configuration(
             url: "ws://127.0.0.1:18789",
             token: token,
@@ -66,7 +65,6 @@ struct IntegrationTest {
         print("      clientMode: \(config.clientMode)")
         print("      clientId: \(config.clientInfo.id)")
         
-        // Check if we have a previously paired device token
         if let existingToken = try? tokenStore.getDeviceToken() {
             print("      🔑 Using previously paired device: \(existingToken.prefix(8))...\(existingToken.suffix(4))")
         } else {
@@ -77,7 +75,6 @@ struct IntegrationTest {
         print()
         print("🔗 Step 3: Connecting to gateway and verifying handshake...")
 
-        // Track state transitions
         var stateTransitions: [String] = []
         await gateway.updateConnectionStateObserver { newState in
             print("      📡 State changed: \(newState.rawValue)")
@@ -150,7 +147,6 @@ struct IntegrationTest {
         print("📡 Step 6: Verifying events — listening for 5 seconds...")
         var eventsWork = false
         do {
-            // Subscribe to session events first
             print("      Subscribing to session events...")
             let subscribeResult = try await gateway.call(method: "sessions.subscribe", params: [:])
             print("      ✅ sessions.subscribe acknowledged (keys: \(subscribeResult.keys.map { String($0) }).joined(separator: ", ")))")

@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Centralised theme state. Inject as @Environment(ThemeManager.self).
-/// Views call `themeManager.color(.bgSurface)` etc.
 @MainActor
 @Observable
 final class ThemeManager {
@@ -27,7 +25,6 @@ final class ThemeManager {
     // MARK: - Theme switching
 
     func switchTheme(to id: String) {
-        // Currently only artisanal-tech exists; more themes added in Phase 4B
         guard id == currentTheme.id else { return }
         persistTheme(id: id)
     }
@@ -36,7 +33,6 @@ final class ThemeManager {
 
     private func loadPersistedTheme() {
         if let id = UserDefaults.standard.string(forKey: "BeeChat.selectedTheme") {
-            // For now only artisanal-tech is available; keep currentTheme as-is
             _ = id
         }
     }

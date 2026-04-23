@@ -9,8 +9,6 @@ public struct EventRouter {
         self.syncBridge = syncBridge
     }
 
-    /// Check whether a session key belongs to a BeeChat topic.
-    /// Events from non-BeeChat sessions (Telegram, cron, subagents) are silently dropped.
     private func isBeeChatSession(_ sessionKey: String) async throws -> Bool {
         return try await syncBridge.isBeeChatSession(sessionKey)
     }
@@ -37,42 +35,29 @@ public struct EventRouter {
     private func handleChatEvent(payload: [String: AnyCodable]?) async throws {
         guard let payload = payload else { return }
         
-        let sessionKey = payload["sessionKey"]?.value as? String ?? ""
-        let state = payload["state"]?.value as? String ?? ""
-        let errorMessage = payload["errorMessage"]?.value as? String
+        // Decode the payload into a typed struct via AnyCodable round-trip
+        guard let payloadData = try? JSONEncoder().encode(payload),
+              let chatEvent = try? JSONDecoder().decode(ChatEventPayload.self, from: payloadData) else {
+            return
+        }
+        
+        let sessionKey = chatEvent.sessionKey
+        let state = chatEvent.state
+        let errorMessage = chatEvent.errorMessage
 
-        // DROP all events from non-BeeChat sessions
         guard try await isBeeChatSession(sessionKey) else { return }
 
-        // Extract message text from payload
-        let messageDict = payload["message"]?.value as? [String: Any]
-        let messageText: String?
-        if let msgDict = messageDict {
-            if let contentStr = msgDict["content"] as? String {
-                messageText = contentStr
-            } else if let contentBlocks = msgDict["content"] as? [[String: Any]] {
-                // ContentBlock[] format - extract text blocks
-                messageText = contentBlocks
-                    .filter { $0["type"] as? String == "text" }
-                    .compactMap { $0["text"] as? String }
-                    .joined()
-            } else {
-                messageText = nil
-            }
-        } else {
-            messageText = nil
-        }
+        let messageText = chatEvent.message?.content.isEmpty == false ? chatEvent.message?.content : nil
 
         switch state {
         case "delta":
-            // Gateway sends accumulated text (not incremental)
             if let text = messageText {
                 await syncBridge.processChatDelta(sessionKey: sessionKey, text: text)
             }
         case "final":
-            if let text = messageText {
-                let messageId = messageDict?["id"] as? String ?? UUID().uuidString
-                let timestamp = messageDict?["timestamp"] as? Int64 ?? Int64(Date().timeIntervalSince1970 * 1000)
+            if let text = messageText, let msg = chatEvent.message {
+                let messageId = msg.id ?? UUID().uuidString
+                let timestamp = msg.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
                 let message = Message(
                     id: messageId,
                     sessionId: sessionKey,
@@ -93,24 +78,24 @@ public struct EventRouter {
     private func handleSessionMessage(payload: [String: AnyCodable]?) async throws {
         guard let payload = payload else { return }
         
-        guard let sessionKey = payload["sessionKey"]?.value as? String,
-              let dataDict = payload["data"]?.value as? [String: Any],
-              let content = dataDict["content"] as? String,
-              let role = dataDict["role"] as? String else {
+        // Decode the payload into a typed struct via AnyCodable round-trip
+        guard let payloadData = try? JSONEncoder().encode(payload),
+              let sessionMsg = try? JSONDecoder().decode(SessionMessagePayload.self, from: payloadData) else {
             return
         }
         
-        // DROP all events from non-BeeChat sessions
+        let sessionKey = sessionMsg.sessionKey
+        
         guard try await isBeeChatSession(sessionKey) else { return }
 
-        let ts = payload["ts"]?.value as? Int64 ?? 0
-        let messageId = dataDict["id"] as? String ?? UUID().uuidString
+        let ts = sessionMsg.ts ?? 0
+        let messageId = sessionMsg.data.id ?? UUID().uuidString
 
         let message = Message(
             id: messageId,
             sessionId: sessionKey,
-            role: role,
-            content: content,
+            role: sessionMsg.data.role,
+            content: sessionMsg.data.content,
             timestamp: Date(timeIntervalSince1970: Double(ts / 1000))
         )
 
@@ -120,44 +105,17 @@ public struct EventRouter {
     private func handleAgentEvent(payload: [String: AnyCodable]?) async throws {
         guard let payload = payload else { return }
         
-        // Manual decode of AgentEventPayload from [String: AnyCodable]
-        guard let runId = payload["runId"]?.value as? String,
-              let stream = payload["stream"]?.value as? String,
-              let sessionKey = payload["sessionKey"]?.value as? String,
-              let dataDict = payload["data"]?.value as? [String: Any] else {
+        // Decode the payload into a typed struct via AnyCodable round-trip
+        guard let payloadData = try? JSONEncoder().encode(payload),
+              let agentEvent = try? JSONDecoder().decode(AgentEventPayload.self, from: payloadData) else {
             return
         }
         
-        // DROP all events from non-BeeChat sessions
+        let sessionKey = agentEvent.sessionKey
+        
         guard try await isBeeChatSession(sessionKey) else { return }
 
-        let seq = payload["seq"]?.value as? Int
-        let ts = payload["ts"]?.value as? Int64 ?? 0
-
-        let data = AgentEventData(
-            itemId: dataDict["itemId"] as? String,
-            phase: dataDict["phase"] as? String,
-            kind: dataDict["kind"] as? String,
-            title: dataDict["title"] as? String,
-            status: dataDict["status"] as? String,
-            name: dataDict["name"] as? String,
-            text: dataDict["text"] as? String,
-            toolCallId: dataDict["toolCallId"] as? String,
-            meta: dataDict["meta"] as? String,
-            progressText: dataDict["progressText"] as? String,
-            output: dataDict["output"] as? String
-        )
-
-        let eventPayload = AgentEventPayload(
-            runId: runId,
-            stream: stream,
-            data: data,
-            sessionKey: sessionKey,
-            seq: seq,
-            ts: ts
-        )
-
-        try await syncBridge.processAgentEvent(eventPayload)
+        try await syncBridge.processAgentEvent(agentEvent)
     }
 
     private func handleHealthEvent(payload: [String: AnyCodable]?) async {

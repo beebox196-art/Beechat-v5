@@ -4,7 +4,7 @@
 active
 
 **Phase:** Working App — Direct WebSocket Path  
-**Last Updated:** 2026-04-22  
+**Last Updated:** 2026-04-23  
 **Latest Commit:** `696b33a` — feat: BeeChat v5 working chat interface — topics, messages, gateway connection
 
 ---
@@ -107,9 +107,16 @@ The app connects to the OpenClaw gateway, displays topics in a sidebar, shows me
 
 ---
 
+## Dependency Analysis (2026-04-23)
+- **No circular dependencies** — clean DAG architecture
+- **Design smell:** SyncBridge bypasses `BeeChatPersistenceStore` by accessing `DatabaseManager.shared` directly
+- **Duplicated logic:** `isBeeChatSession()` and `normalizeSessionKey()` exist in both SyncBridge.swift and Reconciler.swift
+- See `DEPENDENCY_ANALYSIS.md` for full assessment
+
 ## Known Issues
 - M4 AsyncStream delivery tests remain as low-priority gap
 - GatewayStatusBar shows "No gateway connection" briefly on startup (cosmetic)
+- `AnyCodable` Sendable warning (Swift 6 compatibility issue)
 
 ## Key Facts
 - **GitHub:** https://github.com/beebox196-art/Beechat-v5

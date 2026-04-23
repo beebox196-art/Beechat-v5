@@ -3,7 +3,6 @@ import BeeChatSyncBridge
 import BeeChatPersistence
 import GRDB
 
-/// Main chat window — NavigationSplitView layout with sidebar + detail.
 struct MainWindow: View {
     @Environment(ThemeManager.self) var themeManager
     @Environment(AppState.self) var appState
@@ -20,9 +19,6 @@ struct MainWindow: View {
     @State private var deleteErrorMsg: String?
     @FocusState private var isNewTopicFieldFocused: Bool
 
-    /// Sidebar selection binding — two-way: reads from and writes to messageViewModel.selectedTopicId.
-    /// When the user clicks a topic, this sets the selectedTopicId which triggers
-    /// onChange → selectTopic() → message observation starts.
     private var sidebarSelection: Binding<String?> {
         Binding(
             get: { messageViewModel.selectedTopicId },
@@ -36,7 +32,6 @@ struct MainWindow: View {
 
     var body: some View {
         NavigationSplitView {
-            // SIDEBAR — topic list + bottom action bar
             VStack(spacing: 0) {
                 List(selection: sidebarSelection) {
                     ForEach(messageViewModel.topics) { topic in
@@ -100,14 +95,11 @@ struct MainWindow: View {
                 }
             }
         } detail: {
-            // DETAIL — chat view
             VStack(spacing: 0) {
-                // Thin status bar at top of detail pane
                 GatewayStatusBar(connectionState: appState.connectionState, detailText: appState.offlineStatus ?? appState.errorMessage)
                 Divider()
 
                 if messageViewModel.selectedTopic != nil {
-                    // Filter streaming content to only show for the currently active topic
                     let isActiveTopicStreaming = syncBridgeObserver.isStreaming
                         && syncBridgeObserver.streamingSessionKey == messageViewModel.selectedTopicId
                     let activeTopicStreamingContent = isActiveTopicStreaming
@@ -185,54 +177,45 @@ struct MainWindow: View {
 
     }
 
-    // MARK: - Wiring
 
     private func wireUpObservers() {
         guard appState.isReady else { return }
         guard !isObserving else { return }
         isObserving = true
 
-        // Start local GRDB ValueObservation for TOPICS (not sessions).
-        // This feeds into updateTopics() — sidebar shows topics only.
         startLocalTopicObservation()
 
-        // Start local GRDB observation for messages (gateway-independent).
         messageViewModel.startLocalMessageObservation()
 
         if let bridge = appState.syncBridge {
             rewireForGateway(bridge)
         } else {
-            // No gateway — configure composer for local-only mode
             composerViewModel.configure(syncBridge: nil, messageViewModel: messageViewModel)
         }
     }
 
-    /// Re-wire gateway-dependent observers when gateway connects.
-    /// Called from onChange(of: connectionState) when state becomes .connected.
     private func rewireForGateway(_ bridge: SyncBridge) {
         guard !isGatewayWired else { return }
         isGatewayWired = true
 
-        // Attach SyncBridgeObserver as delegate
         syncBridgeObserver.attach(bridge)
 
-        // Start messageViewModel gateway-dependent observation
         messageViewModel.start(syncBridge: bridge)
 
-        // Configure composer
         composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
 
-        // Re-observe messages for current topic via gateway stream
         if let topicId = messageViewModel.selectedTopicId {
             let topicRepo = TopicRepository()
-            if let sessionKey = try? topicRepo.resolveSessionKey(topicId: topicId) {
-                messageViewModel.startGatewayMessageObservation(sessionKey: sessionKey)
+            do {
+                if let sessionKey = try topicRepo.resolveSessionKey(topicId: topicId) {
+                    messageViewModel.startGatewayMessageObservation(sessionKey: sessionKey)
+                }
+            } catch {
+                print("[MainWindow] Failed to resolve session key for gateway observation: \(error)")
             }
         }
     }
 
-    /// Start a standalone GRDB ValueObservation on the TOPICS table.
-    /// This is the sidebar data source — topics only, zero sessions.
     private func startLocalTopicObservation() {
         let observation = ValueObservation.tracking { db in
             try Topic
@@ -259,18 +242,13 @@ struct MainWindow: View {
         }
     }
 
-    // MARK: - Actions
 
-    /// Composer send — delegates to ComposerViewModel.send() which handles
-    /// text clearing and error recovery internally.
     private func composerSend() {
         Task {
             await composerViewModel.send()
         }
     }
 
-    /// Create a new topic — persists to the topics table.
-    /// If the gateway is connected, sends an initial message to create a session.
     private func createNewTopic() {
         guard !newTopicTitle.isEmpty else { return }
         let title = newTopicTitle
@@ -278,7 +256,6 @@ struct MainWindow: View {
 
         Task {
             do {
-                // Create a Topic and persist it
                 let newTopic = Topic(
                     id: UUID().uuidString,
                     name: title,
@@ -289,12 +266,10 @@ struct MainWindow: View {
                 try topicRepo.save(newTopic)
                 print("[MainWindow] Created topic: \(title) (\(newTopic.id))")
 
-                // Select the new topic (ValueObservation handles the list update)
                 await MainActor.run {
                     messageViewModel.addLocalTopic(newTopic)
                 }
 
-                // If gateway is connected, send an initial message to create a gateway session
                 if let bridge = appState.syncBridge {
                     do {
                         let runId = try await bridge.sendMessage(
@@ -302,19 +277,16 @@ struct MainWindow: View {
                             text: "Start",
                             thinking: nil
                         )
-                        // Update the topic with the session key (which is the topic id for now)
                         try topicRepo.updateSessionKey(topicId: newTopic.id, sessionKey: newTopic.id)
                         try topicRepo.saveBridge(topicId: newTopic.id, sessionKey: newTopic.id)
                         print("[MainWindow] Gateway session created for topic \(newTopic.id), runId: \(runId)")
                     } catch {
-                        // Session creation failed — topic still exists locally
                         print("[MainWindow] Gateway session creation failed (topic still local): \(error)")
                     }
                 }
             } catch {
                 print("[MainWindow] Create topic failed: \(error)")
                 await MainActor.run {
-                    // Restore text for retry
                     self.newTopicTitle = title
                 }
             }

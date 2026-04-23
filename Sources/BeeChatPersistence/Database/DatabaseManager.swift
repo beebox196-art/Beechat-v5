@@ -20,8 +20,6 @@ public class DatabaseManager {
     public func openDatabase(at path: String) throws {
         var config = Configuration()
         config.prepareDatabase { db in
-            // DatabasePool manages WAL mode automatically when we use
-            // this hook — it runs before any transactions start.
             try db.execute(sql: "PRAGMA journal_mode=WAL")
             try db.execute(sql: "PRAGMA foreign_keys=OFF")
         }

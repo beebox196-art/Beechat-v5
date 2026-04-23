@@ -1,13 +1,11 @@
 import SwiftUI
 
-/// A complete theme definition — maps semantic tokens to concrete values.
 struct Theme: Identifiable, Sendable {
     let id: String
     let name: String
     let colors: [ColorToken: Color]
     let typography: [TypographyToken: Font]
 
-    // Artisanal Tech — default theme
     static let artisanalTech = Theme(
         id: "artisanal-tech",
         name: "Artisanal Tech",

@@ -1,5 +1,8 @@
 # BeeChat v5 — Dependency Graph Analysis
 
+**Last Updated:** 2026-04-23  
+**Analyst:** Bee (subagent: beechat-deps)
+
 ## Module Structure (from Package.swift)
 
 ```
@@ -7,6 +10,7 @@ BeeChatPersistence ──→ GRDB
 BeeChatGateway     ──→ (no internal deps)
 BeeChatSyncBridge  ──→ GRDB, BeeChatPersistence, BeeChatGateway
 BeeChatApp         ──→ BeeChatPersistence, BeeChatGateway, BeeChatSyncBridge
+BeeChatIntegrationTest ──→ BeeChatPersistence, BeeChatGateway, BeeChatSyncBridge
 ```
 
 ## Import Dependency Map (from source files)
@@ -14,7 +18,7 @@ BeeChatApp         ──→ BeeChatPersistence, BeeChatGateway, BeeChatSyncBrid
 ### BeeChatPersistence
 - Imports: Foundation, GRDB
 - **No internal module imports** ✅
-- Provides: Models (Message, Session, Topic, Attachment), Repositories, BeeChatPersistenceStore, MessageStore protocol
+- Provides: Models (Message, Session, Topic, Attachment), Repositories, BeeChatPersistenceStore, DatabaseManager
 
 ### BeeChatGateway
 - Imports: Foundation, CryptoKit, Security
@@ -24,10 +28,14 @@ BeeChatApp         ──→ BeeChatPersistence, BeeChatGateway, BeeChatSyncBrid
 ### BeeChatSyncBridge
 - Imports: Foundation, GRDB, BeeChatGateway, BeeChatPersistence
 - **Depends on both leaf modules** (as designed)
-- Provides: SyncBridge (main coordinator), RPCClient, EventRouter, Reconciler, Observers, DeliveryLedgerRepository
+- Provides: SyncBridge (main coordinator), RPCClient, EventRouter, Reconciler, DeliveryLedgerRepository
 
 ### BeeChatApp
-- Imports: BeeChatSyncBridge, BeeChatPersistence, BeeChatGateway
+- Imports: SwiftUI, BeeChatSyncBridge, BeeChatPersistence, BeeChatGateway, GRDB, os
+- **Top-level consumer** of all three library modules
+
+### BeeChatIntegrationTest
+- Imports: Foundation, BeeChatGateway, BeeChatPersistence, BeeChatSyncBridge
 - **Top-level consumer** of all three library modules
 
 ## Dependency Graph (Directed Acyclic Graph)
@@ -35,6 +43,7 @@ BeeChatApp         ──→ BeeChatPersistence, BeeChatGateway, BeeChatSyncBrid
 ```
                     ┌─────────────────┐
                     │   BeeChatApp    │  (executable)
+                    │BeeChatIntegrationTest│
                     └────┬─────┬──────┘
                          │     │
                          ▼     ▼
@@ -59,23 +68,41 @@ The dependency graph is a clean DAG:
 3. **BeeChatSyncBridge** — middle layer, depends on both leaf modules
 4. **BeeChatApp** — top layer, depends on all three
 
-No module imports a module that transitively imports it. There are zero circular chains.
+No module imports a module that transitively imports it. There are zero circular chains. No untangling is needed.
 
-## Architectural Observations
+## Architectural Concerns (Not Blocking, But Worth Addressing)
 
-### Strengths
-- **Clean layered architecture**: Leaf → Bridge → App follows a standard dependency inversion pattern
-- **Protocol-based decoupling**: `MessageStore` protocol in Persistence, `RPCClientProtocol` in SyncBridge
-- **SyncBridgeDelegate protocol**: Decouples SyncBridge from its consumers (App layer)
-- **SessionKeyNormalizer**: Shared utility extracted to avoid duplication
+### 1. DatabaseManager Singleton Bypass (Design Smell)
+**Severity:** Medium  
+**Location:** SyncBridge → `DatabaseManager.shared`
 
-### Minor Concerns (not blocking)
-1. **SessionKeyNormalizer duplication**: `SyncBridge.isBeeChatSession()` and `Reconciler.isBeeChatSession()` duplicate logic that exists in `SessionKeyNormalizer`. The normalizer should be the single source of truth.
-2. **GRDB re-import in SyncBridge**: `MessageObserver`, `SessionObserver`, and `DeliveryLedgerRepository` import both GRDB and BeeChatPersistence. Since they use `DatabaseManager` directly (which is internal to Persistence), this is a design smell — they should use the public `MessageStore` protocol instead of reaching into the DB layer.
-3. **DatabaseManager.shared singleton**: SyncBridge modules bypass the `MessageStore` protocol and access `DatabaseManager.shared` directly, creating a hidden dependency path that isn't visible in the module graph.
+`DeliveryLedgerRepository` and `SyncBridge.messageStream()` both access `DatabaseManager.shared` directly, bypassing the `BeeChatPersistenceStore` abstraction. This creates a hidden dependency path:
 
-### No Refactoring Required for Circular Dependencies
-Since there are no circular dependencies, no untangling is needed. The architecture is sound.
+```
+SyncBridge → DatabaseManager.shared (internal to Persistence)
+```
+
+While not a circular dependency, it means SyncBridge has two paths into Persistence:
+- **Public:** `BeeChatPersistenceStore` (via protocol/config)
+- **Hidden:** `DatabaseManager.shared` (singleton)
+
+**Recommendation:** Either (a) expose `DatabaseManager` as a public API of BeeChatPersistence, or (b) add delivery ledger methods to `BeeChatPersistenceStore` so SyncBridge uses only the public path.
+
+### 2. GRDB Re-import in SyncBridge
+**Severity:** Low  
+**Location:** SyncBridge/Persistence/DeliveryLedgerRepository.swift, SyncBridge/SyncBridge.swift
+
+SyncBridge imports GRDB directly and executes raw SQL. This is acceptable for the delivery ledger (which is SyncBridge-specific), but `SyncBridge.messageStream()` also uses GRDB's `ValueObservation` directly against `DatabaseManager.shared.writer`. This couples SyncBridge to GRDB's observation API.
+
+**Recommendation:** Consider adding an observation API to `BeeChatPersistenceStore` (e.g., `observeMessages(sessionId:changes:)`) so the UI layer can observe DB changes without importing GRDB in SyncBridge.
+
+### 3. Duplicated Session Key Logic
+**Severity:** Low  
+**Location:** SyncBridge.swift, Reconciler.swift
+
+`isBeeChatSession()` and `normalizeSessionKey()` are duplicated between `SyncBridge` and `Reconciler`. Both use `TopicRepository` directly.
+
+**Recommendation:** Extract a `SessionKeyNormalizer` struct into a shared location (or into BeeChatPersistence) and have both use it.
 
 ## Build Verification
 
@@ -83,17 +110,18 @@ Since there are no circular dependencies, no untangling is needed. The architect
 
 ```
 $ swift build
-Build complete! (14.73s)
+Build complete! (0.86s)
 ```
 
-### Build Fixes Applied
-The following missing theme token types were created to fix build errors in the App module:
-- `Sources/App/UI/Theme/Tokens/SpacingToken.swift` — semantic spacing tokens (2px–48px)
-- `Sources/App/UI/Theme/Tokens/RadiusToken.swift` — corner radius tokens (0–full)
-- `Sources/App/UI/Theme/Tokens/ShadowToken.swift` — `ShadowDefinition` struct + `ShadowToken` enum
-- `Sources/App/UI/Theme/Tokens/AnimationToken.swift` — animation duration tokens (0–0.8s)
+### Build Fixes Applied (2026-04-23)
 
-These were referenced in `ThemeManager.swift` but never defined. No dependency-related build issues were found.
+1. **GatewayClient.swift** — Fixed 6 unhandled `try` errors in `resolveHandshake`:
+   - Attempt 1 (rawData decode): replaced `try` chain with `flatMap` + `try?`
+   - Attempt 2 (AnyCodable round-trip): replaced `try` chain with `flatMap` + `try?`
+   - `tokenStore.setDeviceToken()`: changed `try` to `try?` (best-effort keychain write)
+
+2. **AppRootView.swift** — Fixed 1 unhandled `try` error in `defaultDatabasePath()`:
+   - `FileManager.default.createDirectory()`: changed `try` to `try?`
 
 ### Warnings (non-blocking)
-Several `try? await` calls in SyncBridge produce "result of try? is unused" warnings. These are intentional fire-and-forget patterns for best-effort history fetches and are not errors.
+- `AnyCodable.swift:5` — `value` property of Sendable-conforming struct has non-Sendable type `Any`; this is an error in Swift 6 language mode. Known limitation of the type-erasure pattern.
