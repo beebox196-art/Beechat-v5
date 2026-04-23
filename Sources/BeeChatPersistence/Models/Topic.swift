@@ -15,6 +15,7 @@ public struct Topic: Codable, UpsertableRecord {
     public var createdAt: Date
     public var updatedAt: Date
     public var metadataJSON: String?
+    public var messageCount: Int = 0
 
     public init(
         id: String = UUID().uuidString,
@@ -26,7 +27,8 @@ public struct Topic: Codable, UpsertableRecord {
         isArchived: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        metadataJSON: String? = nil
+        metadataJSON: String? = nil,
+        messageCount: Int = 0
     ) {
         self.id = id
         self.name = name
@@ -38,8 +40,10 @@ public struct Topic: Codable, UpsertableRecord {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.metadataJSON = metadataJSON
+        self.messageCount = messageCount
     }
 
+    // messageCount excluded from upsertColumns — maintained by DB trigger, not Swift code
     public static let upsertColumns: [Column] = [
         Column("name"), Column("lastMessagePreview"), Column("lastActivityAt"),
         Column("unreadCount"), Column("sessionKey"), Column("isArchived"),

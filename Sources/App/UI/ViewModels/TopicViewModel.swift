@@ -11,6 +11,7 @@ struct TopicViewModel: Identifiable, Hashable {
     var sessionKey: String? // gateway session key for sending/observing messages
     var lastActivityAt: Date?
     var unreadCount: Int
+    var messageCount: Int
 
     init(from topic: Topic, icon: String? = nil) {
         self.id = topic.id
@@ -19,6 +20,7 @@ struct TopicViewModel: Identifiable, Hashable {
         self.sessionKey = topic.sessionKey
         self.lastActivityAt = topic.lastActivityAt
         self.unreadCount = topic.unreadCount
+        self.messageCount = topic.messageCount
     }
 
     /// Sorted list of TopicViewModels — alphabetical by title, case-insensitive.

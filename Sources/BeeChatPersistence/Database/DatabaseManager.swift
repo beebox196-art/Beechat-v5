@@ -227,6 +227,49 @@ public class DatabaseManager {
             try db.create(index: "idx_messages_session_id", on: "messages", columns: ["sessionId", "id"])
         }
 
+        migrator.registerMigration("Migration007_AddMessageCount") { db in
+            // Add messageCount column to topics
+            try db.alter(table: "topics") { t in
+                t.add(column: "messageCount", .integer).defaults(to: 0)
+            }
+
+            // Backfill existing topics with current message counts
+            try db.execute(sql: """
+                UPDATE topics SET messageCount = COALESCE((
+                    SELECT COUNT(*) FROM messages
+                    WHERE messages.sessionId = topics.sessionKey OR messages.sessionId = topics.id
+                ), 0)
+                """)
+
+            // Auto-increment trigger on message insert (LIMIT 1 prevents double-increment from OR)
+            try db.execute(sql: """
+                CREATE TRIGGER trg_increment_message_count
+                AFTER INSERT ON messages
+                BEGIN
+                    UPDATE topics SET messageCount = messageCount + 1
+                    WHERE topics.id = (
+                        SELECT id FROM topics
+                        WHERE topics.sessionKey = NEW.sessionId OR topics.id = NEW.sessionId
+                        LIMIT 1
+                    );
+                END
+                """)
+
+            // Auto-decrement trigger on message delete (CASE guard prevents negative counts)
+            try db.execute(sql: """
+                CREATE TRIGGER trg_decrement_message_count
+                AFTER DELETE ON messages
+                BEGIN
+                    UPDATE topics SET messageCount = CASE WHEN messageCount > 0 THEN messageCount - 1 ELSE 0 END
+                    WHERE topics.id = (
+                        SELECT id FROM topics
+                        WHERE topics.sessionKey = OLD.sessionId OR topics.id = OLD.sessionId
+                        LIMIT 1
+                    );
+                END
+                """)
+        }
+
         try migrator.migrate(dbPool!)
     }
 }
