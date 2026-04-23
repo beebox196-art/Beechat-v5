@@ -106,6 +106,9 @@ struct ThemeCard: View {
         )
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(themeManager.animation(.micro), value: isSelected)
+        .accessibilityLabel(metadata.name)
+        .accessibilityHint("Select \(metadata.name) theme")
+        .accessibilityValue(isSelected ? "Selected" : "")
     }
 }
 
