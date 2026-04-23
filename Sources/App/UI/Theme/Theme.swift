@@ -39,6 +39,13 @@ struct Theme: Identifiable, Sendable {
             .mono:       .system(size: 14, weight: .regular).monospaced(),
         ]
     )
+    static func theme(for id: String) -> Theme? {
+        allThemes.first { $0.id == id }
+    }
+
+    static var allThemes: [Theme] {
+        [.artisanalTech]
+    }
 }
 
 // MARK: - Color hex convenience

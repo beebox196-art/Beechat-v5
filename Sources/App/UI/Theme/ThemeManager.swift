@@ -25,15 +25,18 @@ final class ThemeManager {
     // MARK: - Theme switching
 
     func switchTheme(to id: String) {
-        guard id == currentTheme.id else { return }
-        persistTheme(id: id)
+        guard id != currentTheme.id else { return }
+        if let theme = Theme.theme(for: id) {
+            currentTheme = theme
+            persistTheme(id: id)
+        }
     }
 
     // MARK: - Persistence
 
     private func loadPersistedTheme() {
         if let id = UserDefaults.standard.string(forKey: "BeeChat.selectedTheme") {
-            _ = id
+            switchTheme(to: id)
         }
     }
 
