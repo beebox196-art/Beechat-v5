@@ -19,8 +19,8 @@ struct BeeChatApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 800, height: 600)
-        .windowResizability(.contentSize)
+        .defaultSize(width: 1100, height: 700)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) { }
             CommandGroup(after: .pasteboard) {
@@ -30,8 +30,10 @@ struct BeeChatApp: App {
                 .keyboardShortcut(.delete, modifiers: [])
             }
             CommandMenu("Chat") {
-                Button("New Topic") { /* TODO: create topic */ }
-                    .keyboardShortcut("n", modifiers: .command)
+                Button("New Topic") {
+                    NotificationCenter.default.post(name: .newTopic, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: .command)
                 Button("Next Topic") { /* TODO: cycle right */ }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
                 Button("Previous Topic") { /* TODO: cycle left */ }
@@ -47,6 +49,7 @@ final class AppState {
     var syncBridge: SyncBridge?
     var connectionState: ConnectionState = .disconnected
     var isReady = false
+    var isStartupComplete = false
     var errorMessage: String?
     var offlineStatus: String?
 
@@ -87,6 +90,7 @@ final class AppState {
                         do {
                             try await bridge.start()
                             self.connectionState = .connected
+                            self.isStartupComplete = true
 
                             Task {
                                 let stream = await bridge.connectionStateStream()
@@ -97,12 +101,14 @@ final class AppState {
                         } catch {
                             self.connectionState = .error
                             self.offlineStatus = "Offline — \(error.localizedDescription)"
+                            self.isStartupComplete = true
                         }
                     } catch {
                         self.errorMessage = "Gateway config error: \(error.localizedDescription)"
                         self.isReady = true
                         self.connectionState = .error
                         self.offlineStatus = "Offline — gateway config error"
+                        self.isStartupComplete = true
                         print("[AppState] Malformed gateway config: \(error)")
                     }
                 } else {
@@ -110,6 +116,7 @@ final class AppState {
                     self.isReady = true
                     self.connectionState = .disconnected
                     self.offlineStatus = "Offline — no gateway config found"
+                    self.isStartupComplete = true
                 }
             } catch {
                 self.errorMessage = error.localizedDescription

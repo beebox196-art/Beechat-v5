@@ -16,5 +16,8 @@ struct SessionRow: View {
                     .foregroundColor(themeManager.color(.textSecondary))
             }
         }
+        .accessibilityLabel(topic.title)
+        .accessibilityHint("Select conversation")
+        .accessibilityAddTraits(.isButton)
     }
 }

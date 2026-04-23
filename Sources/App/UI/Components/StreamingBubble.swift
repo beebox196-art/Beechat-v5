@@ -36,6 +36,9 @@ struct StreamingBubble: View {
                 radius: 4, x: 0, y: 2
             )
             .modifier(BubbleWidthModifier())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("AI is typing")
+            .accessibilityHint("Content being generated")
 
             Spacer(minLength: 34)
         }

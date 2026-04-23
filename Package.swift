@@ -65,6 +65,9 @@ let package = Package(
                 .target(name: "BeeChatGateway"),
                 .target(name: "BeeChatSyncBridge"),
             ],
-            path: "Sources/App"),
+            path: "Sources/App",
+            resources: [
+                .process("Assets.xcassets"),
+            ]),
     ]
 )

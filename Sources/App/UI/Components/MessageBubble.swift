@@ -68,6 +68,8 @@ struct MessageBubble: View {
                 radius: 4, x: 0, y: 2
             )
             .modifier(BubbleWidthModifier(alignment: isFromUser ? .trailing : .leading))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(isFromUser ? "Message from User" : "Message from Assistant")
 
             if !isFromUser { Spacer(minLength: 34) }
         }

@@ -23,6 +23,8 @@ struct Composer: View {
                 Button("File") { /* Phase 4B */ }
                 Button("Voice Note") { viewModel.startRecording() }
             }
+            .accessibilityLabel("Attach file")
+            .accessibilityHint("Add an attachment")
 
             MacTextView(
                 text: $viewModel.inputText,
@@ -37,6 +39,8 @@ struct Composer: View {
             .fixedSize(horizontal: false, vertical: true)
             .background(themeManager.color(.bgPanel))
             .clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.md), style: .continuous))
+            .accessibilityLabel("Message input")
+            .accessibilityHint("Type your message here")
 
             Button(action: toggleRecording) {
                 Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")
@@ -73,6 +77,7 @@ struct Composer: View {
             .disabled(!viewModel.canSend)
             .help("Send message")
             .accessibilityLabel("Send message")
+            .accessibilityHint("Send your message to the AI")
         }
         .padding(.horizontal, themeManager.spacing(.lg))
         .padding(.vertical, themeManager.spacing(.md))

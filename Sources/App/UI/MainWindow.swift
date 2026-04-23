@@ -59,6 +59,8 @@ struct MainWindow: View {
                     }
                     .buttonStyle(.plain)
                     .help("New Topic")
+                    .accessibilityLabel("New Topic")
+                    .accessibilityHint("Create a new conversation topic")
 
                     Spacer()
 
@@ -69,6 +71,8 @@ struct MainWindow: View {
                     }
                     .buttonStyle(.plain)
                     .help("Change Theme")
+                    .accessibilityLabel("Appearance")
+                    .accessibilityHint("Change app theme")
 
                     if messageViewModel.selectedTopicId != nil {
                         Button(action: {
@@ -82,6 +86,8 @@ struct MainWindow: View {
                         }
                         .buttonStyle(.plain)
                         .help("Delete Selected Topic")
+                        .accessibilityLabel("Delete Topic")
+                        .accessibilityHint("Remove selected topic")
                         .transition(.opacity)
                     }
                 }
@@ -89,7 +95,7 @@ struct MainWindow: View {
                 .padding(.vertical, themeManager.spacing(.sm))
                 .animation(themeManager.animation(.micro), value: messageViewModel.selectedTopicId)
             }
-            .navigationSplitViewColumnWidth(220)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 240, max: 320)
             .background(themeManager.color(.bgSurface))
             .onKeyPress(.delete) {
                 if let id = messageViewModel.selectedTopicId {
@@ -102,6 +108,9 @@ struct MainWindow: View {
                 if let id = messageViewModel.selectedTopicId {
                     deleteTopic(id)
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .newTopic)) { _ in
+                showNewTopicDialog = true
             }
         } detail: {
             VStack(spacing: 0) {
@@ -323,4 +332,5 @@ struct MainWindow: View {
 
 extension Notification.Name {
     static let deleteSelectedTopic = Notification.Name("deleteSelectedTopic")
+    static let newTopic = Notification.Name("newTopic")
 }

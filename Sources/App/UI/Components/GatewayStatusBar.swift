@@ -3,6 +3,7 @@ import BeeChatGateway
 
 struct GatewayStatusBar: View {
     @Environment(ThemeManager.self) var themeManager
+    @Environment(AppState.self) var appState
     let connectionState: ConnectionState
     var detailText: String? = nil
 
@@ -11,6 +12,9 @@ struct GatewayStatusBar: View {
     }
 
     private var statusText: String {
+        if !appState.isStartupComplete {
+            return "Initialising…"
+        }
         if let detail = detailText, !detail.isEmpty {
             return detail
         }
@@ -29,6 +33,9 @@ struct GatewayStatusBar: View {
     }
 
     private var dotColor: Color {
+        if !appState.isStartupComplete {
+            return themeManager.color(.warning)
+        }
         switch connectionState {
         case .connected:
             return themeManager.color(.success)
@@ -54,5 +61,8 @@ struct GatewayStatusBar: View {
         .padding(.vertical, themeManager.spacing(.xxs))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(themeManager.color(.bgSurface))
+        .accessibilityLabel("Gateway status")
+        .accessibilityHint("Current gateway connection status")
+        .accessibilityValue(Text(statusText))
     }
 }
