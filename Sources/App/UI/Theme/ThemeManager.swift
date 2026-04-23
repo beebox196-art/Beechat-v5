@@ -22,6 +22,22 @@ final class ThemeManager {
         currentTheme.typography[token] ?? .body
     }
 
+    func spacing(_ token: SpacingToken) -> CGFloat {
+        currentTheme.spacing[token] ?? 0
+    }
+
+    func radius(_ token: RadiusToken) -> CGFloat {
+        currentTheme.radius[token] ?? 0
+    }
+
+    func shadow(_ token: ShadowToken) -> ShadowDefinition? {
+        currentTheme.shadow[token]
+    }
+
+    func animation(_ token: AnimationToken) -> Animation {
+        currentTheme.animation[token]?.animation ?? .easeInOut
+    }
+
     // MARK: - Theme switching
 
     func switchTheme(to id: String) {

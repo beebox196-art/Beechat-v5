@@ -5,6 +5,10 @@ struct Theme: Identifiable, Sendable {
     let name: String
     let colors: [ColorToken: Color]
     let typography: [TypographyToken: Font]
+    let spacing: [SpacingToken: CGFloat]
+    let radius: [RadiusToken: CGFloat]
+    let shadow: [ShadowToken: ShadowDefinition]
+    let animation: [AnimationToken: AnimationDefinition]
 
     static let artisanalTech = Theme(
         id: "artisanal-tech",
@@ -37,6 +41,44 @@ struct Theme: Identifiable, Sendable {
             .caption:    .system(size: 12, weight: .regular),
             .caption2:   .system(size: 10, weight: .regular),
             .mono:       .system(size: 14, weight: .regular).monospaced(),
+        ],
+        spacing: [
+            .xs:   4,
+            .sm:   8,
+            .md:   12,
+            .lg:   16,
+            .xl:   24,
+            .xxl:  32,
+        ],
+        radius: [
+            .sm:   4,
+            .md:   8,
+            .lg:   12,
+            .xl:   16,
+            .full: 9999,
+        ],
+        shadow: [
+            .sm: ShadowDefinition(
+                color: Color(hex: "000000")!.opacity(0.05),
+                blur: 2, offsetX: 0, offsetY: 1
+            ),
+            .md: ShadowDefinition(
+                color: Color(hex: "000000")!.opacity(0.1),
+                blur: 6, offsetX: 0, offsetY: 4
+            ),
+            .lg: ShadowDefinition(
+                color: Color(hex: "000000")!.opacity(0.1),
+                blur: 15, offsetX: 0, offsetY: 10
+            ),
+            .glow: ShadowDefinition(
+                color: Color(hex: "D4A574")!.opacity(0.5),
+                blur: 12, offsetX: 0, offsetY: 0
+            ),
+        ],
+        animation: [
+            .fast:   AnimationDefinition(duration: 0.15, easing: .easeInOut),
+            .normal: AnimationDefinition(duration: 0.30, easing: .easeInOut),
+            .slow:   AnimationDefinition(duration: 0.50, easing: .easeInOut),
         ]
     )
     static func theme(for id: String) -> Theme? {
