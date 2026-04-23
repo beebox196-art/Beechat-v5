@@ -34,14 +34,18 @@ struct AnimationDefinition: Sendable {
 /// Matches DESIGN-SYSTEM.md animation definitions.
 enum AnimationToken: String, CaseIterable, Sendable {
     case fast   // 0.15s — micro-interactions, state changes
+    case micro  // 0.2s — subtle transitions
     case normal // 0.3s — standard transitions
     case slow   // 0.5s — emphasis, page transitions
+    case slower // 0.6s — relaxed animations (e.g. typing indicator)
 
     var duration: TimeInterval {
         switch self {
         case .fast:   return 0.15
+        case .micro:  return 0.2
         case .normal: return 0.3
         case .slow:   return 0.5
+        case .slower: return 0.6
         }
     }
 
@@ -49,8 +53,10 @@ enum AnimationToken: String, CaseIterable, Sendable {
     var defaultEasing: AnimationEasing {
         switch self {
         case .fast:   return .easeInOut
+        case .micro:  return .easeInOut
         case .normal: return .easeInOut
         case .slow:   return .easeInOut
+        case .slower: return .easeInOut
         }
     }
 

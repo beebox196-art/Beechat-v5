@@ -50,8 +50,8 @@ struct GatewayStatusBar: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(themeManager.color(.textSecondary))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 5)
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.vertical, themeManager.spacing(.xxs))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(themeManager.color(.bgSurface))
     }

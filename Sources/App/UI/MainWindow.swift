@@ -76,9 +76,9 @@ struct MainWindow: View {
                         .transition(.opacity)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .animation(.easeInOut(duration: 0.2), value: messageViewModel.selectedTopicId)
+                .padding(.horizontal, themeManager.spacing(.lg))
+                .padding(.vertical, themeManager.spacing(.sm))
+                .animation(themeManager.animation(.micro), value: messageViewModel.selectedTopicId)
             }
             .navigationSplitViewColumnWidth(220)
             .background(themeManager.color(.bgSurface))

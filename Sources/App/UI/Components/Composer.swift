@@ -36,7 +36,7 @@ struct Composer: View {
             .frame(minHeight: 36, maxHeight: 160)
             .fixedSize(horizontal: false, vertical: true)
             .background(themeManager.color(.bgPanel))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.md), style: .continuous))
 
             Button(action: toggleRecording) {
                 Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")

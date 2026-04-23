@@ -3,6 +3,7 @@ import SwiftUI
 /// Spacing tokens for consistent margins, padding, and gaps.
 /// All values in points (pt), shared across macOS and iOS.
 enum SpacingToken: String, CaseIterable, Sendable {
+    case xxs  // 5pt
     case xs   // 4pt
     case sm   // 8pt
     case md   // 12pt
@@ -12,6 +13,7 @@ enum SpacingToken: String, CaseIterable, Sendable {
 
     var value: CGFloat {
         switch self {
+        case .xxs:  return 5
         case .xs:   return 4
         case .sm:   return 8
         case .md:   return 12

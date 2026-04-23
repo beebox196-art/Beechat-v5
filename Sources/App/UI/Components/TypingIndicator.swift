@@ -12,7 +12,7 @@ struct TypingIndicator: View {
                     .frame(width: 8, height: 8)
                     .scaleEffect(animations[index] ? 1.2 : 1.0)
                     .animation(
-                        themeManager.animation(.slow)
+                        themeManager.animation(.slower)
                             .repeatForever(autoreverses: true)
                             .delay(Double(index) * 0.15),
                         value: animations[index]

@@ -43,6 +43,7 @@ struct Theme: Identifiable, Sendable {
             .mono:       .system(size: 14, weight: .regular).monospaced(),
         ],
         spacing: [
+            .xxs:  5,
             .xs:   4,
             .sm:   8,
             .md:   12,
@@ -77,8 +78,10 @@ struct Theme: Identifiable, Sendable {
         ],
         animation: [
             .fast:   AnimationDefinition(duration: 0.15, easing: .easeInOut),
+            .micro:  AnimationDefinition(duration: 0.20, easing: .easeInOut),
             .normal: AnimationDefinition(duration: 0.30, easing: .easeInOut),
             .slow:   AnimationDefinition(duration: 0.50, easing: .easeInOut),
+            .slower: AnimationDefinition(duration: 0.60, easing: .easeInOut),
         ]
     )
     static func theme(for id: String) -> Theme? {
