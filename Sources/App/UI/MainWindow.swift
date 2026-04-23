@@ -17,6 +17,7 @@ struct MainWindow: View {
 
     @State private var showDeleteAlert = false
     @State private var deleteErrorMsg: String?
+    @State private var showThemePicker = false
     @FocusState private var isNewTopicFieldFocused: Bool
 
     private var sidebarSelection: Binding<String?> {
@@ -60,6 +61,14 @@ struct MainWindow: View {
                     .help("New Topic")
 
                     Spacer()
+
+                    Button(action: { showThemePicker = true }) {
+                        Image(systemName: "paintpalette")
+                            .font(themeManager.font(.body))
+                            .foregroundColor(themeManager.color(.textSecondary))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Change Theme")
 
                     if messageViewModel.selectedTopicId != nil {
                         Button(action: {
@@ -173,6 +182,10 @@ struct MainWindow: View {
             Button("OK", role: .cancel) { }
         } message: {
             Text(deleteErrorMsg ?? "Unknown error")
+        }
+        .sheet(isPresented: $showThemePicker) {
+            ThemePicker()
+                .environment(themeManager)
         }
 
     }
