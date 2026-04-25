@@ -9,6 +9,7 @@ struct MessageCanvas: View {
     let messages: [Message]
     let isStreaming: Bool
     var streamingContent: String = ""
+    var thinkingState: ThinkingState = .idle
 
     private var showStreamingBubble: Bool {
         guard !streamingContent.isEmpty else { return false }
@@ -37,9 +38,15 @@ struct MessageCanvas: View {
                                 .id(message.id)
                         }
 
-                        if isStreaming && streamingContent.isEmpty {
-                            TypingIndicator()
-                                .id("typing-indicator")
+                        if thinkingState == .thinking {
+                            ThinkingBeeIndicator(mode: .thinking)
+                                .id("thinking-bee")
+                        } else if isStreaming && streamingContent.isEmpty {
+                            // Suppress TypingIndicator during thinking→streaming transition
+                            if thinkingState != .streaming {
+                                TypingIndicator()
+                                    .id("typing-indicator")
+                            }
                         } else if showStreamingBubble {
                             StreamingBubble(content: streamingContent)
                                 .id("streaming-bubble")
@@ -72,6 +79,9 @@ struct MessageCanvas: View {
                     if isShowing {
                         scrollToBottom(proxy: proxy)
                     }
+                }
+                .onChange(of: thinkingState) { oldState, newState in
+                    BeeChatLogger.log("[ThinkingBee] MessageCanvas: thinkingState changed \(oldState) → \(newState)")
                 }
                 .onAppear {
                     scrollToBottom(proxy: proxy)

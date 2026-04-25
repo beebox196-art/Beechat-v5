@@ -6,6 +6,7 @@ import BeeChatSyncBridge
 final class ComposerViewModel {
     var inputText: String = ""
     var isRecording: Bool = false
+    var onMessageSent: (() -> Void)?
 
     private weak var syncBridge: SyncBridge?
     private weak var messageViewModel: MessageViewModel?
@@ -23,10 +24,14 @@ final class ComposerViewModel {
         guard canSend else { return }
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         inputText = ""
+        BeeChatLogger.log("[ThinkingBee] ComposerViewModel.send() — about to call onMessageSent")
+        onMessageSent?()
+        BeeChatLogger.log("[ThinkingBee] ComposerViewModel.send() — onMessageSent callback returned")
         do {
             try await messageViewModel?.sendMessage(text: text)
+            BeeChatLogger.log("[ThinkingBee] sendMessage RPC completed successfully")
         } catch {
-            print("[ComposerViewModel] Send failed: \(error)")
+            BeeChatLogger.log("[ThinkingBee] Send failed: \(error)")
         }
     }
 

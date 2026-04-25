@@ -71,12 +71,16 @@ final class MessageViewModel {
 
     func selectTopic(id: String) {
         guard topics.contains(where: { $0.id == id }) else { return }
+        BeeChatLogger.log("[ThinkingBee] selectTopic — id=\(id)")
         selectedTopicId = id
         startObservationForSelectedTopic()
     }
 
     func sendMessage(text: String) async throws {
-        guard let topicId = selectedTopicId else { return }
+        guard let topicId = selectedTopicId else {
+            BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — no selectedTopicId")
+            return
+        }
 
         let sessionKey: String
         if let vmKey = topics.first(where: { $0.id == topicId })?.sessionKey, !vmKey.isEmpty {
@@ -86,6 +90,8 @@ final class MessageViewModel {
         } else {
             sessionKey = topicId
         }
+
+        BeeChatLogger.log("[ThinkingBee] MessageViewModel.sendMessage — topicId=\(topicId), sessionKey=\(sessionKey), text=\(text.prefix(50))")
 
         let userMessage = Message(
             id: UUID().uuidString,
@@ -99,8 +105,13 @@ final class MessageViewModel {
             try msg.insert(db)
         }
 
-        guard let bridge = syncBridge else { return }
+        guard let bridge = syncBridge else {
+            BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — no syncBridge")
+            return
+        }
+        BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for sessionKey=\(sessionKey)")
         _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
+        BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for sessionKey=\(sessionKey)")
 
         if sessionKey == topicId {
             try topicRepo.updateSessionKey(topicId: topicId, sessionKey: sessionKey)
@@ -181,14 +192,14 @@ final class MessageViewModel {
                 in: writer,
                 scheduling: .mainActor,
                 onError: { error in
-                    print("[MessageViewModel] Local message observation error: \(error)")
+                    BeeChatLogger.log("[ThinkingBee] Local message observation error: \(error)")
                 },
                 onChange: { [weak self] messages in
                     self?.messageListObserver.updateMessages(messages)
                 }
             )
         } catch {
-            print("[MessageViewModel] Failed to start local message observation: \(error)")
+            BeeChatLogger.log("[ThinkingBee] Failed to start local message observation: \(error)")
         }
     }
 }

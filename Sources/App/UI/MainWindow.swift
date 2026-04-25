@@ -37,7 +37,7 @@ struct MainWindow: View {
             VStack(spacing: 0) {
                 List(selection: sidebarSelection) {
                     ForEach(messageViewModel.topics) { topic in
-                        SessionRow(topic: topic)
+                        SessionRow(topic: topic, thinkingState: syncBridgeObserver.thinkingState)
                             .tag(topic.id as String?)
                             .contextMenu {
                                 Button("Delete Topic", role: .destructive) {
@@ -137,7 +137,8 @@ struct MainWindow: View {
                     MessageCanvas(
                         messages: messageViewModel.messages,
                         isStreaming: isActiveTopicStreaming,
-                        streamingContent: activeTopicStreamingContent
+                        streamingContent: activeTopicStreamingContent,
+                        thinkingState: syncBridgeObserver.thinkingState
                     )
                 } else {
                     Color.clear.frame(maxHeight: .infinity)
@@ -163,11 +164,13 @@ struct MainWindow: View {
             }
         }
         .onChange(of: appState.connectionState) { _, newState in
+            BeeChatLogger.log("[ThinkingBee] connectionState changed to \(newState)")
             syncBridgeObserver.connectionState = newState
             if newState == .connected, let bridge = appState.syncBridge {
                 rewireForGateway(bridge)
             }
             if newState == .disconnected || newState == .error {
+                BeeChatLogger.log("[ThinkingBee] connection lost — resetting isGatewayWired")
                 isGatewayWired = false
             }
         }
@@ -232,6 +235,7 @@ struct MainWindow: View {
     }
 
     private func rewireForGateway(_ bridge: SyncBridge) {
+        BeeChatLogger.log("[ThinkingBee] rewireForGateway called — isGatewayWired=\(isGatewayWired)")
         guard !isGatewayWired else { return }
         isGatewayWired = true
 
@@ -240,6 +244,16 @@ struct MainWindow: View {
         messageViewModel.start(syncBridge: bridge)
 
         composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
+        composerViewModel.onMessageSent = { [weak syncBridgeObserver] in
+            let currentState = syncBridgeObserver?.thinkingState ?? .idle
+            BeeChatLogger.log("[ThinkingBee] onMessageSent fired — current state: \(currentState)")
+            guard currentState != .streaming else {
+                BeeChatLogger.log("[ThinkingBee] Guarded: already streaming, not transitioning to .thinking")
+                return
+            }
+            syncBridgeObserver?.thinkingState = .thinking
+            BeeChatLogger.log("[ThinkingBee] Transition: \(currentState) → .thinking")
+        }
 
         if let topicId = messageViewModel.selectedTopicId {
             let topicRepo = TopicRepository()

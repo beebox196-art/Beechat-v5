@@ -3,6 +3,7 @@ import SwiftUI
 struct SessionRow: View {
     @Environment(ThemeManager.self) var themeManager
     let topic: TopicViewModel
+    var thinkingState: ThinkingState = .idle
     
     var healthColor: Color {
         if topic.messageCount < 50 {
@@ -39,6 +40,10 @@ struct SessionRow: View {
                 Text("\(topic.unreadCount)")
                     .font(.caption)
                     .foregroundColor(themeManager.color(.textSecondary))
+            }
+            // Dormant bee — shows for idle topics with recent activity
+            if thinkingState == .idle, let lastActivity = topic.lastActivityAt, lastActivity > Date.now - 300 {
+                ThinkingBeeIndicator(mode: .dormant)
             }
         }
         .accessibilityElement(children: .combine)

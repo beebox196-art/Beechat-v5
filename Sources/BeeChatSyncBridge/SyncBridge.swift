@@ -316,12 +316,16 @@ public actor SyncBridge {
     
     /// Handle "chat" delta event — gateway sends accumulated text (replacement, not append)
        internal func processChatDelta(sessionKey: String, text: String) async {
+        let isFirstDelta = currentStreamingSessionKey != sessionKey
         currentStreamingSessionKey = sessionKey
         resetStallTimer()
-        delegate?.syncBridge(self, didStartStreaming: sessionKey)
+        if isFirstDelta {
+            delegate?.syncBridge(self, didStartStreaming: sessionKey)
+        }
     }
     
     internal func processChatFinal(sessionKey: String) async throws {
+        print("[SyncBridge] processChatFinal called for sessionKey=\(sessionKey), currentStreamingSessionKey=\(currentStreamingSessionKey ?? "nil")")
         cancelStallTimer()
         streamingBuffer.removeValue(forKey: sessionKey)
         if currentStreamingSessionKey == sessionKey {
