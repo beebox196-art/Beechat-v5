@@ -285,6 +285,14 @@ public actor SyncBridge {
     
     // Internal helpers for EventRouter
     
+    /// Check if a message with the given ID already exists in the database.
+    internal func messageExists(id: String) throws -> Bool {
+        let writer = try DatabaseManager.shared.writer
+        return try writer.read { db in
+            try Message.filter(Column("id") == id).fetchCount(db) > 0
+        }
+    }
+
     /// Save a message from the gateway, normalizing the session key to the local topic ID.
     internal func saveGatewayMessage(_ message: Message) throws {
         let localKey = try normalizeSessionKey(message.sessionId)

@@ -65,7 +65,11 @@ public struct EventRouter {
                     content: text,
                     timestamp: Date(timeIntervalSince1970: Double(timestamp / 1000))
                 )
-                try await syncBridge.saveGatewayMessage(message)
+                // Dedup guard — skip if already persisted (fail-open on DB error)
+                let exists = (try? await syncBridge.messageExists(id: messageId)) ?? false
+                if !exists {
+                    try await syncBridge.saveGatewayMessage(message)
+                }
             }
             try await syncBridge.processChatFinal(sessionKey: sessionKey)
         case "error":
@@ -90,6 +94,12 @@ public struct EventRouter {
 
         let ts = sessionMsg.ts ?? 0
         let messageId = sessionMsg.data.id ?? UUID().uuidString
+
+        // Dedup guard — skip if already persisted (fail-open on DB error)
+        let exists = (try? await syncBridge.messageExists(id: messageId)) ?? false
+        if exists {
+            return
+        }
 
         let message = Message(
             id: messageId,
