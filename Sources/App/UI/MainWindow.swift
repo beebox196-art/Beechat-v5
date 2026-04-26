@@ -37,7 +37,17 @@ struct MainWindow: View {
             VStack(spacing: 0) {
                 List(selection: sidebarSelection) {
                     ForEach(messageViewModel.topics) { topic in
-                        SessionRow(topic: topic, thinkingState: syncBridgeObserver.thinkingState)
+                        let usage = messageViewModel.usage(for: topic.sessionKey)
+                        SessionRow(
+                            topic: topic,
+                            thinkingState: syncBridgeObserver.thinkingState,
+                            sessionUsage: usage,
+                            onReset: {
+                                if let sk = topic.sessionKey {
+                                    Task { await messageViewModel.triggerSessionReset(sessionKey: sk) }
+                                }
+                            }
+                        )
                             .tag(topic.id as String?)
                             .contextMenu {
                                 Button("Delete Topic", role: .destructive) {
@@ -245,12 +255,11 @@ struct MainWindow: View {
 
         composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
         composerViewModel.onMessageSent = { [weak syncBridgeObserver] in
+            // Always transition to .thinking on send, even if currently .streaming.
+            // If streaming is genuinely active, didStartStreaming will override back to .streaming.
+            // If streaming is stuck (didStopStreaming never fired), this unblocks the indicator.
             let currentState = syncBridgeObserver?.thinkingState ?? .idle
             BeeChatLogger.log("[ThinkingBee] onMessageSent fired — current state: \(currentState)")
-            guard currentState != .streaming else {
-                BeeChatLogger.log("[ThinkingBee] Guarded: already streaming, not transitioning to .thinking")
-                return
-            }
             syncBridgeObserver?.thinkingState = .thinking
             BeeChatLogger.log("[ThinkingBee] Transition: \(currentState) → .thinking")
         }
@@ -260,6 +269,7 @@ struct MainWindow: View {
             do {
                 if let sessionKey = try topicRepo.resolveSessionKey(topicId: topicId) {
                     messageViewModel.startGatewayMessageObservation(sessionKey: sessionKey)
+                    messageViewModel.startUsagePolling(for: sessionKey)
                 }
             } catch {
                 print("[MainWindow] Failed to resolve session key for gateway observation: \(error)")

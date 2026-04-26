@@ -5,6 +5,8 @@ import BeeChatPersistence
 public protocol RPCClientProtocol {
     func sessionsList() async throws -> [SessionInfo]
     func sessionsSubscribe() async throws
+    func sessionsUsage(sessionKey: String) async throws -> Double
+    func sessionsReset(sessionKey: String, reason: String) async throws -> Bool
     func chatHistory(sessionKey: String, limit: Int?) async throws -> [ChatMessagePayload]
     func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String?, attachments: [ChatAttachment]?) async throws -> String
     func chatAbort(sessionKey: String) async throws -> Bool
@@ -45,6 +47,31 @@ public struct RPCClient: RPCClientProtocol {
     
     public func sessionsSubscribe() async throws {
         _ = try await gateway.call(method: "sessions.subscribe", params: [:])
+    }
+    
+    public func sessionsUsage(sessionKey: String) async throws -> Double {
+        let params: [String: AnyCodable] = ["key": AnyCodable(sessionKey)]
+        let response = try await gateway.call(method: "sessions.usage", params: params)
+        
+        guard let payloadData = try? JSONEncoder().encode(response),
+              let usageResponse = try? JSONDecoder().decode(SessionUsageResponse.self, from: payloadData) else {
+            throw NSError(domain: "RPCClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid sessions.usage response"])
+        }
+        return usageResponse.usage
+    }
+    
+    public func sessionsReset(sessionKey: String, reason: String) async throws -> Bool {
+        let params: [String: AnyCodable] = [
+            "key": AnyCodable(sessionKey),
+            "reason": AnyCodable(reason)
+        ]
+        let response = try await gateway.call(method: "sessions.reset", params: params)
+        
+        guard let payloadData = try? JSONEncoder().encode(response),
+              let resetResponse = try? JSONDecoder().decode(SessionResetResponse.self, from: payloadData) else {
+            return response["ok"]?.value as? Bool ?? false
+        }
+        return resetResponse.ok
     }
     
     public func chatHistory(sessionKey: String, limit: Int? = 200) async throws -> [ChatMessagePayload] {

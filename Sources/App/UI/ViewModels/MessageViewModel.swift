@@ -14,6 +14,9 @@ final class MessageViewModel {
     private var localMessageCancellable: DatabaseCancellable?
     private let topicRepo = TopicRepository()
 
+    /// Map of sessionKey → usage (0.0–1.0) for red-dot indicator
+    var sessionUsageMap: [String: Double] = [:]
+
     var selectedTopic: TopicViewModel? {
         topics.first { $0.id == selectedTopicId }
     }
@@ -72,6 +75,10 @@ final class MessageViewModel {
     func selectTopic(id: String) {
         guard topics.contains(where: { $0.id == id }) else { return }
         BeeChatLogger.log("[ThinkingBee] selectTopic — id=\(id)")
+        
+        // Stop usage polling on previous selection
+        stopUsagePolling(for: topics.first(where: { $0.id == selectedTopicId })?.sessionKey)
+        
         selectedTopicId = id
         startObservationForSelectedTopic()
     }
@@ -127,6 +134,40 @@ final class MessageViewModel {
         let sessionKey = (try topicRepo.resolveSessionKey(topicId: topicId)) ?? topicId
         guard let bridge = syncBridge else { return }
         _ = try await bridge.fetchHistory(sessionKey: sessionKey)
+    }
+
+    // MARK: - Session Reset Flow
+
+    /// Returns the session usage (0.0–1.0) for the given sessionKey, if known.
+    func usage(for sessionKey: String?) -> Double? {
+        guard let key = sessionKey else { return nil }
+        return sessionUsageMap[key]
+    }
+
+    /// Polls session usage on launch and starts hourly re-polling for the given sessionKey.
+    func startUsagePolling(for sessionKey: String) {
+        guard let bridge = syncBridge else { return }
+        Task {
+            await bridge.startUsagePolling(sessionKey: sessionKey)
+        }
+    }
+
+    /// Stops usage polling for a specific session or all sessions.
+    func stopUsagePolling(for sessionKey: String? = nil) {
+        guard let bridge = syncBridge else { return }
+        Task {
+            await bridge.stopUsagePolling(for: sessionKey)
+        }
+    }
+
+    /// Triggers the session reset flow.
+    func triggerSessionReset(sessionKey: String) async {
+        guard let bridge = syncBridge else { return }
+        do {
+            try await bridge.sessionResetManager.performReset(sessionKey: sessionKey, bridge: bridge)
+        } catch {
+            BeeChatLogger.log("[SessionReset] Failed: \(error.localizedDescription)")
+        }
     }
 
     func addLocalTopic(_ topic: Topic) {

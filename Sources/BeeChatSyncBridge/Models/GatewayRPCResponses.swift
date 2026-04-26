@@ -25,3 +25,13 @@ struct ChatHistoryMessage: Codable {
 struct ChatSendResponse: Codable {
     let runId: String
 }
+
+/// Response from `sessions.usage` RPC call.
+struct SessionUsageResponse: Codable {
+    let usage: Double
+}
+
+/// Response from `sessions.reset` RPC call.
+struct SessionResetResponse: Codable {
+    let ok: Bool
+}

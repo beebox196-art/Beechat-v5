@@ -72,6 +72,8 @@ public struct EventRouter {
                 if !exists {
                     try await syncBridge.saveGatewayMessage(message)
                 }
+                // Forward to SessionResetManager if a reset is in progress
+                await syncBridge.sessionResetManager.didReceiveFinal(sessionKey: sessionKey, text: text)
             }
             try await syncBridge.processChatFinal(sessionKey: sessionKey)
         case "error":
