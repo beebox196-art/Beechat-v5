@@ -57,7 +57,22 @@ public struct RPCClient: RPCClientProtocol {
               let usageResponse = try? JSONDecoder().decode(SessionUsageResponse.self, from: payloadData) else {
             throw NSError(domain: "RPCClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid sessions.usage response"])
         }
-        return usageResponse.usage
+        
+        // Calculate usage percentage from totalTokens
+        // Default context window: 200k tokens (typical for glm-5.1:cloud)
+        let contextWindow: Double = 200_000
+        
+        if let entry = usageResponse.sessions.first,
+           let totalTokens = entry.usage?.totalTokens {
+            return min(Double(totalTokens) / contextWindow, 1.0)
+        }
+        
+        // Fallback: use totals if available
+        if let totalTokens = usageResponse.totals?.totalTokens {
+            return min(Double(totalTokens) / contextWindow, 1.0)
+        }
+        
+        throw NSError(domain: "RPCClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "No usage data available"])
     }
     
     public func sessionsReset(sessionKey: String, reason: String) async throws -> Bool {

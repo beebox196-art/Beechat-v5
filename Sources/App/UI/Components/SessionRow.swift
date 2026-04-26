@@ -6,6 +6,7 @@ struct SessionRow: View {
     var thinkingState: ThinkingState = .idle
     var sessionUsage: Double? = nil
     var onReset: (() -> Void)? = nil
+    var onSelect: (() -> Void)?
 
     var healthColor: Color {
         if topic.messageCount < 50 {

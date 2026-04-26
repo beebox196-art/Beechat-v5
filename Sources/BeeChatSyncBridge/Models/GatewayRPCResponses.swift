@@ -28,7 +28,25 @@ struct ChatSendResponse: Codable {
 
 /// Response from `sessions.usage` RPC call.
 struct SessionUsageResponse: Codable {
-    let usage: Double
+    let sessions: [SessionUsageEntry]
+    let totals: UsageTotals?
+}
+
+struct SessionUsageEntry: Codable {
+    let key: String?
+    let usage: SessionUsageDetail?
+}
+
+struct SessionUsageDetail: Codable {
+    let totalTokens: Int?
+    let input: Int?
+    let output: Int?
+    let totalCost: Double?
+}
+
+struct UsageTotals: Codable {
+    let totalTokens: Int?
+    let totalCost: Double?
 }
 
 /// Response from `sessions.reset` RPC call.
