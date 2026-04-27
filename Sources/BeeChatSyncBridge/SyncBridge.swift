@@ -3,6 +3,17 @@ import BeeChatGateway
 import BeeChatPersistence
 import GRDB
 
+public enum SyncBridgeError: LocalizedError {
+    case concurrentSendInProgress
+    
+    public var errorDescription: String? {
+        switch self {
+        case .concurrentSendInProgress:
+            return "A message is already being sent. Please retry."
+        }
+    }
+}
+
 public actor SyncBridge {
     let config: SyncBridgeConfiguration
     private let rpcClient: RPCClientProtocol
@@ -36,6 +47,12 @@ public actor SyncBridge {
 
     public let sessionResetManager: SessionResetManager
     public private(set) var sessionUsageCache: [String: Double] = [:]
+
+    /// Gate to prevent concurrent sendMessage calls
+    private var isSending = false
+    /// Cooldown tracker: messages remaining before next auto-reset check
+    private var resetCooldownCount: [String: Int] = [:]
+    private static let resetCooldownMessages = 5
 
     public init(config: SyncBridgeConfiguration) {
         self.config = config
@@ -218,25 +235,92 @@ public actor SyncBridge {
     }
 
     public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String {
+        guard !isSending else {
+            throw SyncBridgeError.concurrentSendInProgress
+        }
+        isSending = true
+        defer { isSending = false }
+        
+        // Abort any in-flight generation before auto-reset
+        if currentStreamingSessionKey == sessionKey {
+            do {
+                try await abortGeneration(sessionKey: sessionKey)
+            } catch {
+                print("[SyncBridge] Abort failed during auto-reset prep: \(error)")
+            }
+        }
+        
+        var effectiveText = text
+        let localSessionKey: String
+        do {
+            localSessionKey = try normalizeSessionKey(sessionKey)
+        } catch {
+            print("[SyncBridge] normalizeSessionKey failed, using original: \(error)")
+            localSessionKey = sessionKey
+        }
+        
+        // Check cooldown
+        let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
+        if cooldownLeft > 0 {
+            resetCooldownCount[sessionKey] = cooldownLeft - 1
+            if cooldownLeft - 1 == 0 {
+                resetCooldownCount.removeValue(forKey: sessionKey)
+            }
+        } else {
+            // Usage check with graceful fallback
+            do {
+                let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
+                if usage > 1.0 {
+                    print("[SyncBridge] Usage RPC returned unexpected value: \(usage), capping at 1.0")
+                }
+                let cappedUsage = min(usage, 1.0)
+                let threshold = await sessionResetManager.config.redDotThreshold
+                if cappedUsage >= threshold {
+                    delegate?.syncBridge(self, didStartAutoReset: sessionKey)
+                    let recentMessages = try fetchLocalHistory(sessionKey: localSessionKey, limit: 30)
+                    if recentMessages.isEmpty {
+                        print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
+                    }
+                    let ok = try await resetSession(sessionKey: sessionKey)
+                    if ok {
+                        effectiveText = formatCombinedContext(recentMessages, userMessage: text)
+                        resetCooldownCount[sessionKey] = Self.resetCooldownMessages
+                    }
+                    delegate?.syncBridge(self, didStopAutoReset: sessionKey)
+                }
+            } catch {
+                // Gateway unreachable — send without reset
+                print("[SyncBridge] Usage check failed, sending without reset: \(error)")
+            }
+        }
+        
+        // Create delivery ledger entry
         let idempotencyKey = UUID().uuidString
         let entry = DeliveryLedgerEntry(
             id: UUID(),
             sessionKey: sessionKey,
             idempotencyKey: idempotencyKey,
-            content: text,
+            content: effectiveText,
+            originalContent: text,
             status: .pending,
             createdAt: Date(),
             updatedAt: Date(),
             retryCount: 0
         )
         try ledgerRepo.save(entry)
-
+        
         do {
-            let runId = try await rpcClient.chatSend(sessionKey: sessionKey, message: text, idempotencyKey: idempotencyKey, thinking: thinking, attachments: attachments)
+            let runId = try await rpcClient.chatSend(
+                sessionKey: sessionKey,
+                message: effectiveText,
+                idempotencyKey: idempotencyKey,
+                thinking: thinking,
+                attachments: attachments
+            )
             try ledgerRepo.updateStatus(idempotencyKey: idempotencyKey, status: .sent, runId: runId)
             return runId
         } catch {
-            try ledgerRepo.updateStatus(idempotencyKey: idempotencyKey, status: .failed)
+            try? ledgerRepo.updateStatus(idempotencyKey: idempotencyKey, status: .failed)
             throw error
         }
     }
@@ -254,6 +338,61 @@ public actor SyncBridge {
 
     public func resetSession(sessionKey: String) async throws -> Bool {
         return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
+    }
+
+    // MARK: - Auto-reset helpers
+
+    /// Fetch recent non-system, non-context-polluted messages from local SQLite.
+    func fetchLocalHistory(sessionKey: String, limit: Int = 30) throws -> [Message] {
+        let writer = try DatabaseManager.shared.writer
+        return try writer.read { db in
+            var messages = try Message
+                .filter(Column("sessionId") == sessionKey)
+                .filter(Column("role") != "tool")
+                .order(Column("timestamp").desc)
+                .limit(limit)
+                .fetchAll(db)
+
+            messages = messages.filter { msg in
+                if let content = msg.content {
+                    if content.hasPrefix("[SESSION-CONTEXT]") { return false }
+                    if content.hasPrefix("[SESSION-RESET]") { return false }
+                    if msg.role == "assistant" && content.contains("[tool_use:") { return false }
+                }
+                return true
+            }
+
+            if messages.isEmpty {
+                print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
+            }
+
+            return messages.reversed()
+        }
+    }
+
+    /// Combine recent conversation history with the user's latest message.
+    func formatCombinedContext(_ recentMessages: [Message], userMessage: String) -> String {
+        var lines = ["[SESSION-CONTEXT] Continuing from a previous session. Recent conversation:"]
+        var totalChars = lines.joined(separator: "\n").count
+        let maxChars = 100_000
+
+        for msg in recentMessages {
+            let role = msg.role == "user" ? "User" : "Assistant"
+            let content = msg.content ?? ""
+            let msgLine = "\(role): \(content)"
+            totalChars += msgLine.count + 1
+            if totalChars > maxChars {
+                lines.append("... [history truncated — context budget exceeded]")
+                break
+            }
+            lines.append(msgLine)
+        }
+
+        lines.append("")
+        lines.append("The user's latest message follows:")
+        lines.append("")
+        lines.append(userMessage)
+        return lines.joined(separator: "\n")
     }
 
     public func pollSessionUsage(sessionKey: String) async throws {

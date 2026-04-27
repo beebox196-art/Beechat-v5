@@ -9,12 +9,22 @@ import GRDB
 final class MockRPCClient: RPCClientProtocol {
     var sessionsListHandler: (() -> [SessionInfo])?
     var chatHistoryHandler: ((String) -> [ChatMessagePayload])?
+    var sessionsUsageHandler: ((String) -> Double)?
+    var sessionsResetHandler: ((String, String) -> Bool)?
     
     func sessionsList() async throws -> [SessionInfo] {
         return try sessionsListHandler?() ?? []
     }
     
     func sessionsSubscribe() async throws { }
+    
+    func sessionsUsage(sessionKey: String) async throws -> Double {
+        return sessionsUsageHandler?(sessionKey) ?? 0.0
+    }
+    
+    func sessionsReset(sessionKey: String, reason: String) async throws -> Bool {
+        return sessionsResetHandler?(sessionKey, reason) ?? false
+    }
     
     func chatHistory(sessionKey: String, limit: Int? = 200) async throws -> [ChatMessagePayload] {
         return try chatHistoryHandler?(sessionKey) ?? []
@@ -140,6 +150,7 @@ final class SyncBridgeTests: XCTestCase {
             sessionKey: "session-1",
             idempotencyKey: "idem-1",
             content: "hello",
+            originalContent: nil,
             status: .pending,
             runId: nil,
             createdAt: Date(),
@@ -166,11 +177,11 @@ final class SyncBridgeTests: XCTestCase {
     
     func testDeliveryLedgerUniqueIdempotencyKey() throws {
         let entry1 = DeliveryLedgerEntry(
-            id: UUID(), sessionKey: "s1", idempotencyKey: "same", content: "c1",
+            id: UUID(), sessionKey: "s1", idempotencyKey: "same", content: "c1", originalContent: nil,
             status: .pending, runId: nil, createdAt: Date(), updatedAt: Date(), retryCount: 0
         )
         let entry2 = DeliveryLedgerEntry(
-            id: UUID(), sessionKey: "s1", idempotencyKey: "same", content: "c2",
+            id: UUID(), sessionKey: "s1", idempotencyKey: "same", content: "c2", originalContent: nil,
             status: .pending, runId: nil, createdAt: Date(), updatedAt: Date(), retryCount: 0
         )
         
@@ -180,8 +191,8 @@ final class SyncBridgeTests: XCTestCase {
     }
     
     func testDeliveryLedgerFetchPending() throws {
-        let e1 = DeliveryLedgerEntry(id: UUID(), sessionKey: "s1", idempotencyKey: "i1", content: "c1", status: .pending, runId: nil, createdAt: Date(), updatedAt: Date(), retryCount: 0)
-        let e2 = DeliveryLedgerEntry(id: UUID(), sessionKey: "s2", idempotencyKey: "i2", content: "c2", status: .sent, runId: "r1", createdAt: Date(), updatedAt: Date(), retryCount: 0)
+        let e1 = DeliveryLedgerEntry(id: UUID(), sessionKey: "s1", idempotencyKey: "i1", content: "c1", originalContent: nil, status: .pending, runId: nil, createdAt: Date(), updatedAt: Date(), retryCount: 0)
+        let e2 = DeliveryLedgerEntry(id: UUID(), sessionKey: "s2", idempotencyKey: "i2", content: "c2", originalContent: nil, status: .sent, runId: "r1", createdAt: Date(), updatedAt: Date(), retryCount: 0)
         
         try ledgerRepo.save(e1)
         try ledgerRepo.save(e2)
@@ -235,7 +246,7 @@ final class SyncBridgeTests: XCTestCase {
         let reconciler = Reconciler(rpcClient: mockRPC, persistenceStore: store, ledgerRepo: ledgerRepo)
         
         let entry = DeliveryLedgerEntry(
-            id: UUID(), sessionKey: "session-1", idempotencyKey: "idem-1", content: "hello",
+            id: UUID(), sessionKey: "session-1", idempotencyKey: "idem-1", content: "hello", originalContent: nil,
             status: .pending, runId: "run-1", createdAt: Date(), updatedAt: Date(), retryCount: 0
         )
         try ledgerRepo.save(entry)
@@ -256,7 +267,7 @@ final class SyncBridgeTests: XCTestCase {
         let reconciler = Reconciler(rpcClient: mockRPC, persistenceStore: store, ledgerRepo: ledgerRepo)
         
         let entry = DeliveryLedgerEntry(
-            id: UUID(), sessionKey: "session-1", idempotencyKey: "idem-1", content: "hello",
+            id: UUID(), sessionKey: "session-1", idempotencyKey: "idem-1", content: "hello", originalContent: nil,
             status: .pending, runId: "run-1", createdAt: Date(), updatedAt: Date(), retryCount: 3
         )
         try ledgerRepo.save(entry)

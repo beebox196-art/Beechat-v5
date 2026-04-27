@@ -58,6 +58,18 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         }
     }
 
+    nonisolated func syncBridge(_ bridge: SyncBridge, didStartAutoReset sessionKey: String) {
+        Task { @MainActor in
+            self.autoResetting = true
+        }
+    }
+
+    nonisolated func syncBridge(_ bridge: SyncBridge, didStopAutoReset sessionKey: String) {
+        Task { @MainActor in
+            self.autoResetting = false
+        }
+    }
+
     /// Reset all streaming state back to idle
     private func resetStreamingState() {
         isStreaming = false
@@ -111,17 +123,8 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         streamingTimeoutTask = nil
     }
 
-    // MARK: - Session Reset Flow
-
-    /// Triggers the session reset flow for the selected session.
-    public func triggerSessionReset(sessionKey: String) async {
-        guard let bridge = syncBridge else { return }
-        do {
-            try await bridge.sessionResetManager.performReset(sessionKey: sessionKey, bridge: bridge)
-        } catch {
-            BeeChatLogger.log("[SessionReset] Failed: \(error.localizedDescription)")
-        }
-    }
+    /// Set to true while an auto-reset is in progress (for UI binding).
+    var autoResetting: Bool = false
 
     /// Polls the gateway for session usage and updates `selectedSessionUsage`.
     public func updateSessionUsage(sessionKey: String) async {

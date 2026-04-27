@@ -22,8 +22,8 @@ public struct DeliveryLedgerRepository {
     public func save(_ entry: DeliveryLedgerEntry) throws {
         try dbManager.write { db in
             try db.execute(
-                sql: "INSERT INTO delivery_ledger (id, sessionKey, idempotencyKey, content, status, runId, createdAt, updatedAt, retryCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                arguments: [entry.id.uuidString, entry.sessionKey, entry.idempotencyKey, entry.content, entry.status.rawValue, entry.runId, entry.createdAt, entry.updatedAt, entry.retryCount]
+                sql: "INSERT INTO delivery_ledger (id, sessionKey, idempotencyKey, content, originalContent, status, runId, createdAt, updatedAt, retryCount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arguments: [entry.id.uuidString, entry.sessionKey, entry.idempotencyKey, entry.content, entry.originalContent, entry.status.rawValue, entry.runId, entry.createdAt, entry.updatedAt, entry.retryCount]
             )
         }
     }
@@ -94,6 +94,7 @@ extension DeliveryLedgerEntry {
         self.sessionKey = sessionKey
         self.idempotencyKey = idempotencyKey
         self.content = content
+        self.originalContent = row["originalContent"] as? String
         self.status = status
         self.runId = row["runId"] as? String
         self.createdAt = createdAt

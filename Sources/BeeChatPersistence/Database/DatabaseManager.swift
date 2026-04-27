@@ -284,6 +284,17 @@ public class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("Migration009_AddOriginalContent") { db in
+            if try db.tableExists("delivery_ledger") {
+                let columns = try db.columns(in: "delivery_ledger").map { $0.name }
+                if !columns.contains("originalContent") {
+                    try db.alter(table: "delivery_ledger") { t in
+                        t.add(column: "originalContent", .text)
+                    }
+                }
+            }
+        }
+
         try migrator.migrate(dbPool!)
     }
 }

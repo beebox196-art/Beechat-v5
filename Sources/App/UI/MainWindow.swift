@@ -41,12 +41,7 @@ struct MainWindow: View {
                         SessionRow(
                             topic: topic,
                             thinkingState: syncBridgeObserver.thinkingState,
-                            sessionUsage: usage,
-                            onReset: {
-                                if let sk = topic.sessionKey {
-                                    Task { await messageViewModel.triggerSessionReset(sessionKey: sk) }
-                                }
-                            }
+                            sessionUsage: usage
                         )
                             .tag(topic.id as String?)
                             .contextMenu {
@@ -143,6 +138,19 @@ struct MainWindow: View {
                         && syncBridgeObserver.streamingSessionKey == messageViewModel.selectedTopicId
                     let activeTopicStreamingContent = isActiveTopicStreaming
                         ? syncBridgeObserver.streamingContent : ""
+
+                    if syncBridgeObserver.autoResetting {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Refreshing context...")
+                                .font(.caption)
+                                .foregroundColor(themeManager.color(.textSecondary))
+                        }
+                        .padding(.horizontal, themeManager.spacing(.md))
+                        .padding(.vertical, themeManager.spacing(.xs))
+                        .transition(.opacity)
+                    }
 
                     MessageCanvas(
                         messages: messageViewModel.messages,

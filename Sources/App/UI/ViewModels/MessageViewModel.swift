@@ -116,9 +116,16 @@ final class MessageViewModel {
             BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — no syncBridge")
             return
         }
-        BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for sessionKey=\(sessionKey)")
-        _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
-        BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for sessionKey=\(sessionKey)")
+        do {
+            BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for sessionKey=\(sessionKey)")
+            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
+            BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for sessionKey=\(sessionKey)")
+        } catch SyncBridgeError.concurrentSendInProgress {
+            BeeChatLogger.log("[ThinkingBee] sendMessage — concurrent send, retrying in 100ms")
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
+            BeeChatLogger.log("[ThinkingBee] sendMessage — retry succeeded for sessionKey=\(sessionKey)")
+        }
 
         if sessionKey == topicId {
             try topicRepo.updateSessionKey(topicId: topicId, sessionKey: sessionKey)
@@ -157,16 +164,6 @@ final class MessageViewModel {
         guard let bridge = syncBridge else { return }
         Task {
             await bridge.stopUsagePolling(for: sessionKey)
-        }
-    }
-
-    /// Triggers the session reset flow.
-    func triggerSessionReset(sessionKey: String) async {
-        guard let bridge = syncBridge else { return }
-        do {
-            try await bridge.sessionResetManager.performReset(sessionKey: sessionKey, bridge: bridge)
-        } catch {
-            BeeChatLogger.log("[SessionReset] Failed: \(error.localizedDescription)")
         }
     }
 

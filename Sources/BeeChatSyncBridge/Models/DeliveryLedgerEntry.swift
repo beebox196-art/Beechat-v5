@@ -5,6 +5,7 @@ public struct DeliveryLedgerEntry: Codable, Sendable {
     public let sessionKey: String
     public let idempotencyKey: String
     public let content: String
+    public let originalContent: String?
     public var status: DeliveryStatus
     public var runId: String?
     public let createdAt: Date
