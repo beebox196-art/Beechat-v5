@@ -100,9 +100,13 @@ final class MessageViewModel {
 
         BeeChatLogger.log("[ThinkingBee] MessageViewModel.sendMessage — topicId=\(topicId), sessionKey=\(sessionKey), text=\(text.prefix(50))")
 
+        // TODO: Phase 4 — remove this shim; UI will use gateway keys natively
+        let normalizedSessionKey = sessionKey.contains(":") ? sessionKey : "agent:main:" + sessionKey.lowercased()
+        BeeChatLogger.log("[ThinkingBee] sendMessage — normalizedSessionKey=\(normalizedSessionKey)")
+
         let userMessage = Message(
             id: UUID().uuidString,
-            sessionId: sessionKey,
+            sessionId: normalizedSessionKey,
             role: "user",
             content: text,
             timestamp: Date()
@@ -117,14 +121,14 @@ final class MessageViewModel {
             return
         }
         do {
-            BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for sessionKey=\(sessionKey)")
-            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
-            BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for sessionKey=\(sessionKey)")
+            BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for normalizedSessionKey=\(normalizedSessionKey)")
+            _ = try await bridge.sendMessage(sessionKey: normalizedSessionKey, text: text)
+            BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for normalizedSessionKey=\(normalizedSessionKey)")
         } catch SyncBridgeError.concurrentSendInProgress {
             BeeChatLogger.log("[ThinkingBee] sendMessage — concurrent send, retrying in 100ms")
             try? await Task.sleep(nanoseconds: 100_000_000)
-            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
-            BeeChatLogger.log("[ThinkingBee] sendMessage — retry succeeded for sessionKey=\(sessionKey)")
+            _ = try await bridge.sendMessage(sessionKey: normalizedSessionKey, text: text)
+            BeeChatLogger.log("[ThinkingBee] sendMessage — retry succeeded for normalizedSessionKey=\(normalizedSessionKey)")
         }
 
         if sessionKey == topicId {

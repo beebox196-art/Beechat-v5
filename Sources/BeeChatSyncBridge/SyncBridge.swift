@@ -25,6 +25,17 @@ public actor SyncBridge {
     /// Session keys known from the last fetchSessions() call
     private var knownSessionKeys: Set<String> = []
 
+    /// Compatibility normalizer: until Phase 4 rewires the UI to pass gateway keys,
+    /// the UI may still send bare UUIDs (e.g. "05549141-D6DA-4CC1-BD8E-DD3DA2674682").
+    /// The gateway expects full keys like "agent:main:05549141-d6da-4cc1-bd8e-dd3da2674682".
+    /// This normalizer bridges the gap and should be removed after Phase 4.
+    private func normalizeToGatewayKey(_ key: String) -> String {
+        // Already a full gateway key (contains a colon prefix)
+        if key.contains(":") { return key }
+        // Bare UUID from UI — prepend agent:main: and lowercase
+        return "agent:main:" + key.lowercased()
+    }
+
     public weak var delegate: SyncBridgeDelegate?
 
     public func setDelegate(_ delegate: SyncBridgeDelegate?) {
@@ -177,6 +188,7 @@ public actor SyncBridge {
     }
 
     public func fetchHistory(sessionKey: String, limit: Int? = nil) async throws -> [Message] {
+        let sessionKey = normalizeToGatewayKey(sessionKey)
         let fetchLimit = limit ?? config.historyFetchLimit
         let history = try await rpcClient.chatHistory(sessionKey: sessionKey, limit: fetchLimit)
         let messages = history.map { payload in
@@ -193,6 +205,7 @@ public actor SyncBridge {
     }
 
     public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String {
+        let sessionKey = normalizeToGatewayKey(sessionKey)
         guard !isSending else {
             throw SyncBridgeError.concurrentSendInProgress
         }
@@ -281,6 +294,7 @@ public actor SyncBridge {
     }
 
     public func abortGeneration(sessionKey: String) async throws {
+        let sessionKey = normalizeToGatewayKey(sessionKey)
         cancelStallTimer()
         let ok = try await rpcClient.chatAbort(sessionKey: sessionKey)
         if ok {
@@ -292,6 +306,7 @@ public actor SyncBridge {
     // MARK: - Session Reset Flow
 
     public func resetSession(sessionKey: String) async throws -> Bool {
+        let sessionKey = normalizeToGatewayKey(sessionKey)
         return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
     }
 
@@ -351,6 +366,7 @@ public actor SyncBridge {
     }
 
     public func pollSessionUsage(sessionKey: String) async throws {
+        let sessionKey = normalizeToGatewayKey(sessionKey)
         let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
         sessionUsageCache[sessionKey] = usage
     }
@@ -384,7 +400,8 @@ public actor SyncBridge {
     }
 
     public func messageStream(sessionKey: String) -> AsyncStream<[Message]> {
-        AsyncStream { continuation in
+        let sessionKey = normalizeToGatewayKey(sessionKey)
+        return AsyncStream { continuation in
             let observation = ValueObservation.tracking { db in
                 try Message
                     .filter(Column("sessionId") == sessionKey)

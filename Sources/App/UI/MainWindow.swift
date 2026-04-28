@@ -134,8 +134,12 @@ struct MainWindow: View {
                 Divider()
 
                 if messageViewModel.selectedTopic != nil {
+                    // TODO: Phase 4 — remove this shim; UI will use gateway keys natively
+                    let normalizedStreamingKey = syncBridgeObserver.streamingSessionKey?
+                        .replacingOccurrences(of: "agent:main:", with: "")
+                        .uppercased()
                     let isActiveTopicStreaming = syncBridgeObserver.isStreaming
-                        && syncBridgeObserver.streamingSessionKey == messageViewModel.selectedTopicId
+                        && normalizedStreamingKey == messageViewModel.selectedTopicId
                     let activeTopicStreamingContent = isActiveTopicStreaming
                         ? syncBridgeObserver.streamingContent : ""
 
