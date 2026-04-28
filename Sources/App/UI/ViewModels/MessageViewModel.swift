@@ -99,10 +99,11 @@ final class MessageViewModel {
             return
         }
 
-        // Phase 4 shim: ensure gateway-key format so DB writes match gateway saves
-        let sessionKey = rawSessionKey.contains(":")
-            ? rawSessionKey
-            : "agent:main:" + rawSessionKey.lowercased()
+        let sessionKey = rawSessionKey
+        guard sessionKey.contains(":") else {
+            BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — bare UUID sessionKey for topic \(topicId): \(sessionKey)")
+            return
+        }
 
         BeeChatLogger.log("[ThinkingBee] MessageViewModel.sendMessage — topicId=\(topicId), sessionKey=\(sessionKey), text=\(text.prefix(50))")
 
@@ -213,10 +214,11 @@ final class MessageViewModel {
             }
         }
 
-        // Phase 4 shim: normalize so observer queries match DB writes (gateway key)
-        let sessionKey = rawSessionKey.contains(":")
-            ? rawSessionKey
-            : "agent:main:" + rawSessionKey.lowercased()
+        let sessionKey = rawSessionKey
+        guard sessionKey.contains(":") else {
+            BeeChatLogger.log("[ThinkingBee] startObservationForSelectedTopic ABORTED — bare UUID sessionKey for topic \(topicId): \(sessionKey)")
+            return
+        }
 
         if sessionKey != messageListObserver.sessionKey {
             if let syncBridge = syncBridge {
