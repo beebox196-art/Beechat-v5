@@ -89,15 +89,20 @@ final class MessageViewModel {
             return
         }
 
-        let sessionKey: String
+        let rawSessionKey: String
         if let vmKey = topics.first(where: { $0.id == topicId })?.sessionKey, !vmKey.isEmpty {
-            sessionKey = vmKey
+            rawSessionKey = vmKey
         } else if let resolvedKey = try topicRepo.resolveSessionKey(topicId: topicId), !resolvedKey.isEmpty {
-            sessionKey = resolvedKey
+            rawSessionKey = resolvedKey
         } else {
             BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — no gateway key found for topic \(topicId)")
             return
         }
+
+        // Phase 4 shim: ensure gateway-key format so DB writes match gateway saves
+        let sessionKey = rawSessionKey.contains(":")
+            ? rawSessionKey
+            : "agent:main:" + rawSessionKey.lowercased()
 
         BeeChatLogger.log("[ThinkingBee] MessageViewModel.sendMessage — topicId=\(topicId), sessionKey=\(sessionKey), text=\(text.prefix(50))")
 
@@ -128,6 +133,12 @@ final class MessageViewModel {
             BeeChatLogger.log("[ThinkingBee] sendMessage — retry succeeded for sessionKey=\(sessionKey)")
         }
 
+        // Persist the normalized gateway key so future observation uses the same key
+        try topicRepo.updateSessionKey(topicId: topicId, sessionKey: sessionKey)
+        try topicRepo.saveBridge(topicId: topicId, sessionKey: sessionKey)
+        if let idx = topics.firstIndex(where: { $0.id == topicId }) {
+            topics[idx].sessionKey = sessionKey
+        }
     }
 
     func fetchHistory() async throws {
@@ -184,13 +195,13 @@ final class MessageViewModel {
     private func startObservationForSelectedTopic() {
         guard let topicId = selectedTopicId else { return }
 
-        let sessionKey: String
+        let rawSessionKey: String
         if let vmKey = topics.first(where: { $0.id == topicId })?.sessionKey, !vmKey.isEmpty {
-            sessionKey = vmKey
+            rawSessionKey = vmKey
         } else {
             do {
                 if let resolvedKey = try topicRepo.resolveSessionKey(topicId: topicId), !resolvedKey.isEmpty {
-                    sessionKey = resolvedKey
+                    rawSessionKey = resolvedKey
                 } else {
                     BeeChatLogger.log("[ThinkingBee] startObservationForSelectedTopic ABORTED — no gateway key found for topic \(topicId)")
                     return
@@ -201,6 +212,11 @@ final class MessageViewModel {
                 return
             }
         }
+
+        // Phase 4 shim: normalize so observer queries match DB writes (gateway key)
+        let sessionKey = rawSessionKey.contains(":")
+            ? rawSessionKey
+            : "agent:main:" + rawSessionKey.lowercased()
 
         if sessionKey != messageListObserver.sessionKey {
             if let syncBridge = syncBridge {

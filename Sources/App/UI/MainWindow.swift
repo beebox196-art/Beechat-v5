@@ -261,6 +261,23 @@ struct MainWindow: View {
 
         messageViewModel.start(syncBridge: bridge)
 
+        // One-time fix: migrate pre-existing topics with bare UUID sessionKeys to gateway keys
+        Task {
+            do {
+                let topicRepo = TopicRepository()
+                let topics = try topicRepo.fetchAllActive()
+                for topic in topics {
+                    guard let rawKey = topic.sessionKey, !rawKey.contains(":") else { continue }
+                    let gatewayKey = "agent:main:" + rawKey.lowercased()
+                    try topicRepo.updateSessionKey(topicId: topic.id, sessionKey: gatewayKey)
+                    try topicRepo.saveBridge(topicId: topic.id, sessionKey: gatewayKey)
+                    print("[MainWindow] Migrated topic \(topic.id) sessionKey: \(rawKey) → \(gatewayKey)")
+                }
+            } catch {
+                print("[MainWindow] SessionKey migration error: \(error)")
+            }
+        }
+
         composerViewModel.configure(syncBridge: bridge, messageViewModel: messageViewModel)
         composerViewModel.onMessageSent = { [weak syncBridgeObserver] in
             // Always transition to .thinking on send, even if currently .streaming.
@@ -336,14 +353,12 @@ struct MainWindow: View {
                     sessionKey: gatewayKey
                 )
 
+                messageViewModel.selectedTopicId = newTopic.id
+
                 let topicRepo = TopicRepository()
                 try topicRepo.save(newTopic)
                 try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
                 print("[MainWindow] Created topic: \(title) (id=\(topicId), gatewayKey=\(gatewayKey))")
-
-                await MainActor.run {
-                    messageViewModel.addLocalTopic(newTopic)
-                }
 
                 if let bridge = appState.syncBridge {
                     do {
