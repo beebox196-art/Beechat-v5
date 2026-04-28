@@ -288,14 +288,18 @@ public actor SyncBridge {
                 let threshold = await sessionResetManager.config.redDotThreshold
                 if cappedUsage >= threshold {
                     delegate?.syncBridge(self, didStartAutoReset: sessionKey)
-                    let recentMessages = try fetchLocalHistory(sessionKey: localSessionKey, limit: 30)
-                    if recentMessages.isEmpty {
-                        print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
-                    }
-                    let ok = try await resetSession(sessionKey: rpcSessionKey)
-                    if ok {
-                        effectiveText = formatCombinedContext(recentMessages, userMessage: text)
-                        resetCooldownCount[sessionKey] = Self.resetCooldownMessages
+                    do {
+                        let recentMessages = try fetchLocalHistory(sessionKey: localSessionKey, limit: 30)
+                        if recentMessages.isEmpty {
+                            print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
+                        }
+                        let ok = try await resetSession(sessionKey: rpcSessionKey)
+                        if ok {
+                            effectiveText = formatCombinedContext(recentMessages, userMessage: text)
+                            resetCooldownCount[sessionKey] = Self.resetCooldownMessages
+                        }
+                    } catch {
+                        print("[SyncBridge] Auto-reset failed for \(sessionKey): \(error)")
                     }
                     delegate?.syncBridge(self, didStopAutoReset: sessionKey)
                 }
