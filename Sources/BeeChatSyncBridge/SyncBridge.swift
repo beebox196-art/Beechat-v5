@@ -36,7 +36,7 @@ public actor SyncBridge {
     public private(set) var currentStreamingSessionKey: String?
 
     /// Max time to wait after last delta before declaring a stream stalled
-    private static let streamStallInterval: TimeInterval = 90.0
+    private static let streamStallInterval: TimeInterval = 30.0
 
     private var eventProcessingTask: Task<Void, Never>?
     private var reconnectWatchTask: Task<Void, Never>?

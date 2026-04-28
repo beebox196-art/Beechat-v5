@@ -17,6 +17,9 @@ final class MessageViewModel {
     /// Map of sessionKey → usage (0.0–1.0) for red-dot indicator
     var sessionUsageMap: [String: Double] = [:]
 
+    /// Observes the local sessions table to auto-refresh usage indicators.
+    private var sessionUsageCancellable: DatabaseCancellable?
+
     var selectedTopic: TopicViewModel? {
         topics.first { $0.id == selectedTopicId }
     }
@@ -33,6 +36,8 @@ final class MessageViewModel {
         messageListObserver.stopObserving()
         localMessageCancellable?.cancel()
         localMessageCancellable = nil
+        sessionUsageCancellable?.cancel()
+        sessionUsageCancellable = nil
         syncBridge = nil
     }
 
@@ -70,6 +75,7 @@ final class MessageViewModel {
         }
 
         startObservationForSelectedTopic()
+        refreshUsageFromSessions()
     }
 
     func selectTopic(id: String) {
@@ -81,6 +87,7 @@ final class MessageViewModel {
         
         selectedTopicId = id
         startObservationForSelectedTopic()
+        startSessionUsageObservation()
     }
 
     func sendMessage(text: String) async throws {
@@ -165,6 +172,49 @@ final class MessageViewModel {
         guard let bridge = syncBridge else { return }
         Task {
             await bridge.startUsagePolling(sessionKey: sessionKey)
+        }
+    }
+
+    /// Reads totalTokens from the local sessions table and populates sessionUsageMap.
+    func refreshUsageFromSessions() {
+        do {
+            let sessions = try DatabaseManager.shared.reader.read { db in
+                try Session.fetchAll(db)
+            }
+            var newMap: [String: Double] = [:]
+            for session in sessions {
+                if let totalTokens = session.totalTokens, totalTokens > 0 {
+                    newMap[session.id] = min(Double(totalTokens) / 200_000.0, 1.0)
+                }
+            }
+            self.sessionUsageMap = newMap
+        } catch {
+            BeeChatLogger.log("[ThinkingBee] refreshUsageFromSessions failed: \(error)")
+        }
+    }
+
+    /// Starts a GRDB observation on the sessions table to auto-refresh usage indicators.
+    private func startSessionUsageObservation() {
+        sessionUsageCancellable?.cancel()
+
+        let observation = ValueObservation.tracking { db in
+            try Session.fetchAll(db)
+        }
+
+        do {
+            let writer = try DatabaseManager.shared.writer
+            sessionUsageCancellable = observation.start(
+                in: writer,
+                scheduling: .mainActor,
+                onError: { error in
+                    BeeChatLogger.log("[ThinkingBee] Session usage observation error: \(error)")
+                },
+                onChange: { [weak self] _ in
+                    self?.refreshUsageFromSessions()
+                }
+            )
+        } catch {
+            BeeChatLogger.log("[ThinkingBee] Failed to start session usage observation: \(error)")
         }
     }
 

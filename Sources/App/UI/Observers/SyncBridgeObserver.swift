@@ -11,9 +11,6 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     var connectionState: ConnectionState = .disconnected
     var thinkingState: ThinkingState = .idle
 
-    /// Session usage percentage (0.0–1.0) for the currently selected topic.
-    var selectedSessionUsage: Double?
-
     private var syncBridge: SyncBridge?
     private var streamingPollTask: Task<Void, Never>?
     /// Safety net: auto-reset streaming state if stuck for more than 90 seconds
@@ -126,15 +123,5 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     /// Set to true while an auto-reset is in progress (for UI binding).
     var autoResetting: Bool = false
 
-    /// Polls the gateway for session usage and updates `selectedSessionUsage`.
-    public func updateSessionUsage(sessionKey: String) async {
-        guard let bridge = syncBridge else { return }
-        do {
-            try await bridge.pollSessionUsage(sessionKey: sessionKey)
-            let usage = await bridge.sessionUsageCache[sessionKey]
-            self.selectedSessionUsage = usage
-        } catch {
-            BeeChatLogger.log("[SessionReset] Usage poll failed: \(error.localizedDescription)")
-        }
-    }
+
 }
