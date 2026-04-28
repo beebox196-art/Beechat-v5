@@ -93,7 +93,7 @@ public actor SyncBridge {
             for await state in connectionStateStream() {
                 if state == .connected {
                     do {
-                        try await reconciler.reconcile(activeSessionKey: currentStreamingSessionKey)
+                        try await reconciler.reconcile(activeSessionKey: currentStreamingSessionKey, sessionKeyMap: sessionKeyMap)
                     } catch {
                         print("[SyncBridge] Reconciliation error: \(error)")
                     }
@@ -566,7 +566,7 @@ public actor SyncBridge {
 
             if let last = lastSeenEventSeq, seq > last + 1 {
                 // Gap detected
-                try await reconciler.reconcile(activeSessionKey: event.sessionKey)
+                try await reconciler.reconcile(activeSessionKey: event.sessionKey, sessionKeyMap: sessionKeyMap)
             }
 
             lastSeenEventSeq = seq

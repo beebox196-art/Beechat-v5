@@ -21,7 +21,7 @@ public struct Reconciler {
         try BeeChatSessionFilter.normalize(gatewayKey)
     }
     
-    public func reconcile(activeSessionKey: String?) async throws {
+    public func reconcile(activeSessionKey: String?, sessionKeyMap: [String: String] = [:]) async throws {
         // 1. Refresh sessions list — but only persist BeeChat topic sessions
         let sessions = try await rpcClient.sessionsList()
         
@@ -60,7 +60,8 @@ public struct Reconciler {
         // 3. Reconcile delivery ledger
         let pending = try ledgerRepo.fetchPending()
         for entry in pending {
-            let history = try await rpcClient.chatHistory(sessionKey: entry.sessionKey, limit: 200)
+            let rpcSessionKey = sessionKeyMap.first(where: { $0.value == entry.sessionKey })?.key ?? entry.sessionKey
+            let history = try await rpcClient.chatHistory(sessionKey: rpcSessionKey, limit: 200)
             if history.contains(where: { $0.id == entry.idempotencyKey || $0.runId == entry.runId }) {
                 try ledgerRepo.updateStatus(idempotencyKey: entry.idempotencyKey, status: .delivered)
             } else if entry.retryCount < 3 {
