@@ -9,9 +9,6 @@ public struct EventRouter {
         self.syncBridge = syncBridge
     }
 
-    private func isBeeChatSession(_ sessionKey: String) async throws -> Bool {
-        return try await syncBridge.isBeeChatSession(sessionKey)
-    }
 
     public func route(event: String, payload: [String: AnyCodable]?) async throws {
         print("[EventRouter] Received event: \(event)")
@@ -45,8 +42,6 @@ public struct EventRouter {
         let sessionKey = chatEvent.sessionKey
         let state = chatEvent.state
         let errorMessage = chatEvent.errorMessage
-
-        guard try await isBeeChatSession(sessionKey) else { return }
 
         let messageText = chatEvent.message?.content.isEmpty == false ? chatEvent.message?.content : nil
 
@@ -92,8 +87,6 @@ public struct EventRouter {
         }
         
         let sessionKey = sessionMsg.sessionKey
-        
-        guard try await isBeeChatSession(sessionKey) else { return }
 
         let ts = sessionMsg.ts ?? 0
         let messageId = sessionMsg.data.id ?? UUID().uuidString
@@ -134,10 +127,6 @@ public struct EventRouter {
             return
         }
         
-        let sessionKey = agentEvent.sessionKey
-        
-        guard try await isBeeChatSession(sessionKey) else { return }
-
         try await syncBridge.processAgentEvent(agentEvent)
     }
 
@@ -146,7 +135,7 @@ public struct EventRouter {
     }
 
     private func handleSessionsChanged() async throws {
-        try await syncBridge.fetchSessions()
+        _ = try await syncBridge.fetchSessions()
     }
 
     private func handleTick() async {

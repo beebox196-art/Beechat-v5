@@ -19,7 +19,7 @@ public class DatabaseManager {
     
     /// Whether the session key alignment data migration still needs to run.
     /// Set to true by Migration010 schema changes; cleared once data migration completes.
-    public private(set) var sessionKeyAlignmentPending = false
+    public var sessionKeyAlignmentPending = false
 
     /// Run the data migration phase of Session Key Alignment.
     /// Called after SyncBridge.start() populates sessionKeyMap from the gateway.

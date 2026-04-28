@@ -22,9 +22,8 @@ public actor SyncBridge {
     private let reconciler: Reconciler
     private let ledgerRepo: DeliveryLedgerRepository
 
-    private var sessionKeyMap: [String: String] = [:]
-
-    private var beechatSessionKeys: Set<String> = []
+    /// Session keys known from the last fetchSessions() call
+    private var knownSessionKeys: Set<String> = []
 
     public weak var delegate: SyncBridgeDelegate?
 
@@ -93,7 +92,7 @@ public actor SyncBridge {
             for await state in connectionStateStream() {
                 if state == .connected {
                     do {
-                        try await reconciler.reconcile(activeSessionKey: currentStreamingSessionKey, sessionKeyMap: sessionKeyMap)
+                        try await reconciler.reconcile(activeSessionKey: currentStreamingSessionKey)
                     } catch {
                         print("[SyncBridge] Reconciliation error: \(error)")
                     }
@@ -102,8 +101,8 @@ public actor SyncBridge {
         }
 
         // Start usage polling for known sessions
-        for sessionKey in beechatSessionKeys {
-            try? await startUsagePolling(sessionKey: sessionKey)
+        for sessionKey in knownSessionKeys {
+            await startUsagePolling(sessionKey: sessionKey)
         }
 
         connectionWatchTask = Task {
@@ -138,98 +137,52 @@ public actor SyncBridge {
         currentStreamingSessionKey = nil
     }
 
-    // MARK: - BeeChat session filtering
+    // MARK: - Session filtering
 
-    func isBeeChatSession(_ sessionKey: String) throws -> Bool {
-        if sessionKeyMap[sessionKey] != nil { return true }
-        if beechatSessionKeys.contains(sessionKey) { return true }
+    /// Check if a session key is known from the last fetchSessions() call.
+    func isKnownSession(_ sessionKey: String) -> Bool {
+        knownSessionKeys.contains(sessionKey)
+    }
 
-        if try BeeChatSessionFilter.isBeeChatSession(sessionKey) {
-            beechatSessionKeys.insert(sessionKey)
-            return true
-        }
+    /// Determine if a session should appear by default in the sidebar.
+    func sessionShouldAppearByDefault(_ info: SessionInfo) -> Bool {
+        if info.key == "agent:main:main" { return true }
+        if (info.totalTokens ?? 0) > 0 { return true }
         return false
-    }
-
-    // MARK: - Session key normalization
-
-    func normalizeSessionKey(_ gatewayKey: String) throws -> String {
-        if let localId = sessionKeyMap[gatewayKey] {
-            return localId
-        }
-        let normalized = try BeeChatSessionFilter.normalize(gatewayKey)
-        if normalized != gatewayKey {
-            sessionKeyMap[gatewayKey] = normalized
-        }
-        return normalized
-    }
-
-    func gatewayKey(for localKey: String) -> String? {
-        sessionKeyMap.first(where: { $0.value == localKey })?.key
     }
 
     public func fetchSessions() async throws -> [Session] {
         let infos = try await rpcClient.sessionsList()
 
-        let topicRepo = TopicRepository()
-        let allTopics = try topicRepo.fetchAllActive(limit: 500)
-        let topicIdMap = Dictionary(uniqueKeysWithValues: allTopics.map { ($0.id.uppercased(), $0.id) })
-
-        var sessionKeyToTopicId: [String: String] = [:]
-        for topic in allTopics {
-            if let sk = topic.sessionKey, !sk.isEmpty {
-                sessionKeyToTopicId[sk] = topic.id
-            }
+        // Directly upsert sessions from gateway — no topic mapping needed
+        let sessions: [Session] = infos.compactMap { info in
+            guard sessionShouldAppearByDefault(info) else { return nil }
+            let lastMsgDate = info.lastMessageAt.flatMap { ISO8601DateFormatter().date(from: $0) }
+            return Session(
+                id: info.key,
+                agentId: info.key,
+                channel: info.channel,
+                title: info.label,
+                lastMessageAt: lastMsgDate,
+                updatedAt: Date(),
+                totalTokens: info.totalTokens
+            )
         }
 
-        let bridgeEntries = try topicRepo.listAllBridgeSessionKeys()
-        for (sessionKey, topicId) in bridgeEntries {
-            sessionKeyToTopicId[sessionKey] = topicId
-        }
+        knownSessionKeys = Set(sessions.map { $0.id })
 
-        // Filter sessions: only keep those that map to BeeChat topics
-        var beechatSessions: [Session] = []
-        for info in infos {
-            let gatewayKey = info.key
-            let stripped = SessionKeyNormalizer.stripPrefix(gatewayKey)
+        try config.persistenceStore.upsertSessions(sessions)
 
-            let topicId: String? = sessionKeyToTopicId[gatewayKey]
-                ?? topicIdMap[stripped.uppercased()]
-
-            if let topicId = topicId {
-                sessionKeyMap[gatewayKey] = topicId
-                beechatSessionKeys.insert(gatewayKey)
-
-                let lastMsgDate = info.lastMessageAt.flatMap { ISO8601DateFormatter().date(from: $0) }
-                beechatSessions.append(Session(
-                    id: info.key,
-                    agentId: info.key,
-                    channel: info.channel,
-                    title: info.label,
-                    lastMessageAt: lastMsgDate,
-                    updatedAt: Date()
-                ))
-            }
-        }
-
-        try config.persistenceStore.upsertSessions(beechatSessions)
-
-        return beechatSessions
+        return sessions
     }
 
     public func fetchHistory(sessionKey: String, limit: Int? = nil) async throws -> [Message] {
-        guard try isBeeChatSession(sessionKey) else {
-            return []
-        }
-
-        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
         let fetchLimit = limit ?? config.historyFetchLimit
-        let history = try await rpcClient.chatHistory(sessionKey: rpcSessionKey, limit: fetchLimit)
-        let localSessionKey = try normalizeSessionKey(sessionKey)
+        let history = try await rpcClient.chatHistory(sessionKey: sessionKey, limit: fetchLimit)
         let messages = history.map { payload in
             Message(
                 id: payload.id,
-                sessionId: localSessionKey,
+                sessionId: sessionKey,
                 role: payload.role,
                 content: payload.content,
                 timestamp: payload.timestamp
@@ -256,19 +209,6 @@ public actor SyncBridge {
         }
         
         var effectiveText = text
-        let localSessionKey: String
-        do {
-            localSessionKey = try normalizeSessionKey(sessionKey)
-        } catch {
-            print("[SyncBridge] normalizeSessionKey failed, using original: \(error)")
-            localSessionKey = sessionKey
-        }
-
-        // Resolve the gateway key for RPC calls
-        let rpcSessionKey = gatewayKey(for: sessionKey) ?? {
-            print("[SyncBridge] ⚠️ No gateway key mapping for \(sessionKey), using as-is")
-            return sessionKey
-        }()
         
         // Check cooldown
         let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
@@ -280,7 +220,7 @@ public actor SyncBridge {
         } else {
             // Usage check with graceful fallback
             do {
-                let usage = try await rpcClient.sessionsUsage(sessionKey: rpcSessionKey)
+                let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
                 if usage > 1.0 {
                     print("[SyncBridge] Usage RPC returned unexpected value: \(usage), capping at 1.0")
                 }
@@ -289,11 +229,11 @@ public actor SyncBridge {
                 if cappedUsage >= threshold {
                     delegate?.syncBridge(self, didStartAutoReset: sessionKey)
                     do {
-                        let recentMessages = try fetchLocalHistory(sessionKey: localSessionKey, limit: 30)
+                        let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
                         if recentMessages.isEmpty {
                             print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
                         }
-                        let ok = try await resetSession(sessionKey: rpcSessionKey)
+                        let ok = try await resetSession(sessionKey: sessionKey)
                         if ok {
                             effectiveText = formatCombinedContext(recentMessages, userMessage: text)
                             resetCooldownCount[sessionKey] = Self.resetCooldownMessages
@@ -326,7 +266,7 @@ public actor SyncBridge {
         
         do {
             let runId = try await rpcClient.chatSend(
-                sessionKey: rpcSessionKey,
+                sessionKey: sessionKey,
                 message: effectiveText,
                 idempotencyKey: idempotencyKey,
                 thinking: thinking,
@@ -342,8 +282,7 @@ public actor SyncBridge {
 
     public func abortGeneration(sessionKey: String) async throws {
         cancelStallTimer()
-        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
-        let ok = try await rpcClient.chatAbort(sessionKey: rpcSessionKey)
+        let ok = try await rpcClient.chatAbort(sessionKey: sessionKey)
         if ok {
             streamingBuffer.removeAll()
             currentStreamingSessionKey = nil
@@ -353,8 +292,7 @@ public actor SyncBridge {
     // MARK: - Session Reset Flow
 
     public func resetSession(sessionKey: String) async throws -> Bool {
-        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
-        return try await rpcClient.sessionsReset(sessionKey: rpcSessionKey, reason: "new")
+        return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
     }
 
     // MARK: - Auto-reset helpers
@@ -413,8 +351,7 @@ public actor SyncBridge {
     }
 
     public func pollSessionUsage(sessionKey: String) async throws {
-        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
-        let usage = try await rpcClient.sessionsUsage(sessionKey: rpcSessionKey)
+        let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
         sessionUsageCache[sessionKey] = usage
     }
 
@@ -503,21 +440,8 @@ public actor SyncBridge {
 
     /// Save a message from the gateway, normalizing the session key to the local topic ID.
     internal func saveGatewayMessage(_ message: Message) throws {
-        let localKey = try normalizeSessionKey(message.sessionId)
-        let normalized = Message(
-            id: message.id,
-            sessionId: localKey,
-            role: message.role,
-            content: message.content,
-            senderName: message.senderName,
-            senderId: message.senderId,
-            timestamp: message.timestamp,
-            editedAt: message.editedAt,
-            isRead: message.isRead,
-            metadata: message.metadata,
-            createdAt: message.createdAt
-        )
-        try config.persistenceStore.saveMessage(normalized)
+        // Session keys are now gateway keys directly — no normalization needed
+        try config.persistenceStore.saveMessage(message)
     }
 
     // MARK: - Chat event handlers (client-friendly format from gateway)
@@ -570,7 +494,7 @@ public actor SyncBridge {
 
             if let last = lastSeenEventSeq, seq > last + 1 {
                 // Gap detected
-                try await reconciler.reconcile(activeSessionKey: event.sessionKey, sessionKeyMap: sessionKeyMap)
+                try await reconciler.reconcile(activeSessionKey: event.sessionKey)
             }
 
             lastSeenEventSeq = seq
