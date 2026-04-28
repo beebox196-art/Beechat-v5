@@ -222,8 +222,9 @@ public actor SyncBridge {
             return []
         }
 
+        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
         let fetchLimit = limit ?? config.historyFetchLimit
-        let history = try await rpcClient.chatHistory(sessionKey: sessionKey, limit: fetchLimit)
+        let history = try await rpcClient.chatHistory(sessionKey: rpcSessionKey, limit: fetchLimit)
         let localSessionKey = try normalizeSessionKey(sessionKey)
         let messages = history.map { payload in
             Message(
@@ -264,7 +265,10 @@ public actor SyncBridge {
         }
 
         // Resolve the gateway key for RPC calls
-        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
+        let rpcSessionKey = gatewayKey(for: sessionKey) ?? {
+            print("[SyncBridge] ⚠️ No gateway key mapping for \(sessionKey), using as-is")
+            return sessionKey
+        }()
         
         // Check cooldown
         let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
@@ -334,7 +338,8 @@ public actor SyncBridge {
 
     public func abortGeneration(sessionKey: String) async throws {
         cancelStallTimer()
-        let ok = try await rpcClient.chatAbort(sessionKey: sessionKey)
+        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
+        let ok = try await rpcClient.chatAbort(sessionKey: rpcSessionKey)
         if ok {
             streamingBuffer.removeAll()
             currentStreamingSessionKey = nil
