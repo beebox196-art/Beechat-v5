@@ -134,12 +134,8 @@ struct MainWindow: View {
                 Divider()
 
                 if messageViewModel.selectedTopic != nil {
-                    // TODO: Phase 4 — remove this shim; UI will use gateway keys natively
-                    let normalizedStreamingKey = syncBridgeObserver.streamingSessionKey?
-                        .replacingOccurrences(of: "agent:main:", with: "")
-                        .uppercased()
                     let isActiveTopicStreaming = syncBridgeObserver.isStreaming
-                        && normalizedStreamingKey == messageViewModel.selectedTopicId
+                        && syncBridgeObserver.streamingSessionKey == messageViewModel.selectedTopic?.sessionKey
                     let activeTopicStreamingContent = isActiveTopicStreaming
                         ? syncBridgeObserver.streamingContent : ""
 
@@ -329,15 +325,21 @@ struct MainWindow: View {
 
         Task {
             do {
+                let topicId = UUID().uuidString
+                // Phase 4: gateway keys are native. Generate a gateway-format key upfront.
+                let gatewayKey = "agent:main:\(topicId.lowercased())"
+
                 let newTopic = Topic(
-                    id: UUID().uuidString,
+                    id: topicId,
                     name: title,
-                    lastActivityAt: Date()
+                    lastActivityAt: Date(),
+                    sessionKey: gatewayKey
                 )
 
                 let topicRepo = TopicRepository()
                 try topicRepo.save(newTopic)
-                print("[MainWindow] Created topic: \(title) (\(newTopic.id))")
+                try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                print("[MainWindow] Created topic: \(title) (id=\(topicId), gatewayKey=\(gatewayKey))")
 
                 await MainActor.run {
                     messageViewModel.addLocalTopic(newTopic)
@@ -346,13 +348,11 @@ struct MainWindow: View {
                 if let bridge = appState.syncBridge {
                     do {
                         let runId = try await bridge.sendMessage(
-                            sessionKey: newTopic.id,
+                            sessionKey: gatewayKey,
                             text: "Start",
                             thinking: nil
                         )
-                        try topicRepo.updateSessionKey(topicId: newTopic.id, sessionKey: newTopic.id)
-                        try topicRepo.saveBridge(topicId: newTopic.id, sessionKey: newTopic.id)
-                        print("[MainWindow] Gateway session created for topic \(newTopic.id), runId: \(runId)")
+                        print("[MainWindow] Gateway session created for topic \(topicId), runId: \(runId)")
                     } catch {
                         print("[MainWindow] Gateway session creation failed (topic still local): \(error)")
                     }

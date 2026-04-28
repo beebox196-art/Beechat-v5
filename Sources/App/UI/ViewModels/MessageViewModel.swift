@@ -95,18 +95,15 @@ final class MessageViewModel {
         } else if let resolvedKey = try topicRepo.resolveSessionKey(topicId: topicId), !resolvedKey.isEmpty {
             sessionKey = resolvedKey
         } else {
-            sessionKey = topicId
+            BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — no gateway key found for topic \(topicId)")
+            return
         }
 
         BeeChatLogger.log("[ThinkingBee] MessageViewModel.sendMessage — topicId=\(topicId), sessionKey=\(sessionKey), text=\(text.prefix(50))")
 
-        // TODO: Phase 4 — remove this shim; UI will use gateway keys natively
-        let normalizedSessionKey = sessionKey.contains(":") ? sessionKey : "agent:main:" + sessionKey.lowercased()
-        BeeChatLogger.log("[ThinkingBee] sendMessage — normalizedSessionKey=\(normalizedSessionKey)")
-
         let userMessage = Message(
             id: UUID().uuidString,
-            sessionId: normalizedSessionKey,
+            sessionId: sessionKey,
             role: "user",
             content: text,
             timestamp: Date()
@@ -121,28 +118,24 @@ final class MessageViewModel {
             return
         }
         do {
-            BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for normalizedSessionKey=\(normalizedSessionKey)")
-            _ = try await bridge.sendMessage(sessionKey: normalizedSessionKey, text: text)
-            BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for normalizedSessionKey=\(normalizedSessionKey)")
+            BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for sessionKey=\(sessionKey)")
+            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
+            BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for sessionKey=\(sessionKey)")
         } catch SyncBridgeError.concurrentSendInProgress {
             BeeChatLogger.log("[ThinkingBee] sendMessage — concurrent send, retrying in 100ms")
             try? await Task.sleep(nanoseconds: 100_000_000)
-            _ = try await bridge.sendMessage(sessionKey: normalizedSessionKey, text: text)
-            BeeChatLogger.log("[ThinkingBee] sendMessage — retry succeeded for normalizedSessionKey=\(normalizedSessionKey)")
+            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
+            BeeChatLogger.log("[ThinkingBee] sendMessage — retry succeeded for sessionKey=\(sessionKey)")
         }
 
-        if sessionKey == topicId {
-            try topicRepo.updateSessionKey(topicId: topicId, sessionKey: sessionKey)
-            try topicRepo.saveBridge(topicId: topicId, sessionKey: sessionKey)
-            if let idx = topics.firstIndex(where: { $0.id == topicId }) {
-                topics[idx].sessionKey = sessionKey
-            }
-        }
     }
 
     func fetchHistory() async throws {
         guard let topicId = selectedTopicId else { return }
-        let sessionKey = (try topicRepo.resolveSessionKey(topicId: topicId)) ?? topicId
+        guard let sessionKey = try topicRepo.resolveSessionKey(topicId: topicId), !sessionKey.isEmpty else {
+            BeeChatLogger.log("[ThinkingBee] fetchHistory ABORTED — no gateway key for topic \(topicId)")
+            return
+        }
         guard let bridge = syncBridge else { return }
         _ = try await bridge.fetchHistory(sessionKey: sessionKey)
     }
@@ -199,11 +192,13 @@ final class MessageViewModel {
                 if let resolvedKey = try topicRepo.resolveSessionKey(topicId: topicId), !resolvedKey.isEmpty {
                     sessionKey = resolvedKey
                 } else {
-                    sessionKey = topicId
+                    BeeChatLogger.log("[ThinkingBee] startObservationForSelectedTopic ABORTED — no gateway key found for topic \(topicId)")
+                    return
                 }
             } catch {
                 print("[MessageViewModel] Failed to resolve session key: \(error)")
-                sessionKey = topicId
+                BeeChatLogger.log("[ThinkingBee] startObservationForSelectedTopic ABORTED — resolve failed for topic \(topicId)")
+                return
             }
         }
 
