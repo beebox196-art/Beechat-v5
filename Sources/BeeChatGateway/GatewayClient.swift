@@ -389,7 +389,7 @@ public actor GatewayClient {
         }
         
         let role = "operator"
-        let scopes = ["operator.read", "operator.write", "operator.approvals", "operator.pairing"]
+        let scopes = ["operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"]
         
         // Build device identity only when we have a stored deviceToken
         var deviceIdentity: ConnectParams.DeviceIdentity? = nil
