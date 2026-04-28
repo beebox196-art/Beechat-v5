@@ -164,6 +164,10 @@ public actor SyncBridge {
         return normalized
     }
 
+    func gatewayKey(for localKey: String) -> String? {
+        sessionKeyMap.first(where: { $0.value == localKey })?.key
+    }
+
     public func fetchSessions() async throws -> [Session] {
         let infos = try await rpcClient.sessionsList()
 
@@ -258,6 +262,9 @@ public actor SyncBridge {
             print("[SyncBridge] normalizeSessionKey failed, using original: \(error)")
             localSessionKey = sessionKey
         }
+
+        // Resolve the gateway key for RPC calls
+        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
         
         // Check cooldown
         let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
@@ -269,7 +276,7 @@ public actor SyncBridge {
         } else {
             // Usage check with graceful fallback
             do {
-                let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
+                let usage = try await rpcClient.sessionsUsage(sessionKey: rpcSessionKey)
                 if usage > 1.0 {
                     print("[SyncBridge] Usage RPC returned unexpected value: \(usage), capping at 1.0")
                 }
@@ -281,7 +288,7 @@ public actor SyncBridge {
                     if recentMessages.isEmpty {
                         print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
                     }
-                    let ok = try await resetSession(sessionKey: sessionKey)
+                    let ok = try await resetSession(sessionKey: rpcSessionKey)
                     if ok {
                         effectiveText = formatCombinedContext(recentMessages, userMessage: text)
                         resetCooldownCount[sessionKey] = Self.resetCooldownMessages
@@ -311,7 +318,7 @@ public actor SyncBridge {
         
         do {
             let runId = try await rpcClient.chatSend(
-                sessionKey: sessionKey,
+                sessionKey: rpcSessionKey,
                 message: effectiveText,
                 idempotencyKey: idempotencyKey,
                 thinking: thinking,
@@ -337,7 +344,8 @@ public actor SyncBridge {
     // MARK: - Session Reset Flow
 
     public func resetSession(sessionKey: String) async throws -> Bool {
-        return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
+        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
+        return try await rpcClient.sessionsReset(sessionKey: rpcSessionKey, reason: "new")
     }
 
     // MARK: - Auto-reset helpers
@@ -396,7 +404,8 @@ public actor SyncBridge {
     }
 
     public func pollSessionUsage(sessionKey: String) async throws {
-        let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
+        let rpcSessionKey = gatewayKey(for: sessionKey) ?? sessionKey
+        let usage = try await rpcClient.sessionsUsage(sessionKey: rpcSessionKey)
         sessionUsageCache[sessionKey] = usage
     }
 

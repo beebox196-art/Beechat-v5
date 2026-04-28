@@ -53,8 +53,11 @@ public struct RPCClient: RPCClientProtocol {
         let params: [String: AnyCodable] = ["key": AnyCodable(sessionKey)]
         let response = try await gateway.call(method: "sessions.usage", params: params)
         
-        guard let payloadData = try? JSONEncoder().encode(response),
-              let usageResponse = try? JSONDecoder().decode(SessionUsageResponse.self, from: payloadData) else {
+        guard let payloadData = try? JSONEncoder().encode(response) else {
+            throw NSError(domain: "RPCClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid sessions.usage response"])
+        }
+        
+        guard let usageResponse = try? JSONDecoder().decode(SessionUsageResponse.self, from: payloadData) else {
             throw NSError(domain: "RPCClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid sessions.usage response"])
         }
         
