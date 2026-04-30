@@ -27,6 +27,10 @@ struct MainWindow: View {
             set: { newId in
                 if let id = newId, id != messageViewModel.selectedTopicId {
                     messageViewModel.selectTopic(id: id)
+                    // Update observer's knowledge of which session is selected
+                    syncBridgeObserver.currentSelectedSessionKey = messageViewModel.selectedTopic?.sessionKey
+                    // Clear unread for the newly selected topic
+                    syncBridgeObserver.clearUnread(for: messageViewModel.selectedTopic?.sessionKey)
                 }
             }
         )
@@ -38,10 +42,12 @@ struct MainWindow: View {
                 List(selection: sidebarSelection) {
                     ForEach(messageViewModel.topics) { topic in
                         let usage = messageViewModel.usage(for: topic.sessionKey)
+                        let unreadCount = syncBridgeObserver.unreadCounts[topic.sessionKey ?? ""] ?? 0
                         SessionRow(
                             topic: topic,
                             thinkingState: syncBridgeObserver.thinkingState,
-                            sessionUsage: usage
+                            sessionUsage: usage,
+                            unreadCount: unreadCount
                         )
                             .tag(topic.id as String?)
                             .contextMenu {

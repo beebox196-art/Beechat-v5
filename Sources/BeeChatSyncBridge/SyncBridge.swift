@@ -33,7 +33,7 @@ public actor SyncBridge {
 
     private var lastSeenEventSeq: Int?
     private var streamingBuffer: [String: String] = [:]
-    public private(set) var currentStreamingSessionKey: String?
+    public private(set) var streamingSessionKeys: Set<String> = []
 
     /// Max time to wait after last delta before declaring a stream stalled
     private static let streamStallInterval: TimeInterval = 30.0
@@ -41,14 +41,14 @@ public actor SyncBridge {
     private var eventProcessingTask: Task<Void, Never>?
     private var reconnectWatchTask: Task<Void, Never>?
     private var connectionWatchTask: Task<Void, Never>?
-    private var stallTimerTask: Task<Void, Never>?
+    private var stallTimerTasks: [String: Task<Void, Never>] = [:]
     private var usagePollingTasks: [String: Task<Void, Never>] = [:]
 
     public let sessionResetManager: SessionResetManager
     public private(set) var sessionUsageCache: [String: Double] = [:]
 
     /// Gate to prevent concurrent sendMessage calls
-    private var isSending = false
+    private var sendingSessionKeys: Set<String> = []
     /// Cooldown tracker: messages remaining before next auto-reset check
     private var resetCooldownCount: [String: Int] = [:]
     private static let resetCooldownMessages = 5
@@ -92,7 +92,7 @@ public actor SyncBridge {
             for await state in connectionStateStream() {
                 if state == .connected {
                     do {
-                        try await reconciler.reconcile(activeSessionKey: currentStreamingSessionKey)
+                        try await reconciler.reconcile(activeSessionKeys: Array(streamingSessionKeys))
                     } catch {
                         print("[SyncBridge] Reconciliation error: \(error)")
                     }
@@ -107,9 +107,9 @@ public actor SyncBridge {
 
         connectionWatchTask = Task {
             for await state in connectionStateStream() {
-                if state != .connected, currentStreamingSessionKey != nil {
+                if state != .connected, !streamingSessionKeys.isEmpty {
                     do {
-                        try await clearStalledStream(reason: "Connection lost while streaming")
+                        try await clearAllStalledStreams(reason: "Connection lost while streaming")
                     } catch {
                         print("[SyncBridge] Stream cleanup error: \(error)")
                     }
@@ -122,19 +122,19 @@ public actor SyncBridge {
         eventProcessingTask?.cancel()
         reconnectWatchTask?.cancel()
         connectionWatchTask?.cancel()
-        stallTimerTask?.cancel()
+        for task in stallTimerTasks.values { task.cancel() }
         stopUsagePolling()
         eventProcessingTask = nil
         reconnectWatchTask = nil
         connectionWatchTask = nil
-        stallTimerTask = nil
+        stallTimerTasks.removeAll()
         usagePollingTasks.removeAll()
 
         await config.gatewayClient.disconnect()
 
         streamingBuffer.removeAll()
         lastSeenEventSeq = nil
-        currentStreamingSessionKey = nil
+        streamingSessionKeys.removeAll()
     }
 
     // MARK: - Session filtering
@@ -188,14 +188,14 @@ public actor SyncBridge {
     }
 
     public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String {
-        guard !isSending else {
+        guard !sendingSessionKeys.contains(sessionKey) else {
             throw SyncBridgeError.concurrentSendInProgress
         }
-        isSending = true
-        defer { isSending = false }
+        sendingSessionKeys.insert(sessionKey)
+        defer { sendingSessionKeys.remove(sessionKey) }
         
         // Abort any in-flight generation before auto-reset
-        if currentStreamingSessionKey == sessionKey {
+        if streamingSessionKeys.contains(sessionKey) {
             do {
                 try await abortGeneration(sessionKey: sessionKey)
             } catch {
@@ -276,11 +276,11 @@ public actor SyncBridge {
     }
 
     public func abortGeneration(sessionKey: String) async throws {
-        cancelStallTimer()
+        cancelStallTimer(for: sessionKey)
         let ok = try await rpcClient.chatAbort(sessionKey: sessionKey)
         if ok {
-            streamingBuffer.removeAll()
-            currentStreamingSessionKey = nil
+            streamingBuffer.removeValue(forKey: sessionKey)
+            streamingSessionKeys.remove(sessionKey)
         }
     }
 
@@ -417,10 +417,8 @@ public actor SyncBridge {
         }
     }
 
-    public var currentStreamingContent: String {
-        guard let key = currentStreamingSessionKey,
-              let content = streamingBuffer[key] else { return "" }
-        return content
+    public func streamingContent(for sessionKey: String) -> String {
+        return streamingBuffer[sessionKey] ?? ""
     }
 
     // Internal helpers for EventRouter
@@ -443,21 +441,20 @@ public actor SyncBridge {
 
     /// Handle "chat" delta event - gateway sends accumulated text (replacement, not append)
        internal func processChatDelta(sessionKey: String, text: String) async {
-        let isFirstDelta = currentStreamingSessionKey != sessionKey
-        currentStreamingSessionKey = sessionKey
-        resetStallTimer()
+        let isFirstDelta = !streamingSessionKeys.contains(sessionKey)
+        streamingSessionKeys.insert(sessionKey)
+        streamingBuffer[sessionKey] = text
+        resetStallTimer(for: sessionKey)
         if isFirstDelta {
             delegate?.syncBridge(self, didStartStreaming: sessionKey)
         }
     }
 
     internal func processChatFinal(sessionKey: String) async throws {
-        print("[SyncBridge] processChatFinal called for sessionKey=\(sessionKey), currentStreamingSessionKey=\(currentStreamingSessionKey ?? "nil")")
-        cancelStallTimer()
+        print("[SyncBridge] processChatFinal called for sessionKey=\(sessionKey), streamingSessionKeys=\(streamingSessionKeys)")
+        cancelStallTimer(for: sessionKey)
         streamingBuffer.removeValue(forKey: sessionKey)
-        if currentStreamingSessionKey == sessionKey {
-            currentStreamingSessionKey = nil
-        }
+        streamingSessionKeys.remove(sessionKey)
 
         // Fetch history BEFORE notifying the delegate so the persisted message
         // is in the DB when the UI clears the streaming content.
@@ -469,11 +466,9 @@ public actor SyncBridge {
     }
 
     internal func processChatError(sessionKey: String, errorMessage: String) async throws {
-        cancelStallTimer()
+        cancelStallTimer(for: sessionKey)
         streamingBuffer.removeValue(forKey: sessionKey)
-        if currentStreamingSessionKey == sessionKey {
-            currentStreamingSessionKey = nil
-        }
+        streamingSessionKeys.remove(sessionKey)
 
         try await fetchHistory(sessionKey: sessionKey)
 
@@ -489,7 +484,7 @@ public actor SyncBridge {
 
             if let last = lastSeenEventSeq, seq > last + 1 {
                 // Gap detected
-                try await reconciler.reconcile(activeSessionKey: event.sessionKey)
+                try await reconciler.reconcile(activeSessionKeys: [event.sessionKey])
             }
 
             lastSeenEventSeq = seq
@@ -500,13 +495,16 @@ public actor SyncBridge {
         switch event.data.phase {
         case "delta":
             if let text = event.data.text {
+                let isFirstDelta = !streamingSessionKeys.contains(sessionKey)
                 streamingBuffer[sessionKey, default: ""] += text
-                currentStreamingSessionKey = sessionKey
-                resetStallTimer()
-                delegate?.syncBridge(self, didStartStreaming: sessionKey)
+                streamingSessionKeys.insert(sessionKey)
+                resetStallTimer(for: sessionKey)
+                if isFirstDelta {
+                    delegate?.syncBridge(self, didStartStreaming: sessionKey)
+                }
             }
         case "final":
-            cancelStallTimer()
+            cancelStallTimer(for: sessionKey)
             if let text = event.data.text {
                 let message = Message(
                     id: event.data.itemId ?? UUID().uuidString,
@@ -518,11 +516,13 @@ public actor SyncBridge {
                 try saveGatewayMessage(message)
             }
             streamingBuffer.removeValue(forKey: sessionKey)
+            streamingSessionKeys.remove(sessionKey)
             try await fetchHistory(sessionKey: sessionKey)
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
         case "error":
-            cancelStallTimer()
+            cancelStallTimer(for: sessionKey)
             streamingBuffer.removeValue(forKey: sessionKey)
+            streamingSessionKeys.remove(sessionKey)
             // Fetch history before notifying the delegate
             try await fetchHistory(sessionKey: sessionKey)
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
@@ -536,30 +536,41 @@ public actor SyncBridge {
 
     // MARK: - Stream stall detection (A1)
 
-    private func resetStallTimer() {
-        stallTimerTask?.cancel()
-        stallTimerTask = Task {
+    private func resetStallTimer(for sessionKey: String) {
+        stallTimerTasks[sessionKey]?.cancel()
+        stallTimerTasks[sessionKey] = Task {
             try? await Task.sleep(nanoseconds: UInt64(Self.streamStallInterval * 1_000_000_000))
             guard !Task.isCancelled else { return }
             do {
-                try await clearStalledStream(reason: "Stream stalled - no delta for \(Int(Self.streamStallInterval))s")
+                try await clearStalledStream(sessionKey: sessionKey, reason: "Stream stalled - no delta for \(Int(Self.streamStallInterval))s")
             } catch {
-                print("[SyncBridge] Stall timer cleanup error: \(error)")
+                print("[SyncBridge] Stall timer cleanup error for \(sessionKey): \(error)")
             }
         }
     }
 
-    private func cancelStallTimer() {
-        stallTimerTask?.cancel()
-        stallTimerTask = nil
+    private func cancelStallTimer(for sessionKey: String) {
+        stallTimerTasks[sessionKey]?.cancel()
+        stallTimerTasks.removeValue(forKey: sessionKey)
     }
 
-    internal func clearStalledStream(reason: String) async throws {
-        guard let sessionKey = currentStreamingSessionKey else { return }
-        cancelStallTimer()
+    internal func clearStalledStream(sessionKey: String, reason: String) async throws {
+        guard streamingSessionKeys.contains(sessionKey) else { return }
+        cancelStallTimer(for: sessionKey)
         streamingBuffer.removeValue(forKey: sessionKey)
-        currentStreamingSessionKey = nil
+        streamingSessionKeys.remove(sessionKey)
         try await fetchHistory(sessionKey: sessionKey)
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
+    }
+
+    internal func clearAllStalledStreams(reason: String) async throws {
+        let keys = streamingSessionKeys
+        for key in keys {
+            do {
+                try await clearStalledStream(sessionKey: key, reason: reason)
+            } catch {
+                print("[SyncBridge] Stream cleanup error for \(key): \(error)")
+            }
+        }
     }
 }

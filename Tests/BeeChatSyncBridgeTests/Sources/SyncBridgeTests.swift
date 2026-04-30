@@ -256,7 +256,7 @@ final class SyncBridgeTests: XCTestCase {
             [ChatMessagePayload(id: "idem-1", sessionKey: key, role: "user", content: "hello", timestamp: Date(), runId: "run-1")]
         }
         
-        try await reconciler.reconcile(activeSessionKey: "session-1")
+        try await reconciler.reconcile(activeSessionKeys: ["session-1"])
         
         let updated = try ledgerRepo.fetchByIdempotencyKey("idem-1")
         XCTAssertEqual(updated?.status, .delivered)
@@ -275,7 +275,7 @@ final class SyncBridgeTests: XCTestCase {
         mockRPC.sessionsListHandler = { [] }
         mockRPC.chatHistoryHandler = { _ in [] }
         
-        try await reconciler.reconcile(activeSessionKey: "session-1")
+        try await reconciler.reconcile(activeSessionKeys: ["session-1"])
         
         let updated = try ledgerRepo.fetchByIdempotencyKey("idem-1")
         XCTAssertEqual(updated?.status, .failed)

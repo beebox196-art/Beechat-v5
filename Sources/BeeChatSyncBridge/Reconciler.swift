@@ -13,7 +13,7 @@ public struct Reconciler {
         self.ledgerRepo = ledgerRepo
     }
     
-    public func reconcile(activeSessionKey: String?) async throws {
+    public func reconcile(activeSessionKeys: [String]) async throws {
         // 1. Refresh sessions list — upsert all sessions directly
         let sessions = try await rpcClient.sessionsList()
         
@@ -32,7 +32,7 @@ public struct Reconciler {
         try persistenceStore.upsertSessions(sessionModels)
         
         // 2. Refresh active session history
-        if let key = activeSessionKey {
+        for key in Set(activeSessionKeys) {
             let history = try await rpcClient.chatHistory(sessionKey: key, limit: 200)
             let messageModels = history.map { payload in
                 Message(

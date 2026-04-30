@@ -37,6 +37,13 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStartStreaming sessionKey: String) {
         Task { @MainActor in
+            // Mark unread if streaming started in a topic that isn't currently selected
+            // Neo feedback: use direct != comparison so nil = count everything (not silence)
+            if sessionKey != self.currentSelectedSessionKey {
+                self.unreadCounts[sessionKey, default: 0] += 1
+                return
+            }
+
             let oldState = self.thinkingState
             BeeChatLogger.log("[ThinkingBee] didStartStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .streaming")
             self.isStreaming = true
@@ -49,6 +56,7 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStopStreaming sessionKey: String) {
         Task { @MainActor in
+            guard sessionKey == self.currentSelectedSessionKey else { return }
             let oldState = self.thinkingState
             BeeChatLogger.log("[ThinkingBee] didStopStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .idle")
             self.resetStreamingState()
@@ -82,7 +90,8 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         streamingPollTask = Task {
             while !Task.isCancelled {
                 if let bridge = syncBridge {
-                    let content = await bridge.currentStreamingContent
+                    let selectedKey = self.currentSelectedSessionKey ?? ""
+                    let content = await bridge.streamingContent(for: selectedKey)
                     self.streamingContent = content
                 }
                 // Yield to prevent CPU spin — 50ms gives ~20fps update rate for streaming content
@@ -118,6 +127,21 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     private func cancelStreamingTimeout() {
         streamingTimeoutTask?.cancel()
         streamingTimeoutTask = nil
+    }
+
+    /// Tracks unread assistant message counts per session key.
+    /// Key = session key, Value = number of unread messages.
+    /// Reset on topic selection. Lost on app restart (acceptable for a visual indicator).
+    var unreadCounts: [String: Int] = [:]
+
+    /// The session key of the currently selected topic.
+    /// Set from MainWindow.sidebarSelection so didStartStreaming knows whether to count.
+    var currentSelectedSessionKey: String?
+
+    /// Clear the unread count for a given session key (called when user selects that topic).
+    func clearUnread(for sessionKey: String?) {
+        guard let key = sessionKey else { return }
+        unreadCounts.removeValue(forKey: key)
     }
 
     /// Set to true while an auto-reset is in progress (for UI binding).

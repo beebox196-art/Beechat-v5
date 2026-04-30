@@ -5,6 +5,7 @@ struct SessionRow: View {
     let topic: TopicViewModel
     var thinkingState: ThinkingState = .idle
     var sessionUsage: Double? = nil
+    var unreadCount: Int = 0  // NEW: in-memory unread count from SyncBridgeObserver
     var onReset: (() -> Void)? = nil
     var onSelect: (() -> Void)?
 
@@ -48,6 +49,14 @@ struct SessionRow: View {
 
             Spacer()
 
+            // Unread indicator: blue dot only (ONLY when unread > 0)
+            // No count text, no bold — just a dot like iMessage/Slack
+            if unreadCount > 0 {
+                Circle()
+                    .fill(themeManager.color(.accentPrimary))  // Blue/accent, NEVER red
+                    .frame(width: 8, height: 8)
+            }
+
             // Session reset red dot — appears at 50% usage, tap to reset
             if shouldShowRedDot {
                 Button(action: { onReset?() }) {
@@ -61,11 +70,7 @@ struct SessionRow: View {
                 .accessibilityLabel("Reset session: \(topic.title) is at \(Int((sessionUsage ?? 0) * 100))% context usage")
             }
 
-            if topic.unreadCount > 0 {
-                Text("\(topic.unreadCount)")
-                    .font(.caption)
-                    .foregroundColor(themeManager.color(.textSecondary))
-            }
+
 
             // Dormant bee — shows for idle topics with recent activity
             if thinkingState == .idle, let lastActivity = topic.lastActivityAt, lastActivity > Date.now - 300 {
@@ -73,7 +78,15 @@ struct SessionRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(topic.title), \(healthDescription), \(topic.messageCount) messages")
+        .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Select conversation")
+    }
+
+    private var accessibilityLabel: String {
+        var parts = ["\(topic.title), \(healthDescription), \(topic.messageCount) messages"]
+        if unreadCount > 0 {
+            parts.append("unread")
+        }
+        return parts.joined(separator: ", ")
     }
 }
