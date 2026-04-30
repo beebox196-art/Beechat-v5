@@ -28,6 +28,14 @@ final class MessageViewModel {
         messageListObserver.messages
     }
 
+    var canLoadEarlier: Bool {
+        messageListObserver.canLoadEarlier
+    }
+
+    func loadEarlierMessages() {
+        messageListObserver.loadEarlierMessages()
+    }
+
     func start(syncBridge: SyncBridge) {
         self.syncBridge = syncBridge
     }
@@ -281,11 +289,12 @@ final class MessageViewModel {
         localMessageCancellable?.cancel()
 
         let observation = ValueObservation.tracking { db in
-            try Message
+            let newest = try Message
                 .filter(Column("sessionId") == sessionKey)
-                .order(Column("timestamp").asc)
+                .order(Column("timestamp").desc, Column("id").desc)
                 .limit(500)
                 .fetchAll(db)
+            return Array(newest.reversed())
         }
 
         do {
@@ -296,8 +305,9 @@ final class MessageViewModel {
                 onError: { error in
                     BeeChatLogger.log("[ThinkingBee] Local message observation error: \(error)")
                 },
-                onChange: { [weak self] messages in
-                    self?.messageListObserver.updateMessages(messages)
+                onChange: { [weak self] allMessages in
+                    // Feed full set to observer, observer applies window
+                    self?.messageListObserver.setAllMessages(allMessages)
                 }
             )
         } catch {

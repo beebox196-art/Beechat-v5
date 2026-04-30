@@ -10,6 +10,8 @@ struct MessageCanvas: View {
     let isStreaming: Bool
     var streamingContent: String = ""
     var thinkingState: ThinkingState = .idle
+    var canLoadEarlier: Bool = false
+    var onLoadEarlier: () -> Void = {}
 
     private var showStreamingBubble: Bool {
         guard !streamingContent.isEmpty else { return false }
@@ -24,6 +26,7 @@ struct MessageCanvas: View {
 
     @State private var autoScroll = true
     @State private var measuredWidth: CGFloat = 1200
+    @State private var anchorMessageId: String?
 
     var body: some View {
         ZStack {
@@ -33,6 +36,24 @@ struct MessageCanvas: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(spacing: 0) {
+                        if canLoadEarlier {
+                            Button(action: {
+                                anchorMessageId = messages.first?.id
+                                onLoadEarlier()
+                            }) {
+                                HStack {
+                                    Spacer()
+                                    Text("Load earlier messages")
+                                        .font(themeManager.font(.caption))
+                                        .foregroundStyle(themeManager.color(.textSecondary))
+                                    Spacer()
+                                }
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                            .id("load-earlier")
+                        }
+
                         ForEach(messages, id: \.id) { message in
                             MessageBubble(message: message)
                                 .id(message.id)
@@ -68,7 +89,14 @@ struct MessageCanvas: View {
                     measuredWidth = newWidth
                 }
                 .onChange(of: messages.count) { _, _ in
-                    scrollToBottom(proxy: proxy)
+                    if let anchorId = anchorMessageId {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            proxy.scrollTo(anchorId, anchor: .top)
+                        }
+                        anchorMessageId = nil
+                    } else {
+                        scrollToBottom(proxy: proxy)
+                    }
                 }
                 .onChange(of: isStreaming) { _, isNowStreaming in
                     if isNowStreaming {

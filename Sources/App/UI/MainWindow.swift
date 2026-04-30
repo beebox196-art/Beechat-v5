@@ -162,7 +162,9 @@ struct MainWindow: View {
                         messages: messageViewModel.messages,
                         isStreaming: isActiveTopicStreaming,
                         streamingContent: activeTopicStreamingContent,
-                        thinkingState: syncBridgeObserver.thinkingState
+                        thinkingState: syncBridgeObserver.thinkingState,
+                        canLoadEarlier: messageViewModel.canLoadEarlier,
+                        onLoadEarlier: { messageViewModel.loadEarlierMessages() }
                     )
                 } else {
                     Color.clear.frame(maxHeight: .infinity)

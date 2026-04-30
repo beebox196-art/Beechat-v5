@@ -381,11 +381,12 @@ public actor SyncBridge {
     public func messageStream(sessionKey: String) -> AsyncStream<[Message]> {
         return AsyncStream { continuation in
             let observation = ValueObservation.tracking { db in
-                try Message
+                let newest = try Message
                     .filter(Column("sessionId") == sessionKey)
-                    .order(Column("timestamp").asc)
+                    .order(Column("timestamp").desc, Column("id").desc)
                     .limit(500)
                     .fetchAll(db)
+                return Array(newest.reversed())
             }
 
             do {
