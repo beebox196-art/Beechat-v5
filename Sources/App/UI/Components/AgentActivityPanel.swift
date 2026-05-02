@@ -3,7 +3,7 @@ import SwiftUI
 struct AgentActivityPanel: View {
     @Environment(ThemeManager.self) var themeManager
     @Environment(\.dismiss) private var dismiss
-    @State var tracker: SyncBridgeObserver.AgentActivityTracker
+    var tracker: SyncBridgeObserver.AgentActivityTracker
 
     var body: some View {
         VStack(spacing: 0) {
@@ -185,8 +185,8 @@ struct RecentEventRow: View {
         HStack(spacing: themeManager.spacing(.md)) {
             let info = SyncBridgeObserver.AgentActivityTracker.agentEmojiAndName(for: event.agentId)
             Text(info.emoji)
-                .font(.system(size: 14))
-                .frame(width: 20)
+                .font(.system(size: 16))
+                .frame(width: 24)
 
             Text("\(info.name) \(verb)")
                 .font(themeManager.font(.body))

@@ -34,12 +34,30 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     nonisolated func syncBridge(_ bridge: SyncBridge, didUpdateConnectionState state: ConnectionState) {
         Task { @MainActor in
             self.connectionState = state
+            // When connected, fetch sessions to populate the agent activity tracker
+            // with idle agents that haven't streamed yet
+            if state == .connected, let bridge = self.syncBridge {
+                do {
+                    let sessions = try await bridge.fetchSessions()
+                    // Extract agent data from Session objects (avoids importing BeeChatPersistence)
+                    let agentData: [(agentId: String, lastMessageAt: Date)] = sessions.compactMap {
+                        guard let lastAt = $0.lastMessageAt else { return nil }
+                        return (agentId: $0.agentId, lastMessageAt: lastAt)
+                    }
+                    self.agentActivityTracker.updateFromAgentData(agentData)
+                } catch {
+                    // Non-critical — tracker just won't show idle agents until they stream
+                }
+            }
         }
     }
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didEncounterError error: Error) {
         print("[SyncBridgeObserver] Error: \(error.localizedDescription)")
-        // Determine session key from error or use empty
+        // NOTE: The SyncBridgeDelegate protocol does not pass a session key in
+        // didEncounterError, so we cannot determine which agent errored.
+        // All errors are attributed to Bee as a known limitation.
+        // To fix: extend the protocol to include session context in error callbacks.
         let sessionKey = "agent:main:unknown"
         Task { @MainActor in
             self.agentActivityTracker.didEncounterError(sessionKey: sessionKey)
@@ -90,6 +108,10 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStopStreaming sessionKey: String) {
         Task { @MainActor in
+            // Always update the activity tracker — even for non-selected sessions
+            // (e.g. subagent sessions that stop while user is viewing a different topic)
+            self.agentActivityTracker.didStopStreaming(sessionKey: sessionKey)
+
             let normalizedIncoming = self.normalizedSessionKey(sessionKey)
             let normalizedCurrent = self.currentSelectedSessionKey.map(self.normalizedSessionKey)
 
@@ -100,7 +122,6 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
             let oldState = self.thinkingState
             BeeChatLogger.log("[ThinkingBee] didStopStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .idle")
             self.resetStreamingState()
-            self.agentActivityTracker.didStopStreaming(sessionKey: sessionKey)
         }
     }
 
@@ -319,6 +340,20 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
                        let lastMsg = ISO8601DateFormatter().date(from: lastMsgStr),
                        lastMsg > agent.lastActivityAt {
                         agent.lastActivityAt = lastMsg
+                    }
+                }
+                agents[agentId] = agent
+            }
+        }
+
+        /// Update tracker from lightweight agent data (avoids cross-module dependency on Session type)
+        func updateFromAgentData(_ data: [(agentId: String, lastMessageAt: Date)]) {
+            for item in data {
+                let agentId = item.agentId
+                var agent = agents[agentId] ?? AgentActivity(agentId: agentId, status: .idle, lastActivityAt: Date(), sessionKey: nil)
+                if agent.status != AgentStatus.working {
+                    if item.lastMessageAt > agent.lastActivityAt {
+                        agent.lastActivityAt = item.lastMessageAt
                     }
                 }
                 agents[agentId] = agent
