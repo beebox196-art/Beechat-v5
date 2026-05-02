@@ -19,6 +19,7 @@ struct MainWindow: View {
     @State private var deleteErrorMsg: String?
     @State private var showThemePicker = false
     @State private var showFolderPicker = false
+    @State private var showAgentActivity = false
     @FocusState private var isNewTopicFieldFocused: Bool
 
     private var sidebarSelection: Binding<String?> {
@@ -83,6 +84,21 @@ struct MainWindow: View {
                     .help("Folders")
                     .accessibilityLabel("Folders")
                     .accessibilityHint("Open favourite folders")
+
+                    Button(action: { showAgentActivity = true }) {
+                        Image(systemName: "person.3")
+                            .font(themeManager.font(.body))
+                            .foregroundColor(
+                                syncBridgeObserver.agentActivityTracker.hasWorkingAgents
+                                    ? themeManager.color(.accentPrimary)
+                                    : themeManager.color(.textSecondary)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("Team Activity")
+                    .accessibilityLabel("Team Activity")
+                    .accessibilityHint("Show which agents are currently working")
+                    .animation(themeManager.animation(.micro), value: syncBridgeObserver.agentActivityTracker.hasWorkingAgents)
 
                     Spacer()
 
@@ -238,6 +254,10 @@ struct MainWindow: View {
         }
         .sheet(isPresented: $showFolderPicker) {
             FolderPicker()
+                .environment(themeManager)
+        }
+        .sheet(isPresented: $showAgentActivity) {
+            AgentActivityPanel(tracker: syncBridgeObserver.agentActivityTracker)
                 .environment(themeManager)
         }
 

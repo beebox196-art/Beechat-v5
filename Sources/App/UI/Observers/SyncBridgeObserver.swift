@@ -39,6 +39,11 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didEncounterError error: Error) {
         print("[SyncBridgeObserver] Error: \(error.localizedDescription)")
+        // Determine session key from error or use empty
+        let sessionKey = "agent:main:unknown"
+        Task { @MainActor in
+            self.agentActivityTracker.didEncounterError(sessionKey: sessionKey)
+        }
     }
 
     /// Normalises a session key for consistent comparison and dictionary lookup.
@@ -62,6 +67,9 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
             // Normalise keys before comparison so bare UUIDs and full gateway keys match
             let normalizedIncoming = self.normalizedSessionKey(sessionKey)
             let normalizedCurrent = self.currentSelectedSessionKey.map(self.normalizedSessionKey)
+
+            // Agent activity tracking
+            self.agentActivityTracker.didStartStreaming(sessionKey: sessionKey)
 
             // Mark unread if streaming started in a topic that isn't currently selected
             if normalizedIncoming != normalizedCurrent {
@@ -92,6 +100,7 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
             let oldState = self.thinkingState
             BeeChatLogger.log("[ThinkingBee] didStopStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .idle")
             self.resetStreamingState()
+            self.agentActivityTracker.didStopStreaming(sessionKey: sessionKey)
         }
     }
 
@@ -201,5 +210,122 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     /// Set to true while an auto-reset is in progress (for UI binding).
     var autoResetting: Bool = false
 
+    // MARK: - Agent Activity Tracking (C2)
+
+    @MainActor
+    @Observable
+    final class AgentActivityTracker {
+        struct AgentActivity: Sendable {
+            let agentId: String
+            var status: AgentStatus
+            var lastActivityAt: Date
+            var sessionKey: String?
+        }
+        enum AgentStatus: Sendable { case working, idle, error }
+        struct RecentEvent: Sendable, Identifiable {
+            let id = UUID()
+            let agentId: String
+            let kind: EventKind
+            let timestamp: Date
+            enum EventKind: Sendable { case completed, errored }
+        }
+
+        var agents: [String: AgentActivity] = [:]
+        var recentEvents: [RecentEvent] = []
+        private var activeSessions: [String: Set<String>] = [:] // agentId -> sessionKeys
+
+        private static let emojiMap: [String: String] = [
+            "main": "🐝", "q": "🛠", "mel": "🎨", "kieran": "📋", "gav": "🔍"
+        ]
+
+        static func agentEmojiAndName(for agentId: String) -> (emoji: String, name: String) {
+            let emoji = emojiMap[agentId.lowercased()] ?? "🤖"
+            let name: String
+            switch agentId.lowercased() {
+            case "main": name = "Bee"
+            case "q": name = "Q"
+            case "mel": name = "Mel"
+            case "kieran": name = "Kieran"
+            case "gav": name = "Gav"
+            default: name = agentId
+            }
+            return (emoji, name)
+        }
+
+        static func extractAgentId(from sessionKey: String) -> String {
+            let parts = sessionKey.split(separator: ":")
+            // Patterns: agent:main:... → main; agent:q:main:subagent:... → q; agent:main:cron:... → main
+            if parts.count >= 3, parts[0] == "agent" {
+                let second = String(parts[1])
+                let third = parts.count >= 4 ? String(parts[2]) : nil
+                if second == "main" {
+                    if let third = third, third == "cron" {
+                        return "main"
+                    }
+                    return "main"
+                }
+                return second
+            }
+            return "unknown"
+        }
+
+        var hasWorkingAgents: Bool {
+            agents.values.contains { $0.status == .working }
+        }
+
+        func didStartStreaming(sessionKey: String) {
+            let agentId = Self.extractAgentId(from: sessionKey)
+            var agent = agents[agentId] ?? AgentActivity(agentId: agentId, status: .idle, lastActivityAt: Date(), sessionKey: nil)
+            agent.status = .working
+            agent.lastActivityAt = Date()
+            agent.sessionKey = sessionKey
+            agents[agentId] = agent
+            activeSessions[agentId, default: []].insert(sessionKey)
+        }
+
+        func didStopStreaming(sessionKey: String) {
+            let agentId = Self.extractAgentId(from: sessionKey)
+            activeSessions[agentId]?.remove(sessionKey)
+            var agent = agents[agentId] ?? AgentActivity(agentId: agentId, status: .idle, lastActivityAt: Date(), sessionKey: nil)
+            if activeSessions[agentId]?.isEmpty ?? true {
+                agent.status = .idle
+                agent.sessionKey = nil
+            }
+            agent.lastActivityAt = Date()
+            agents[agentId] = agent
+            recentEvents.insert(RecentEvent(agentId: agentId, kind: .completed, timestamp: Date()), at: 0)
+            if recentEvents.count > 5 { recentEvents.removeLast() }
+        }
+
+        func didEncounterError(sessionKey: String) {
+            let agentId = Self.extractAgentId(from: sessionKey)
+            activeSessions[agentId]?.remove(sessionKey)
+            var agent = agents[agentId] ?? AgentActivity(agentId: agentId, status: .idle, lastActivityAt: Date(), sessionKey: nil)
+            agent.status = .error
+            agent.lastActivityAt = Date()
+            agent.sessionKey = nil
+            agents[agentId] = agent
+            recentEvents.insert(RecentEvent(agentId: agentId, kind: .errored, timestamp: Date()), at: 0)
+            if recentEvents.count > 5 { recentEvents.removeLast() }
+        }
+
+        func updateFromSessions(_ sessions: [SessionInfo]) {
+            for session in sessions {
+                let agentId = session.agentId ?? Self.extractAgentId(from: session.key)
+                var agent = agents[agentId] ?? AgentActivity(agentId: agentId, status: .idle, lastActivityAt: Date(), sessionKey: nil)
+                // Only update lastActivityAt if session list has newer data and agent isn't currently working
+                if agent.status != AgentStatus.working {
+                    if let lastMsgStr = session.lastMessageAt,
+                       let lastMsg = ISO8601DateFormatter().date(from: lastMsgStr),
+                       lastMsg > agent.lastActivityAt {
+                        agent.lastActivityAt = lastMsg
+                    }
+                }
+                agents[agentId] = agent
+            }
+        }
+    }
+
+    let agentActivityTracker = AgentActivityTracker()
 
 }
