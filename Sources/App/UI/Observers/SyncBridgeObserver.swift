@@ -254,6 +254,10 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         var agents: [String: AgentActivity] = [:]
         var recentEvents: [RecentEvent] = []
         private var activeSessions: [String: Set<String>] = [:] // agentId -> sessionKeys
+        private var streamStartTimes: [String: Date] = [:] // sessionKey -> when streaming started
+
+        /// Streams shorter than this are treated as heartbeat noise, not real activity
+        private static let minimumActivityDuration: TimeInterval = 2.0
 
         private static let emojiMap: [String: String] = [
             "main": "🐝", "q": "🛠", "mel": "🎨", "kieran": "📋", "gav": "🔍"
@@ -296,6 +300,7 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
         func didStartStreaming(sessionKey: String) {
             let agentId = Self.extractAgentId(from: sessionKey)
+            streamStartTimes[sessionKey] = Date()
             var agent = agents[agentId] ?? AgentActivity(agentId: agentId, status: .idle, lastActivityAt: Date(), sessionKey: nil)
             agent.status = .working
             agent.lastActivityAt = Date()
@@ -306,6 +311,8 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
         func didStopStreaming(sessionKey: String) {
             let agentId = Self.extractAgentId(from: sessionKey)
+            let startTime = streamStartTimes.removeValue(forKey: sessionKey)
+            let duration = startTime.map { Date().timeIntervalSince($0) } ?? 0
             activeSessions[agentId]?.remove(sessionKey)
             var agent = agents[agentId] ?? AgentActivity(agentId: agentId, status: .idle, lastActivityAt: Date(), sessionKey: nil)
             if activeSessions[agentId]?.isEmpty ?? true {
@@ -314,8 +321,12 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
             }
             agent.lastActivityAt = Date()
             agents[agentId] = agent
-            recentEvents.insert(RecentEvent(agentId: agentId, kind: .completed, timestamp: Date()), at: 0)
-            if recentEvents.count > 5 { recentEvents.removeLast() }
+            // Only add to recent events if the stream lasted long enough to be real activity
+            // (not a heartbeat that fires and completes in under 2 seconds)
+            if duration >= Self.minimumActivityDuration {
+                recentEvents.insert(RecentEvent(agentId: agentId, kind: .completed, timestamp: Date()), at: 0)
+                if recentEvents.count > 5 { recentEvents.removeLast() }
+            }
         }
 
         func didEncounterError(sessionKey: String) {
