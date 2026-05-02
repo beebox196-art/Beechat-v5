@@ -16,9 +16,9 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     /// Safety net: auto-reset streaming state if stuck for more than 90 seconds
     private var streamingTimeoutTask: Task<Void, Never>?
     private static let streamingTimeoutSeconds: TimeInterval = 90
-    /// Safety net: auto-reset thinking state if no streaming starts within 30 seconds
+    /// Safety net: auto-reset thinking state if no streaming starts within 15 seconds
     private var thinkingTimeoutTask: Task<Void, Never>?
-    private static let thinkingTimeoutSeconds: TimeInterval = 30
+    private static let thinkingTimeoutSeconds: TimeInterval = 15
 
     func attach(_ bridge: SyncBridge) {
         self.syncBridge = bridge
@@ -38,15 +38,32 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         print("[SyncBridgeObserver] Error: \(error.localizedDescription)")
     }
 
+    /// Normalises a session key for consistent comparison and dictionary lookup.
+    /// Strips the `agent:main:` prefix and lowercases so that
+    /// `agent:main:ABC`, `ABC`, and `agent:main:abc` all match.
+    nonisolated func normalizedSessionKey(_ key: String) -> String {
+        SessionKeyNormalizer.stripPrefix(key).lowercased()
+    }
+
+    /// Returns true if the given session key matches the currently streaming session.
+    func isStreamingSession(_ sessionKey: String?) -> Bool {
+        guard let current = streamingSessionKey, let other = sessionKey else { return false }
+        return normalizedSessionKey(current) == normalizedSessionKey(other)
+    }
+
     nonisolated func syncBridge(_ bridge: SyncBridge, didStartStreaming sessionKey: String) {
         Task { @MainActor in
             // Cancel thinking timeout — streaming has started
             self.cancelThinkingTimeout()
 
+            // Normalise keys before comparison so bare UUIDs and full gateway keys match
+            let normalizedIncoming = self.normalizedSessionKey(sessionKey)
+            let normalizedCurrent = self.currentSelectedSessionKey.map(self.normalizedSessionKey)
+
             // Mark unread if streaming started in a topic that isn't currently selected
-            // Neo feedback: use direct != comparison so nil = count everything (not silence)
-            if sessionKey != self.currentSelectedSessionKey {
-                self.unreadCounts[sessionKey, default: 0] += 1
+            if normalizedIncoming != normalizedCurrent {
+                self.unreadCounts[normalizedIncoming, default: 0] += 1
+                BeeChatLogger.log("[ThinkingBee] didStartStreaming — mismatch (incoming=\(sessionKey) [\(normalizedIncoming)] current=\(self.currentSelectedSessionKey ?? "nil") [\(normalizedCurrent ?? "nil")]) — counting unread")
                 return
             }
 
@@ -62,7 +79,13 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStopStreaming sessionKey: String) {
         Task { @MainActor in
-            guard sessionKey == self.currentSelectedSessionKey else { return }
+            let normalizedIncoming = self.normalizedSessionKey(sessionKey)
+            let normalizedCurrent = self.currentSelectedSessionKey.map(self.normalizedSessionKey)
+
+            guard normalizedIncoming == normalizedCurrent else {
+                BeeChatLogger.log("[ThinkingBee] didStopStreaming — GUARD SKIPPED (incoming=\(sessionKey) [\(normalizedIncoming)] current=\(self.currentSelectedSessionKey ?? "nil") [\(normalizedCurrent ?? "nil")])")
+                return
+            }
             let oldState = self.thinkingState
             BeeChatLogger.log("[ThinkingBee] didStopStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .idle")
             self.resetStreamingState()
@@ -97,7 +120,7 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         streamingPollTask = Task {
             while !Task.isCancelled {
                 if let bridge = syncBridge {
-                    let selectedKey = self.currentSelectedSessionKey ?? ""
+                    let selectedKey = self.streamingSessionKey ?? ""
                     let content = await bridge.streamingContent(for: selectedKey)
                     self.streamingContent = content
                 }
@@ -169,7 +192,7 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     /// Clear the unread count for a given session key (called when user selects that topic).
     func clearUnread(for sessionKey: String?) {
         guard let key = sessionKey else { return }
-        unreadCounts.removeValue(forKey: key)
+        unreadCounts.removeValue(forKey: normalizedSessionKey(key))
     }
 
     /// Set to true while an auto-reset is in progress (for UI binding).

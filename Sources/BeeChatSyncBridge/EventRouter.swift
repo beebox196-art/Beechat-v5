@@ -85,6 +85,9 @@ public struct EventRouter {
         }
         
         let sessionKey = sessionMsg.sessionKey
+        let role = sessionMsg.data.role
+
+        print("[EventRouter] handleSessionMessage — sessionKey=\(sessionKey), role=\(role)")
 
         let ts = sessionMsg.ts ?? 0
         let messageId = sessionMsg.data.id ?? UUID().uuidString
@@ -105,6 +108,7 @@ public struct EventRouter {
         }
 
         if sessionMsg.data.role == "assistant" {
+            print("[EventRouter] handleSessionMessage — assistant role detected, calling processChatFinal for \(sessionKey)")
             try await syncBridge.processChatFinal(sessionKey: sessionKey)
         }
     }

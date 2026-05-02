@@ -452,28 +452,38 @@ public actor SyncBridge {
         }
     }
 
-    internal func processChatFinal(sessionKey: String) async throws {
+    internal func processChatFinal(sessionKey: String) async {
+        // Idempotency guard — skip if already finalized
+        guard streamingSessionKeys.remove(sessionKey) != nil else { return }
         cancelStallTimer(for: sessionKey)
         streamingBuffer.removeValue(forKey: sessionKey)
-        streamingSessionKeys.remove(sessionKey)
 
-        // Fetch history BEFORE notifying the delegate so the persisted message
-        // is in the DB when the UI clears the streaming content.
-        // This prevents the visual gap where streaming content disappears
-        // before the persisted message appears.
-        _ = try await fetchHistory(sessionKey: sessionKey)
-
+        // Notify delegate FIRST so the UI transitions out of streaming immediately.
+        // Fetch history in a detached task so a slow/failing RPC never blocks
+        // didStopStreaming — the streaming state must always reset.
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
+        Task {
+            do {
+                _ = try await fetchHistory(sessionKey: sessionKey)
+            } catch {
+                print("[SyncBridge] fetchHistory failed in processChatFinal: \(error)")
+            }
+        }
     }
 
-    internal func processChatError(sessionKey: String, errorMessage: String) async throws {
+    internal func processChatError(sessionKey: String, errorMessage: String) async {
         cancelStallTimer(for: sessionKey)
         streamingBuffer.removeValue(forKey: sessionKey)
         streamingSessionKeys.remove(sessionKey)
 
-        try await fetchHistory(sessionKey: sessionKey)
-
         delegate?.syncBridge(self, didStopStreaming: sessionKey)
+        Task {
+            do {
+                _ = try await fetchHistory(sessionKey: sessionKey)
+            } catch {
+                print("[SyncBridge] fetchHistory failed in processChatError: \(error)")
+            }
+        }
     }
 
     // MARK: - Agent event handler (legacy, lower-level format)
@@ -540,6 +550,13 @@ public actor SyncBridge {
         let parts = sessionKey.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count > 1, parts[0] == "agent" else { return nil }
         return String(parts[1])
+    }
+
+    /// Normalises a session key for consistent in-memory dictionary lookups.
+    /// Strips the `agent:main:` prefix and lowercases so that casing and prefix
+    /// differences do not break the streaming state machine.
+    private func normalizedSessionKey(_ key: String) -> String {
+        SessionKeyNormalizer.stripPrefix(key).lowercased()
     }
 
     // MARK: - Stream stall detection (A1)
