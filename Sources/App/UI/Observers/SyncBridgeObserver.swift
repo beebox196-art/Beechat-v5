@@ -16,9 +16,12 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     /// Safety net: auto-reset streaming state if stuck for more than 90 seconds
     private var streamingTimeoutTask: Task<Void, Never>?
     private static let streamingTimeoutSeconds: TimeInterval = 90
-    /// Safety net: auto-reset thinking state if no streaming starts within 15 seconds
+    /// Safety net: auto-reset thinking state if no streaming starts within 60 seconds.
+    /// The gateway can take 30+ seconds to begin streaming for complex requests,
+    /// so this must be longer than typical model response latency.
+    /// This is a last resort — the normal path is didStartStreaming cancelling this timer.
     private var thinkingTimeoutTask: Task<Void, Never>?
-    private static let thinkingTimeoutSeconds: TimeInterval = 15
+    private static let thinkingTimeoutSeconds: TimeInterval = 60
 
     func attach(_ bridge: SyncBridge) {
         self.syncBridge = bridge
