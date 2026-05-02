@@ -112,7 +112,8 @@ public struct RPCClient: RPCClientProtocol {
                 role: msg.role,
                 content: msg.content,
                 timestamp: Date(timeIntervalSince1970: msg.timestamp),
-                runId: msg.runId
+                runId: msg.runId,
+                agentId: msg.agentId
             )
         }
     }

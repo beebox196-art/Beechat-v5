@@ -46,12 +46,13 @@ final class BeeChatPersistenceTests: XCTestCase {
         let session = Session(id: "s1", agentId: "a1")
         try store.saveSession(session)
         
-        let msg = Message(id: "m1", sessionId: "s1", role: "user", content: "Hello", timestamp: Date())
+        let msg = Message(id: "m1", sessionId: "s1", role: "user", content: "Hello", agentId: "q", timestamp: Date())
         try store.saveMessage(msg)
         
         let fetched = try store.fetchMessage(id: "m1")
         XCTAssertNotNil(fetched)
         XCTAssertEqual(fetched?.content, "Hello")
+        XCTAssertEqual(fetched?.agentId, "q")
         
         let messages = try store.fetchMessages(sessionId: "s1", limit: 10, before: nil)
         XCTAssertEqual(messages.count, 1)
@@ -158,6 +159,13 @@ final class BeeChatPersistenceTests: XCTestCase {
         XCTAssertTrue(columns.contains("messageCount"), "sessions should have messageCount column")
         XCTAssertTrue(columns.contains("totalTokens"), "sessions should have totalTokens column")
         XCTAssertTrue(columns.contains("isArchived"), "sessions should have isArchived column")
+    }
+
+    func testMigration011_AddsMessageAgentIdColumn() throws {
+        let columns = try DatabaseManager.shared.read { db in
+            try db.columns(in: "messages").map { $0.name }
+        }
+        XCTAssertTrue(columns.contains("agentId"), "messages should have agentId column")
     }
     
     func testMigration010_NewTriggersExist() throws {

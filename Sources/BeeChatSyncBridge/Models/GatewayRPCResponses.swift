@@ -33,6 +33,7 @@ struct ChatHistoryMessage: Codable {
     let content: String
     let timestamp: TimeInterval
     let runId: String?
+    let agentId: String?
 }
 
 /// Response from `chat.send` RPC call.

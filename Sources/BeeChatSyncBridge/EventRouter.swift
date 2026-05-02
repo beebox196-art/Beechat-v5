@@ -58,6 +58,7 @@ public struct EventRouter {
                     sessionId: sessionKey,
                     role: "assistant",
                     content: text,
+                    agentId: msg.agentId ?? chatEvent.agentId ?? SyncBridge.agentId(fromSessionKey: sessionKey),
                     timestamp: Date(timeIntervalSince1970: Double(timestamp / 1000))
                 )
                 // Dedup guard — skip if already persisted (fail-open on DB error)
@@ -97,6 +98,7 @@ public struct EventRouter {
                 sessionId: sessionKey,
                 role: sessionMsg.data.role,
                 content: sessionMsg.data.content,
+                agentId: sessionMsg.data.agentId ?? sessionMsg.agentId ?? SyncBridge.agentId(fromSessionKey: sessionKey),
                 timestamp: Date(timeIntervalSince1970: Double(ts / 1000))
             )
             try await syncBridge.saveGatewayMessage(message)

@@ -509,6 +509,17 @@ public class DatabaseManager {
             )
         }
 
+        migrator.registerMigration("Migration011_AddMessageAgentId") { db in
+            guard try db.tableExists("messages") else { return }
+
+            let columns = try db.columns(in: "messages").map { $0.name }
+            if !columns.contains("agentId") {
+                try db.alter(table: "messages") { t in
+                    t.add(column: "agentId", .text)
+                }
+            }
+        }
+
         try migrator.migrate(dbPool!)
     }
 }

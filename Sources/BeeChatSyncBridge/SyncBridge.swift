@@ -155,7 +155,7 @@ public actor SyncBridge {
             let lastMsgDate = info.lastMessageAt.flatMap { ISO8601DateFormatter().date(from: $0) }
             return Session(
                 id: info.key,
-                agentId: info.key,
+                agentId: info.agentId ?? Self.agentId(fromSessionKey: info.key) ?? "main",
                 channel: info.channel,
                 title: info.label,
                 lastMessageAt: lastMsgDate,
@@ -180,6 +180,7 @@ public actor SyncBridge {
                 sessionId: sessionKey,
                 role: payload.role,
                 content: payload.content,
+                agentId: payload.agentId ?? Self.agentId(fromSessionKey: sessionKey),
                 timestamp: payload.timestamp
             )
         }
@@ -511,6 +512,7 @@ public actor SyncBridge {
                     sessionId: sessionKey,
                     role: "assistant",
                     content: text,
+                    agentId: Self.agentId(fromSessionKey: sessionKey),
                     timestamp: Date(timeIntervalSince1970: Double(event.ts / 1000))
                 )
                 try saveGatewayMessage(message)
@@ -532,6 +534,12 @@ public actor SyncBridge {
     }
 
     internal func updateLiveness() async {
+    }
+
+    internal nonisolated static func agentId(fromSessionKey sessionKey: String) -> String? {
+        let parts = sessionKey.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count > 1, parts[0] == "agent" else { return nil }
+        return String(parts[1])
     }
 
     // MARK: - Stream stall detection (A1)

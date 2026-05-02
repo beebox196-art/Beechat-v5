@@ -239,6 +239,30 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertEqual(msg.id, "msg-1")
         XCTAssertEqual(msg.content, "Hello")
     }
+
+    func testSessionMessageParsesAgentId() throws {
+        let json = """
+        {
+            "sessionKey": "agent:q:main:subagent:abc123",
+            "data": {
+                "id": "msg-1",
+                "role": "assistant",
+                "content": "Done",
+                "agentId": "q"
+            },
+            "ts": 1776440726273
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(SessionMessagePayload.self, from: json)
+        XCTAssertEqual(payload.data.agentId, "q")
+    }
+
+    func testAgentIdFallbackFromSessionKey() throws {
+        XCTAssertEqual(SyncBridge.agentId(fromSessionKey: "agent:q:main:subagent:abc123"), "q")
+        XCTAssertEqual(SyncBridge.agentId(fromSessionKey: "agent:main:telegram:group:-1003830552971:topic:1185"), "main")
+        XCTAssertNil(SyncBridge.agentId(fromSessionKey: "session-1"))
+    }
     
     
     func testReconcilerDeliversPending() async throws {

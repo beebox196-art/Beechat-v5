@@ -14,6 +14,29 @@ struct MessageBubble: View {
         message.role == "system"
     }
 
+    private var agentBadgeTitle: String? {
+        guard !isFromUser,
+              let agentId = message.agentId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !agentId.isEmpty else {
+            return nil
+        }
+
+        switch agentId.lowercased() {
+        case "main":
+            return nil
+        case "q":
+            return "🛠 Q"
+        case "mel":
+            return "🎨 Mel"
+        case "kieran":
+            return "📋 Kieran"
+        case "gav":
+            return "🔍 Gav"
+        default:
+            return "🤖 \(agentId)"
+        }
+    }
+
     var body: some View {
         if isSystem {
             systemBubble
@@ -49,6 +72,10 @@ struct MessageBubble: View {
                         .foregroundColor(themeManager.color(.textSecondary))
                 }
 
+                if let agentBadgeTitle {
+                    agentBadge(title: agentBadgeTitle)
+                }
+
                 MessageContent(message: message)
 
                 Text(message.timestamp, style: .time)
@@ -75,6 +102,23 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, themeManager.spacing(.lg))
         .padding(.vertical, themeManager.spacing(.xs))
+    }
+
+    private func agentBadge(title: String) -> some View {
+        Text(title)
+            .font(themeManager.font(.caption2))
+            .foregroundColor(themeManager.color(.textSecondary))
+            .padding(.horizontal, themeManager.spacing(.sm))
+            .padding(.vertical, themeManager.spacing(.xs))
+            .background(
+                Capsule(style: .continuous)
+                    .fill(themeManager.color(.bgElevated))
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(themeManager.color(.borderSubtle), lineWidth: 1)
+            )
+            .accessibilityLabel("Agent \(title)")
     }
 }
 

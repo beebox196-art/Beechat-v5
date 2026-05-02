@@ -8,21 +8,24 @@ public struct ChatEventPayload: Codable, Sendable {
     public let sessionKey: String
     public let state: String
     public let errorMessage: String?
+    public let agentId: String?
     public let message: ChatMessage?
     
     public struct ChatMessage: Codable, Sendable {
         public let id: String?
         public let timestamp: Int64?
+        public let agentId: String?
         public let content: String
         
         enum CodingKeys: String, CodingKey {
-            case id, timestamp, content
+            case id, timestamp, agentId, content
         }
         
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             id = try container.decodeIfPresent(String.self, forKey: .id)
             timestamp = try container.decodeIfPresent(Int64.self, forKey: .timestamp)
+            agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
             
             // Handle polymorphic content: String or array of content blocks
             if let text = try? container.decode(String.self, forKey: .content) {
@@ -46,6 +49,7 @@ public struct ChatEventPayload: Codable, Sendable {
 /// Payload for the "session.message" event from the gateway.
 public struct SessionMessagePayload: Codable, Sendable {
     public let sessionKey: String
+    public let agentId: String?
     public let data: SessionMessageData
     public let ts: Int64?
 }
@@ -54,6 +58,7 @@ public struct SessionMessageData: Codable, Sendable {
     public let id: String?
     public let content: String
     public let role: String
+    public let agentId: String?
 }
 
 // MARK: - Agent event payload (gateway "agent" event)
