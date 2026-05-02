@@ -452,7 +452,6 @@ public actor SyncBridge {
     }
 
     internal func processChatFinal(sessionKey: String) async throws {
-        print("[SyncBridge] processChatFinal called for sessionKey=\(sessionKey), streamingSessionKeys=\(streamingSessionKeys)")
         cancelStallTimer(for: sessionKey)
         streamingBuffer.removeValue(forKey: sessionKey)
         streamingSessionKeys.remove(sessionKey)

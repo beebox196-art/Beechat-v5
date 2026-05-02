@@ -16,6 +16,9 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     /// Safety net: auto-reset streaming state if stuck for more than 90 seconds
     private var streamingTimeoutTask: Task<Void, Never>?
     private static let streamingTimeoutSeconds: TimeInterval = 90
+    /// Safety net: auto-reset thinking state if no streaming starts within 30 seconds
+    private var thinkingTimeoutTask: Task<Void, Never>?
+    private static let thinkingTimeoutSeconds: TimeInterval = 30
 
     func attach(_ bridge: SyncBridge) {
         self.syncBridge = bridge
@@ -37,6 +40,9 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStartStreaming sessionKey: String) {
         Task { @MainActor in
+            // Cancel thinking timeout — streaming has started
+            self.cancelThinkingTimeout()
+
             // Mark unread if streaming started in a topic that isn't currently selected
             // Neo feedback: use direct != comparison so nil = count everything (not silence)
             if sessionKey != self.currentSelectedSessionKey {
@@ -83,6 +89,7 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         thinkingState = .idle
         stopStreamingPoll()
         cancelStreamingTimeout()
+        cancelThinkingTimeout()
     }
 
     private func startStreamingPoll() {
@@ -127,6 +134,27 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     private func cancelStreamingTimeout() {
         streamingTimeoutTask?.cancel()
         streamingTimeoutTask = nil
+    }
+
+    /// Start thinking timeout safety net — if didStartStreaming never fires within 30s,
+    /// auto-reset to idle so the bee doesn't spin forever
+    func startThinkingTimeout() {
+        cancelThinkingTimeout()
+        thinkingTimeoutTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(Self.thinkingTimeoutSeconds * 1_000_000_000))
+            } catch {
+                return // Cancelled
+            }
+            guard !Task.isCancelled else { return }
+            BeeChatLogger.log("[ThinkingBee] Thinking timeout — auto-resetting to idle (didStartStreaming never fired within \(Int(Self.thinkingTimeoutSeconds))s)")
+            self.resetStreamingState()
+        }
+    }
+
+    private func cancelThinkingTimeout() {
+        thinkingTimeoutTask?.cancel()
+        thinkingTimeoutTask = nil
     }
 
     /// Tracks unread assistant message counts per session key.

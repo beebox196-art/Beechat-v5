@@ -295,6 +295,9 @@ struct MainWindow: View {
             BeeChatLogger.log("[ThinkingBee] onMessageSent fired — current state: \(currentState)")
             syncBridgeObserver?.thinkingState = .thinking
             BeeChatLogger.log("[ThinkingBee] Transition: \(currentState) → .thinking")
+            // Start thinking timeout — if didStartStreaming never fires within 30s,
+            // the bee auto-resets to idle instead of spinning forever
+            syncBridgeObserver?.startThinkingTimeout()
         }
 
         if let topicId = messageViewModel.selectedTopicId {

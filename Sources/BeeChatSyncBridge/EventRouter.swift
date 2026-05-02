@@ -11,7 +11,6 @@ public struct EventRouter {
 
 
     public func route(event: String, payload: [String: AnyCodable]?) async throws {
-        print("[EventRouter] Received event: \(event)")
         switch event {
         case "chat":
             try await handleChatEvent(payload: payload)
@@ -51,7 +50,6 @@ public struct EventRouter {
                 await syncBridge.processChatDelta(sessionKey: sessionKey, text: text)
             }
         case "final":
-            print("[EventRouter] chat final event for sessionKey=\(sessionKey)")
             if let text = messageText, let msg = chatEvent.message {
                 let messageId = msg.id ?? UUID().uuidString
                 let timestamp = msg.timestamp ?? Int64(Date().timeIntervalSince1970 * 1000)
@@ -70,7 +68,6 @@ public struct EventRouter {
             }
             try await syncBridge.processChatFinal(sessionKey: sessionKey)
         case "error":
-            print("[EventRouter] chat error event for sessionKey=\(sessionKey)")
             try await syncBridge.processChatError(sessionKey: sessionKey, errorMessage: errorMessage ?? "Unknown error")
         default:
             break
@@ -91,29 +88,21 @@ public struct EventRouter {
         let ts = sessionMsg.ts ?? 0
         let messageId = sessionMsg.data.id ?? UUID().uuidString
 
-        // Dedup guard — skip if already persisted (fail-open on DB error)
+        // Dedup guard — skip persisting if already saved, but still let assistant
+        // session.message end the stream. Gateway 4.29 no longer sends chat final.
         let exists = (try? await syncBridge.messageExists(id: messageId)) ?? false
-        if exists {
-            return
+        if !exists {
+            let message = Message(
+                id: messageId,
+                sessionId: sessionKey,
+                role: sessionMsg.data.role,
+                content: sessionMsg.data.content,
+                timestamp: Date(timeIntervalSince1970: Double(ts / 1000))
+            )
+            try await syncBridge.saveGatewayMessage(message)
         }
 
-        let message = Message(
-            id: messageId,
-            sessionId: sessionKey,
-            role: sessionMsg.data.role,
-            content: sessionMsg.data.content,
-            timestamp: Date(timeIntervalSince1970: Double(ts / 1000))
-        )
-
-        print("[EventRouter] session.message role=\(sessionMsg.data.role) sessionKey=\(sessionKey) id=\(messageId)")
-
-        try await syncBridge.saveGatewayMessage(message)
-
-        // If this is an assistant message arriving for a currently-streaming session,
-        // it means the gateway delivered the final message via session.message instead of
-        // chat event with state="final". We must stop streaming to unblock the UI.
-        if message.role == "assistant" {
-            print("[EventRouter] session.message is assistant — calling processChatFinal for sessionKey=\(sessionKey)")
+        if sessionMsg.data.role == "assistant" {
             try await syncBridge.processChatFinal(sessionKey: sessionKey)
         }
     }
