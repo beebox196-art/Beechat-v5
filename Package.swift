@@ -19,6 +19,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
+        .package(url: "https://github.com/kevinhermawan/ChatField", from: "3.0.4"),
     ],
     targets: [
         .target(
@@ -64,6 +65,7 @@ let package = Package(
                 .target(name: "BeeChatPersistence"),
                 .target(name: "BeeChatGateway"),
                 .target(name: "BeeChatSyncBridge"),
+                .product(name: "ChatField", package: "ChatField"),
             ],
             path: "Sources/App",
             resources: [
