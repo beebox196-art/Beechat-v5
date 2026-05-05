@@ -164,10 +164,11 @@ class ComposerTextView: NSTextView {
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 36 { // Return
-            if event.modifierFlags.contains(.command) {
+            if !event.modifierFlags.contains(.shift) {
                 onSend?()
                 return
             }
+            // Shift+Return inserts newline (default NSTextView behaviour)
             super.keyDown(with: event)
             return
         }

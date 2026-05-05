@@ -1,9 +1,9 @@
 # Composer Overhaul: ChatField Input Replacement
 
 **Priority:** Medium  
-**Status:** Spec — updated with Kieran review findings  
+**Status:** Spec — updated with Bee review findings (2026-05-05)  
 **Author:** Bee (Coordinator), Kieran (Reviewer)  
-**Date:** 2026-05-02
+**Date:** 2026-05-02 (updated 2026-05-05)
 
 ## Problem
 
@@ -14,9 +14,26 @@ The current chat input uses a 205-line AppKit bridge (`MacTextView.swift`) wrapp
 3. **AppKit complexity:** 205 lines of NSTextView/NSScrollView/ComposerContainer plumbing for something SwiftUI can do natively since macOS 14 (Sonoma).
 4. **Fragile height calculation:** Manual `layoutManager.usedRect()` calls and intrinsic content size overrides.
 
-## Solution
+## Safety Net: MacTextView Key Fix (ALREADY APPLIED)
 
-Replace the `MacTextView` NSViewRepresentable with a native SwiftUI `TextField(text:axis:.vertical)`. This gives us correct Enter/Shift+Enter behaviour for free, eliminates the AppKit bridge, and reduces code by ~200 lines.
+Before the ChatField replacement, we've fixed the current MacTextView as a safety net. This is committed and builds:
+
+```swift
+// BEFORE (broken convention — Cmd+Enter sends):
+if event.modifierFlags.contains(.command) {
+    onSend?()
+    return
+}
+
+// AFTER (correct convention — Enter sends, Shift+Enter = newline):
+if !event.modifierFlags.contains(.shift) {
+    onSend?()
+    return
+}
+// Shift+Return falls through to super.keyDown → inserts newline
+```
+
+This 1-line fix gives us correct Enter/Shift+Enter behaviour in the existing AppKit bridge right now. If ChatField replacement has any issues, we can roll back to this.
 
 ## Current Architecture
 
@@ -40,14 +57,18 @@ MainWindow.swift references:
 | Send callback | `onSend: () -> Void` | Triggered on Enter (NOT Cmd+Enter) |
 | Auto-expand | Layout | 36px min height, ~160px max (~6 lines), grows with content |
 | Placeholder | Visual | "Type a message..." |
-| Keyboard | Input | Enter → send, Shift+Enter → newline |
+| Keyboard | Input | Enter → send, Shift+Enter → newline, Option+Return → newline |
 | Theme | Visual | ThemeManager colours, radius, fonts |
+| Focus | State | Keyboard focus stays in input after sending |
 
 ## Proposed Architecture
 
 ```
-Composer.swift — SwiftUI shell (modified)
-  └── Native SwiftUI TextField(text:axis:.vertical) — replaces MacTextView
+Composer.swift — SwiftUI shell (restructured)
+  └── ChatField (replaces MacTextView + flat HStack)
+       ├── leadingAccessory: + button
+       ├── BaseTextField (ChatField internal — native SwiftUI TextField)
+       └── trailingAccessory: mic button + send button
   └── ComposerViewModel.swift (unchanged)
 
 DELETED: MacTextView.swift (205 lines)
@@ -59,148 +80,234 @@ DELETED: MacTextView.swift (205 lines)
 
 Add to `Package.swift`:
 ```swift
-.package(url: "https://github.com/kevinhermawan/ChatField", from: "2.0.0")
-// And to the target:
+.package(url: "https://github.com/kevinhermawan/ChatField", from: "3.0.4")
+// And to the BeeChatApp target:
 .product(name: "ChatField", package: "ChatField")
 ```
 
-### Composer.swift Changes
+**Note:** Spec previously said `from: "2.0.0"` — that's wrong. Latest is v3.0.4 and the API changed between v2 and v3. Always use v3.0.4+.
 
-Replace the `MacTextView` usage with ChatField:
+### ChatField Verified Behaviour
+
+From source analysis of ChatField v3.0.4 (`BaseTextField.swift`, macOS branch):
+
+```swift
+// ChatField's macOS key handling — verified in source:
+private func macOS_action() {
+    if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+        text.appendNewLine()  // Shift+Enter → newline at cursor
+    } else {
+        action()              // Enter → send
+    }
+}
+```
+
+- Uses `SwiftUIIntrospect` to intercept Enter at NSTextView level
+- Checks `NSApp.currentEvent?.modifierFlags` for `.shift`
+- `text.appendNewLine()` — custom String extension, appends newline
+- Platform: macOS 13+ (we target macOS 14 ✅)
+- Depends on: `SwiftUIIntrospect` 1.3.0+ (no conflicts with our GRDB 7.0.0)
+
+### Custom Theme Style — BeeChatChatFieldStyle
+
+**CRITICAL:** ChatField's built-in `.chatFieldStyle(.roundedBorder)` gives system-default styling, NOT our dark theme. We must create a custom style.
+
+ChatField v3 has a `Styles/` directory with style protocol. We need to define:
 
 ```swift
 import ChatField
 
-// BEFORE:
-MacTextView(
-    text: $viewModel.inputText,
-    onSend: {
-        if viewModel.canSend {
-            onSend()
-        }
-    }
-)
-.frame(maxWidth: .infinity)
-.frame(minHeight: 36, maxHeight: 160)
-.fixedSize(horizontal: false, vertical: true)
-.background(themeManager.color(.bgPanel))
-.clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.md), style: .continuous))
+struct BeeChatChatFieldStyle: ChatFieldStyle {
+    // Map ThemeManager tokens to ChatField style properties
+    // Exact protocol requirements TBD — inspect ChatFieldStyle protocol 
+    // after SPM resolve to see what properties are configurable
+    //
+    // Key tokens to map:
+    //   bgPanel       → text field background
+    //   accentPrimary → send button colour
+    //   textPrimary    → input text colour
+    //   textSecondary  → placeholder colour
+    //   radius(.md)    → corner radius
+}
+```
 
-// AFTER:
+**Build step 1:** After adding ChatField to Package.swift, resolve packages, then inspect `ChatFieldStyle` protocol to determine exact requirements. Write `BeeChatChatFieldStyle` to match.
+
+### Composer.swift Changes — Restructured Layout
+
+The current Composer uses a flat HStack. ChatField has built-in `leadingAccessory`/`trailingAccessory` slots. We restructure to use them:
+
+```swift
+import ChatField
+
+// BEFORE (flat HStack):
+HStack(alignment: .bottom, spacing: 12) {
+    Button(action: { showAttachmentPicker = true }) { ... }  // +
+    MacTextView(text: $viewModel.inputText, onSend: { ... })  // text field
+    Button(action: toggleRecording) { ... }                   // mic
+    Button(action: { onSend() }) { ... }                      // send
+}
+
+// AFTER (ChatField with accessories):
 ChatField("Type a message...", text: $viewModel.inputText) {
     if viewModel.canSend {
         onSend()
     }
+} leadingAccessory: {
+    Button(action: { showAttachmentPicker = true }) {
+        Image(systemName: "plus.circle")
+            .font(themeManager.font(.display))
+            .foregroundColor(themeManager.color(.textSecondary))
+    }
+    .buttonStyle(.borderless)
+    .frame(width: 40, height: 40)
+    .confirmationDialog("Attach", isPresented: $showAttachmentPicker) {
+        Button("Photo") { /* Phase 4B */ }
+        Button("File") { /* Phase 4B */ }
+        Button("Voice Note") { viewModel.startRecording() }
+    }
+    .accessibilityLabel("Attach file")
+} trailingAccessory: {
+    HStack(spacing: 8) {
+        Button(action: toggleRecording) {
+            Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")
+                .font(themeManager.font(.heading))
+                .foregroundColor(viewModel.isRecording ? themeManager.color(.error) : themeManager.color(.textSecondary))
+        }
+        .buttonStyle(.borderless)
+        .frame(width: 40, height: 40)
+        .background(
+            Circle()
+                .fill(viewModel.isRecording ? themeManager.color(.error).opacity(0.1) : Color.clear)
+        )
+        .accessibilityLabel(viewModel.isRecording ? "Stop recording" : "Start recording")
+
+        Button(action: { onSend() }) {
+            Image(systemName: "paperplane.fill")
+                .font(themeManager.font(.heading))
+                .foregroundColor(
+                    viewModel.canSend
+                        ? themeManager.color(.textOnAccent)
+                        : themeManager.color(.textSecondary)
+                )
+        }
+        .buttonStyle(.borderless)
+        .frame(width: 40, height: 40)
+        .background(
+            Circle()
+                .fill(
+                    viewModel.canSend
+                        ? themeManager.color(.accentPrimary)
+                        : themeManager.color(.bgPanel)
+                )
+        )
+        .disabled(!viewModel.canSend)
+        .help("Send message")
+        .accessibilityLabel("Send message")
+    }
 }
-.chatFieldStyle(.roundedBorder)
+.chatFieldStyle(BeeChatChatFieldStyle())  // Custom theme — NOT .roundedBorder
 .frame(maxWidth: .infinity)
 .fixedSize(horizontal: false, vertical: true)
-.background(themeManager.color(.bgPanel))
-.clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.md), style: .continuous))
 ```
+
+**Key difference from original spec:** Buttons move INTO ChatField's accessory slots instead of staying in the outer HStack. This is a structural change, not a drop-in replacement.
+
+### Focus Management — @FocusState
+
+After sending, the text field must keep keyboard focus. Add to Composer:
+
+```swift
+@FocusState private var isTextFieldFocused: Bool
+
+// In body, apply to ChatField:
+ChatField("Type a message...", text: $viewModel.inputText) { ... }
+    .focused($isTextFieldFocused)
+
+// In onSend callback:
+if viewModel.canSend {
+    onSend()
+    isTextFieldFocused = true  // Re-focus after send
+}
+```
+
+### Option+Return Handling
+
+ChatField v3.0.4 does NOT handle Option+Return (it only checks for `.shift`). We need to add this. Two options:
+
+**Option A (preferred):** Check if ChatField's macOS action can be overridden or if we can add a `.onKeyPress` modifier to the ChatField view that fires before ChatField's internal handler. Test this during build.
+
+**Option B (fallback):** If ChatField's handler consumes the event before our modifier, we may need to fork/extend ChatField's `BaseTextField`. This is a small change — just add `.option` to the modifier check alongside `.shift`.
+
+**Build step:** After ChatField is integrated, test Option+Return. If it doesn't insert a newline, add a local extension or wrapper.
+
+### Height Behaviour — Needs Verification
+
+ChatField's `BaseTextField` uses `TextField(axis: .vertical).lineLimit(5)`. Our current MacTextView uses 36px min, 160px max (~6 lines). 
+
+**Verification needed:** After ChatField is integrated, test whether `.frame(minHeight: 36, maxHeight: 160)` on the outer `ChatField` view correctly constrains the inner `TextField`. ChatField manages its own height via `lineLimit`, so the frame modifiers may or may not take effect as expected.
+
+If the outer frame doesn't constrain properly, we may need to adjust ChatField's `lineLimit` (from 5 to 6) or accept ChatField's default expansion behaviour.
 
 ### MacTextView.swift
 
 **Delete entirely.** No replacement file needed.
 
+**Verified:** `MacTextView`, `ComposerContainer`, and `ComposerTextView` are only referenced in:
+- `MacTextView.swift` (definitions)
+- `Composer.swift` (line 29, single usage)
+
+No other file imports or references these types. Safe to delete.
+
 ### ComposerViewModel.swift
 
-**No changes.** The ViewModel holds `inputText`, `canSend`, `send()`, and `onMessageSent`. All remain the same.
+**No changes.** The ViewModel holds `inputText`, `canSend`, `send()`, and `onMessageSent`. All remain the same. ChatField's `action` closure maps directly to our `onSend`.
 
 ### MainWindow.swift
 
 **No changes.** The Composer view interface (`viewModel:onSend:`) is unchanged.
 
-## Keyboard Behaviour — CRITICAL UPDATE
+## Keyboard Behaviour — Reference
 
-**The original spec assumption was wrong.** Native `TextField(axis: .vertical)` with `.onSubmit` does NOT give us Shift+Enter for newlines on macOS.
-
-| Key | Actual macOS behaviour | Original spec claimed |
-|-----|----------------------|---------------------|
-| Enter | Fires `.onSubmit` ✅ | Fires `.onSubmit` ✅ |
-| Shift+Enter | **Also fires `.onSubmit`** ❌ | Inserts newline ❌ |
-
-**Shift+Enter fires `.onSubmit` too** — there is no built-in SwiftUI mechanism to distinguish plain Enter from Shift+Enter in `.onSubmit`. The chat app convention (Enter=send, Shift+Enter=newline) requires custom key handling.
-
-### Revised approach: `.onKeyPress` with cursor-safe insertion
-
-We use `.onKeyPress(.return)` (available macOS 13.3+) to intercept Enter/Shift+Enter and handle them differently:
-
-```swift
-TextField("Type a message...", text: $viewModel.inputText, axis: .vertical)
-    .lineLimit(1...6)
-    .onKeyPress(.return) { press in
-        if press.modifiers.contains(.shift) {
-            // Insert newline at cursor position using NSTextView
-            // (can't just append — that puts it at the end)
-            return .ignored  // Let the default newline insertion happen
-        } else {
-            onSend()
-            return .handled  // Consume the Enter keypress
-        }
-    }
-```
-
-**BUT** — `.onKeyPress` returning `.ignored` for Shift+Enter on a vertical TextField does NOT automatically insert a newline. The TextField's default behaviour on Enter is `.onSubmit`, not newline insertion. So we need a hybrid approach.
-
-### Final approach: ChatField (primary)
-
-Given the complexity of getting Enter/Shift+Enter right with native SwiftUI, **ChatField** becomes the primary approach. It's purpose-built for this exact use case:
-
-- Explicit macOS keyboard handling (Enter → send, Shift+Enter → newline)
-- Cursor-position-aware newline insertion
-- Auto-expanding height
-- One SPM dependency (SwiftUIIntrospect)
-- v2.0.0, actively maintained
-
-```swift
-// Replace MacTextView in Composer.swift with:
-import ChatField
-
-ChatField("Type a message...", text: $viewModel.inputText) {
-    if viewModel.canSend {
-        onSend()
-    }
-}
-.chatFieldStyle(.roundedBorder)
-.frame(maxWidth: .infinity)
-.fixedSize(horizontal: false, vertical: true)
-```
-
-### Native SwiftUI (fallback only)
-
-If ChatField causes integration issues, the native approach requires a **custom NSViewRepresentable wrapper** (similar to current MacTextView but with correct key handling). This is essentially what ChatField does internally — so we'd be reinventing it. Not recommended.
+| Key combo | Behaviour | Handled by |
+|-----------|-----------|------------|
+| Enter | Send message | ChatField internal (macOS `macOS_action`) |
+| Shift+Enter | Insert newline | ChatField internal (`text.appendNewLine()`) |
+| Option+Return | Insert newline | ⚠️ Needs local fix (ChatField doesn't handle) |
+| Cmd+Enter | No action | Passes through (not intercepted) |
+| Ctrl+Enter | No action | Passes through (not intercepted) |
+| CJK IME confirm | Insert character | System default (ChatField uses native TextField) |
 
 ## Risk Assessment
 
 | Risk | Likelihood | Mitigation |
 |------|-----------|------------|
-| ChatField dependency breaks or is abandoned | Low | ChatField v2.0.0 is stable. If it breaks, revert to MacTextView via git revert. |
-| SwiftUIIntrospect conflicts with existing packages | Low | Single lightweight dependency, well-maintained. |
-| ChatField styling doesn't match theme tokens | Medium | ChatField supports `.chatFieldStyle()` and standard SwiftUI modifiers. May need custom style. |
-| Enter sends but cursor-position-aware newline fails | Very Low | ChatField handles this explicitly for macOS — it's their core feature. |
-| Text doesn't auto-expand correctly | Very Low | ChatField uses `TextField(axis: .vertical).lineLimit()` internally — proven pattern. |
-| Focus ring / accessibility regression | Low | ChatField uses native TextField, accessibility labels preserved. |
-| Placeholder colour contrast | Low | Standard SwiftUI placeholder styling. |
+| ChatField v3.0.4 API differs from spec examples | Low | Verified source for v3.0.4 — `leadingAccessory`/`trailingAccessory` confirmed |
+| SwiftUIIntrospect conflicts | Low | No existing SwiftUIIntrospect dependency. GRDB is separate. |
+| Custom theme style doesn't match | Medium | Must inspect `ChatFieldStyle` protocol after SPM resolve. May need iteration. |
+| Focus lost after send | Medium | `@FocusState` mitigation defined above. Must test. |
+| Option+Return doesn't insert newline | Medium | Local wrapper/extension defined above. Must test. |
+| Height doesn't match 36–160px range | Low | ChatField uses `lineLimit(5)`, test `.frame()` constraints. May need adjustment. |
+| Accessory buttons layout regression | Low | Move into ChatField accessory slots — explicit layout, not implicit. |
+| ChatField abandoned | Very Low | Safety net: MacTextView key fix already committed. `git revert` back to it. |
 
 ## Rollback Plan
 
-The change is a single-file edit in Composer.swift + deleting MacTextView.swift. To rollback:
+Two levels of rollback:
 
-1. `git revert` the commit
-2. Re-add `MacTextView.swift`
-3. Revert Composer.swift to use `MacTextView`
+1. **ChatField fails:** `git revert` the ChatField commit. MacTextView with key fix (already committed) remains as the working fallback.
+2. **Total failure:** `git revert` both commits. Original Cmd+Enter behaviour restored (but we know how to fix it in 1 line).
 
-Total: 2 files, fully reversible.
+Total: 2–3 files, fully reversible at each stage.
 
 ## Fallback
 
 If ChatField causes integration issues (SPM conflicts, styling mismatches, macOS version problems), we have two fallback options:
 
-1. **Native SwiftUI TextField + `.onKeyPress` custom handler** — Requires wrapping to handle Shift+Enter at cursor position. Essentially reinventing what ChatField does. Higher risk, more code.
-2. **Keep current MacTextView with key handling fix** — Fix the Cmd+Enter → Enter send logic in the existing `ComposerTextView.keyDown()` method. Minimal change but retains 205 lines of AppKit bridge code.
+1. **Keep current MacTextView with key handling fix** — Already applied. Enter sends, Shift+Enter inserts newline. 205 lines of AppKit remain but it works. This is the safest fallback.
+2. **Native SwiftUI TextField + custom key handling** — Requires wrapping to handle Shift+Enter at cursor position. Essentially reinventing what ChatField does. Not recommended unless ChatField is truly broken.
 
-**Recommendation:** ChatField first. If it fails, option 2 (fix current MacTextView key handling) is the safest fallback.
+**Recommendation:** ChatField first. Safety net (MacTextView fix) already in place. If ChatField fails, we already have a working fallback committed.
 
 ## Validation Criteria
 
@@ -216,14 +323,16 @@ Before committing, verify ALL of the following:
 8. ✅ Send button still works (clicking paperplane)
 9. ✅ Thinking bee indicator still fires on send
 10. ✅ Message still appears in conversation after send
-11. ✅ Theme colours and radius match existing style
-12. ✅ Attachment button (+) still visible and functional
-13. ✅ Mic button still visible and functional
+11. ✅ Theme colours and radius match existing style (via BeeChatChatFieldStyle, NOT .roundedBorder)
+12. ✅ Attachment button (+) still visible and functional (now in leadingAccessory)
+13. ✅ Mic button still visible and functional (now in trailingAccessory)
 14. ✅ No regression in message scrolling behaviour
-15. ✅ Option+Return also inserts newline (macOS convention)
+15. ✅ Option+Return inserts newline (test after integration, add local fix if needed)
 16. ✅ Focus ring appearance matches or improves on current AppKit version
 17. ✅ ChatField package resolves and builds without conflicts
 18. ✅ Deleting MacTextView.swift doesn't break any other file
+19. ✅ Keyboard focus stays in text field after sending a message (@FocusState)
+20. ✅ CJK input method works (test with Japanese/Chinese keyboard)
 
 ## Out of Scope
 
@@ -235,8 +344,13 @@ Before committing, verify ALL of the following:
 
 ## Pre-Build Checklist
 
+- [x] MacTextView key fix committed as safety net (Enter=send, Shift+Enter=newline)
+- [x] ChatField v3.0.4 source verified — Enter/Shift+Enter handling confirmed
+- [x] MacTextView references verified — safe to delete (only in Composer.swift)
 - [ ] Spec approved by Adam
-- [ ] Native TextField `.onSubmit` tested: does it fire on Shift+Enter? (If yes, need custom wrapper)
-- [ ] Native TextField auto-expand tested: does `.lineLimit(1...6)` match current 36px–160px range?
-- [ ] Kieran sign-off on risk assessment
-- [ ] Current `v5-stable-2026-05-02` tag confirmed as rollback point
+- [ ] Add ChatField to Package.swift, resolve, inspect `ChatFieldStyle` protocol
+- [ ] Write `BeeChatChatFieldStyle` mapping ThemeManager tokens
+- [ ] Test Option+Return behaviour, add local fix if needed
+- [ ] Test focus persistence after send
+- [ ] Test height behaviour (.frame constraints vs ChatField lineLimit)
+- [ ] Current `v5-stable-2026-05-05` tag confirmed as rollback point
