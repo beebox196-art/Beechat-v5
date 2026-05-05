@@ -14,8 +14,13 @@ struct Composer: View {
 
     var body: some View {
         ChatField("Type a message...", text: $viewModel.inputText) {
-            // ChatField's internal macOS_action only checks for Shift+Enter.
-            // Option+Return also inserts a newline (macOS convention).
+            // ChatField's macOS_action runs before this closure.
+            // It intercepts Shift+Enter internally (inserts newline).
+            // For non-Shift modifiers, it passes through to this action.
+            // Option+Return: ChatField doesn't handle it, so it reaches us —
+            // we insert a newline (macOS convention).
+            // ⚠️ Fragile: if ChatField ever adds Option handling internally,
+            // this path breaks silently. Monitor on ChatField upgrades.
             if NSApp.currentEvent?.modifierFlags.contains(.option) == true {
                 viewModel.inputText += "\n"
                 return
@@ -54,7 +59,12 @@ struct Composer: View {
                 )
                 .accessibilityLabel(viewModel.isRecording ? "Stop recording" : "Start recording")
 
-                Button(action: { onSend() }) {
+                Button(action: {
+                    if viewModel.canSend {
+                        onSend()
+                        isTextFieldFocused = true
+                    }
+                }) {
                     Image(systemName: "paperplane.fill")
                         .font(themeManager.font(.heading))
                         .foregroundColor(
@@ -88,6 +98,7 @@ struct Composer: View {
         .clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.md), style: .continuous))
         .accessibilityLabel("Message input")
         .accessibilityHint("Type your message here")
+        .onAppear { isTextFieldFocused = true }
         .padding(.horizontal, themeManager.spacing(.lg))
         .padding(.vertical, themeManager.spacing(.md))
         .background(themeManager.color(.bgSurface))
