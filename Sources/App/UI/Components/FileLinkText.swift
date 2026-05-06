@@ -149,12 +149,12 @@ struct FilePathParser {
 
 // MARK: - File Link Text View
 
-/// Renders message content with clickable file path links.
+/// Renders message content with clickable file-path links using pure SwiftUI.
 ///
-/// Uses NSTextView under the hood for reliable link tap handling.
-/// SwiftUI's `Text` with `AttributedString.link` does not reliably
-/// handle `file://` URLs on macOS, so we use NSViewRepresentable
-/// wrapping NSTextView which supports all URL schemes natively.
+/// Uses `Text` + `AttributedString` with the `.link` attribute.  On macOS 14+
+/// SwiftUI correctly renders `file://` URLs as clickable links.  An explicit
+/// `OpenURLAction` intercepts the tap so we can open the path via
+/// `NSWorkspace`, guaranteeing it works for every URL scheme.
 struct FileLinkText: View {
     let content: String
     @Environment(ThemeManager.self) var themeManager
@@ -166,16 +166,14 @@ struct FileLinkText: View {
         let hasLinks = segments.contains { if case .link = $0 { return true } else { return false } }
 
         if hasLinks {
-            FileLinkTextView(
-                attributedString: buildAttributedString(segments),
-                onLinkTap: { path in
-                    let url = URL(fileURLWithPath: path)
+            Text(buildAttributedString(segments))
+                .font(themeManager.font(.body))
+                .textSelection(.enabled)
+                .environment(\.openURL, OpenURLAction { url in
                     NSWorkspace.shared.open(url)
-                }
-            )
-            .font(themeManager.font(.body))
-            .textSelection(.enabled)
-            .onDisappear { cache.invalidate() }
+                    return .handled
+                })
+                .onDisappear { cache.invalidate() }
         } else {
             Text(content)
                 .font(themeManager.font(.body))
@@ -183,111 +181,30 @@ struct FileLinkText: View {
         }
     }
 
-    private func buildAttributedString(_ segments: [ContentSegment]) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        let bodyFont = NSFont.systemFont(ofSize: 14, weight: .regular)
+    private func buildAttributedString(_ segments: [ContentSegment]) -> AttributedString {
+        var result = AttributedString()
 
         for segment in segments {
             switch segment {
             case .text(let str):
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: bodyFont,
-                    .foregroundColor: NSColor.labelColor,
-                ]
-                result.append(NSAttributedString(string: str, attributes: attrs))
+                // Plain text inherits the bubble's foreground colour.
+                result.append(AttributedString(str))
 
             case .link(let path, let display):
-                let exists = cache.check(path)
-                let attrs: [NSAttributedString.Key: Any]
-                if exists {
-                    attrs = [
-                        .font: bodyFont,
-                        .foregroundColor: NSColor.systemBlue,
-                        .underlineStyle: NSUnderlineStyle.single.rawValue,
-                        .link: URL(fileURLWithPath: path),
-                        .cursor: NSCursor.pointingHand,
-                    ]
-                } else {
-                    attrs = [
-                        .font: bodyFont,
-                        .foregroundColor: NSColor.secondaryLabelColor,
-                    ]
+                var linkAttr = AttributedString(display)
+                if let range = linkAttr.range(of: display) {
+                    linkAttr[range].link = URL(fileURLWithPath: path)
+                    let exists = cache.check(path)
+                    if exists {
+                        linkAttr[range].foregroundColor = .blue
+                    } else {
+                        linkAttr[range].foregroundColor = .gray
+                    }
                 }
-                result.append(NSAttributedString(string: display, attributes: attrs))
+                result.append(linkAttr)
             }
         }
+
         return result
-    }
-}
-
-// MARK: - NSTextView Wrapper
-
-/// NSViewRepresentable wrapping NSTextView for reliable link handling.
-/// NSTextView natively supports `file://` URLs via `linkTextAttributes`
-/// and delegate callbacks, unlike SwiftUI's Text.
-struct FileLinkTextView: NSViewRepresentable {
-    let attributedString: NSAttributedString
-    let onLinkTap: (String) -> Void
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
-
-        textView.delegate = context.coordinator
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.isRichText = false
-        textView.allowsUndo = false
-        textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 0, height: 0)
-        textView.textContainer?.lineFragmentPadding = 0
-        textView.isAutomaticLinkDetectionEnabled = false
-
-        // Enable link cursor on hover
-        textView.linkTextAttributes = [
-            .cursor: NSCursor.pointingHand,
-        ]
-
-        textView.textStorage?.setAttributedString(attributedString)
-
-        // Make the scroll view transparent
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = false
-
-        // Size to fit content
-        textView.sizeToFit()
-        scrollView.hasVerticalRuler = false
-        scrollView.borderType = .noBorder
-
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        textView.textStorage?.setAttributedString(attributedString)
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onLinkTap: onLinkTap)
-    }
-
-    class Coordinator: NSObject, NSTextViewDelegate {
-        let onLinkTap: (String) -> Void
-
-        init(onLinkTap: @escaping (String) -> Void) {
-            self.onLinkTap = onLinkTap
-        }
-
-        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
-            if let url = link as? URL, url.isFileURL {
-                onLinkTap(url.path)
-                return true
-            }
-            // Let the system handle non-file URLs
-            return false
-        }
     }
 }
