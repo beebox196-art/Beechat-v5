@@ -2,7 +2,6 @@ import SwiftUI
 import BeeChatSyncBridge
 import BeeChatPersistence
 import GRDB
-import BeeBoard
 
 struct MainWindow: View {
     @Environment(ThemeManager.self) var themeManager
