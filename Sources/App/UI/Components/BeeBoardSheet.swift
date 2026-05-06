@@ -4,50 +4,97 @@ import BeeBoard
 struct BeeBoardSheet: View {
     @Environment(ThemeManager.self) var themeManager
     @Environment(\.dismiss) private var dismiss
+    @State private var viewModel = BeeBoardViewModel()
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("BeeBoard")
-                    .font(themeManager.font(.heading))
-                    .foregroundColor(themeManager.color(.textPrimary))
-
-                Spacer()
-
-                Button("Done") {
-                    dismiss()
-                }
-                .font(themeManager.font(.subheading))
-                .foregroundColor(themeManager.color(.accentPrimary))
-            }
-            .padding(.horizontal, themeManager.spacing(.xl))
-            .padding(.vertical, themeManager.spacing(.lg))
+            header
 
             Divider()
                 .background(themeManager.color(.borderSubtle))
 
-            VStack(spacing: themeManager.spacing(.md)) {
-                Spacer()
+            ZStack(alignment: .top) {
+                BeeBoardCanvasView(viewModel: viewModel)
 
-                Image(systemName: "pin.square")
-                    .font(.system(size: 36))
-                    .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
-
-                Text("BeeBoard")
-                    .font(themeManager.font(.heading))
-                    .foregroundColor(themeManager.color(.textPrimary))
-
-                Text("Pins and canvas arrive in the next phase.")
-                    .font(themeManager.font(.body))
-                    .foregroundColor(themeManager.color(.textSecondary))
-
-                Spacer()
+                if viewModel.isLoading {
+                    ProgressView("Loading BeeBoard…")
+                        .padding(themeManager.spacing(.lg))
+                        .background(themeManager.color(.bgPanel))
+                        .clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.lg)))
+                        .padding(.top, themeManager.spacing(.xl))
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(themeManager.color(.bgSurface))
         }
-        .frame(minWidth: 800, minHeight: 560)
+        .frame(minWidth: 900, minHeight: 620)
         .background(themeManager.color(.bgSurface))
+        .onAppear { viewModel.load() }
+        .alert(
+            "Delete Pin?",
+            isPresented: Binding(
+                get: { viewModel.pinPendingDelete != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.cancelDelete()
+                    }
+                }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                viewModel.cancelDelete()
+            }
+            Button("Delete", role: .destructive) {
+                viewModel.confirmDelete()
+            }
+        } message: {
+            Text("This removes the pin from BeeBoard.")
+        }
+        .alert(
+            "BeeBoard Error",
+            isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        viewModel.errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                viewModel.errorMessage = nil
+            }
+        } message: {
+            Text(viewModel.errorMessage ?? "Unknown error")
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Button(action: { viewModel.createPinAtCenter() }) {
+                Image(systemName: "plus.circle")
+                    .font(themeManager.font(.subheading))
+                    .foregroundColor(themeManager.color(.accentPrimary))
+            }
+            .buttonStyle(.plain)
+            .help("Create Pin")
+            .accessibilityLabel("Create Pin")
+            .accessibilityHint("Create a new manual pin on the board")
+
+            Spacer()
+
+            Text("BeeBoard")
+                .font(themeManager.font(.heading))
+                .foregroundColor(themeManager.color(.textPrimary))
+
+            Spacer()
+
+            Button("Done") {
+                dismiss()
+            }
+            .font(themeManager.font(.subheading))
+            .foregroundColor(themeManager.color(.accentPrimary))
+        }
+        .padding(.horizontal, themeManager.spacing(.xl))
+        .padding(.vertical, themeManager.spacing(.lg))
     }
 }
 
