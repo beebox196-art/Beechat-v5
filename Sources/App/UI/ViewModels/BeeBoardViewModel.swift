@@ -67,7 +67,7 @@ final class BeeBoardViewModel {
         let now = Date()
         let pin = Pin(
             boardId: board.id,
-            title: "New Pin",
+            title: "",
             content: nil,
             colorHex: Self.warmAuroraPalette[0],
             positionX: Double(x),

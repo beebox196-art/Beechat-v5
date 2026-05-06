@@ -12,6 +12,8 @@ struct BeeBoardPinCard: View {
     let onRequestDelete: () -> Void
 
     @State private var dragStart: CGPoint?
+    @State private var dragOffset: CGSize = .zero
+    @FocusState private var isTitleFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: themeManager.spacing(.sm)) {
@@ -41,8 +43,14 @@ struct BeeBoardPinCard: View {
             y: isSelected ? 4 : 2
         )
         .contentShape(RoundedRectangle(cornerRadius: themeManager.radius(.lg)))
+        .offset(dragOffset)
         .onTapGesture {
             onSelect()
+        }
+        .onChange(of: isSelected) { _, selected in
+            if selected && pin.title.isEmpty {
+                isTitleFocused = true
+            }
         }
         .gesture(dragGesture)
         .contextMenu {
@@ -66,6 +74,7 @@ struct BeeBoardPinCard: View {
                     .textFieldStyle(.plain)
                     .font(themeManager.font(.subheading))
                     .foregroundColor(themeManager.color(.textPrimary))
+                    .focused($isTitleFocused)
             } else {
                 Text(pin.title.isEmpty ? "Untitled" : pin.title)
                     .font(themeManager.font(.subheading))
@@ -149,16 +158,18 @@ struct BeeBoardPinCard: View {
                     dragStart = CGPoint(x: pin.positionX, y: pin.positionY)
                     onSelect()
                 }
-
-                guard let dragStart else { return }
-                let proposed = CGPoint(
-                    x: dragStart.x + value.translation.width,
-                    y: dragStart.y + value.translation.height
-                )
-                onMove(proposed)
+                dragOffset = value.translation
             }
-            .onEnded { _ in
+            .onEnded { value in
+                if let start = dragStart {
+                    let final = CGPoint(
+                        x: start.x + value.translation.width,
+                        y: start.y + value.translation.height
+                    )
+                    onMove(final)
+                }
                 dragStart = nil
+                dragOffset = .zero
             }
     }
 
