@@ -51,6 +51,12 @@ struct BeeBoardCanvasView: View {
                         viewModel.createPin(at: value.location)
                     }
             )
+            .simultaneousGesture(
+                TapGesture()
+                    .onEnded {
+                        viewModel.selectedPinId = nil
+                    }
+            )
     }
 
     private var subtleGrid: some View {
