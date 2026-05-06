@@ -113,8 +113,6 @@ struct MainWindow: View {
                     .accessibilityLabel("BeeBoard")
                     .accessibilityHint("Open the idea board")
 
-                    Spacer()
-
                     Button(action: { showThemePicker = true }) {
                         Image(systemName: "paintpalette")
                             .font(themeManager.font(.body))
