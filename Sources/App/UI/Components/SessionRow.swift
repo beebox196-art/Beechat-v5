@@ -69,13 +69,6 @@ struct SessionRow: View {
                 .help("Session at \(Int((sessionUsage ?? 0) * 100))% — tap to reset")
                 .accessibilityLabel("Reset session: \(topic.title) is at \(Int((sessionUsage ?? 0) * 100))% context usage")
             }
-
-
-
-            // Dormant bee — shows for idle topics with recent activity
-            if thinkingState == .idle, let lastActivity = topic.lastActivityAt, lastActivity > Date.now - 300 {
-                ThinkingBeeIndicator(mode: .dormant)
-            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)

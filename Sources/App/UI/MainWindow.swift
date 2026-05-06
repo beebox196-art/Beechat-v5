@@ -45,9 +45,10 @@ struct MainWindow: View {
                         let usage = messageViewModel.usage(for: topic.sessionKey)
                         let normalizedKey = topic.sessionKey.map { SessionKeyNormalizer.stripPrefix($0).lowercased() } ?? ""
                         let unreadCount = syncBridgeObserver.unreadCounts[normalizedKey] ?? 0
+                        let topicThinkingState: ThinkingState = syncBridgeObserver.isStreamingSession(topic.sessionKey) ? syncBridgeObserver.thinkingState : .idle
                         SessionRow(
                             topic: topic,
-                            thinkingState: syncBridgeObserver.thinkingState,
+                            thinkingState: topicThinkingState,
                             sessionUsage: usage,
                             unreadCount: unreadCount
                         )
