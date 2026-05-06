@@ -43,7 +43,8 @@ struct MainWindow: View {
                 List(selection: sidebarSelection) {
                     ForEach(messageViewModel.topics) { topic in
                         let usage = messageViewModel.usage(for: topic.sessionKey)
-                        let unreadCount = syncBridgeObserver.unreadCounts[topic.sessionKey ?? ""] ?? 0
+                        let normalizedKey = topic.sessionKey.map { SessionKeyNormalizer.stripPrefix($0).lowercased() } ?? ""
+                        let unreadCount = syncBridgeObserver.unreadCounts[normalizedKey] ?? 0
                         SessionRow(
                             topic: topic,
                             thinkingState: syncBridgeObserver.thinkingState,
