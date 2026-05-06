@@ -19,7 +19,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
-        .package(url: "https://github.com/kevinhermawan/ChatField", from: "3.0.4"),
+        .package(path: "Vendors/ChatField"),
     ],
     targets: [
         .target(

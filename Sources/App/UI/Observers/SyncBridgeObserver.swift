@@ -79,9 +79,6 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStartStreaming sessionKey: String) {
         Task { @MainActor in
-            // Cancel thinking timeout — streaming has started
-            self.cancelThinkingTimeout()
-
             // Normalise keys before comparison so bare UUIDs and full gateway keys match
             let normalizedIncoming = self.normalizedSessionKey(sessionKey)
             let normalizedCurrent = self.currentSelectedSessionKey.map(self.normalizedSessionKey)
@@ -95,6 +92,10 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
                 BeeChatLogger.log("[ThinkingBee] didStartStreaming — mismatch (incoming=\(sessionKey) [\(normalizedIncoming)] current=\(self.currentSelectedSessionKey ?? "nil") [\(normalizedCurrent ?? "nil")]) — counting unread")
                 return
             }
+
+            // Only cancel thinking timeout for the currently selected session
+            // (must happen after the guard so background sessions don't kill the timeout)
+            self.cancelThinkingTimeout()
 
             let oldState = self.thinkingState
             BeeChatLogger.log("[ThinkingBee] didStartStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .streaming")
