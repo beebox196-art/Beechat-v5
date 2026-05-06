@@ -119,7 +119,7 @@ struct FilePathParser {
                 continue
             }
 
-            let displayText = isBacktick ? rawPath : rawPath
+            let displayText = isBacktick ? rawPath : stripped
             segments.append(.link(path: standardised, displayText: displayText))
 
             currentIndex = range.upperBound
