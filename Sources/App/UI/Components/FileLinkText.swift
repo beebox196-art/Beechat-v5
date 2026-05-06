@@ -67,13 +67,11 @@ struct FilePathParser {
 
                 let path: String
                 if isBacktick {
-                    // Group 1 is the path inside the backticks.
                     let groupRange = match.range(at: 1)
                     guard groupRange.location != NSNotFound,
                           let swiftRange = Range(groupRange, in: content) else { continue }
                     path = String(content[swiftRange])
                 } else if match.numberOfRanges > 1 {
-                    // file:// pattern captures path in group 1.
                     let groupRange = match.range(at: 1)
                     guard groupRange.location != NSNotFound,
                           let swiftRange = Range(groupRange, in: content) else { continue }
@@ -88,7 +86,6 @@ struct FilePathParser {
             }
         }
 
-        // Sort by location to process left-to-right.
         allMatches.sort { $0.range.location < $1.range.location }
 
         var segments: [ContentSegment] = []
@@ -97,7 +94,6 @@ struct FilePathParser {
         for (nsRange, rawPath, isBacktick) in allMatches {
             guard let range = Range(nsRange, in: content) else { continue }
 
-            // Add plain text before this match.
             if currentIndex < range.lowerBound {
                 let prefix = String(content[currentIndex..<range.lowerBound])
                 if !prefix.isEmpty {
@@ -105,7 +101,6 @@ struct FilePathParser {
                 }
             }
 
-            // Resolve tilde, strip trailing punctuation, and validate path.
             let stripped = stripTrailingPunctuation(rawPath)
             let resolved = resolvePath(stripped)
             let standardised = (resolved as NSString).standardizingPath
@@ -113,7 +108,6 @@ struct FilePathParser {
             let home = FileManager.default.homeDirectoryForCurrentUser.path
             let usersPrefix = "/Users/"
             guard standardised.hasPrefix(usersPrefix) || standardised.hasPrefix(home) else {
-                // Traversal guard failed — render matched text as plain text.
                 segments.append(.text(String(content[range])))
                 currentIndex = range.upperBound
                 continue
@@ -125,7 +119,6 @@ struct FilePathParser {
             currentIndex = range.upperBound
         }
 
-        // Append remaining plain text.
         if currentIndex < content.endIndex {
             let suffix = String(content[currentIndex...])
             if !suffix.isEmpty {
@@ -145,7 +138,6 @@ struct FilePathParser {
         return result
     }
 
-    /// Resolve only a leading tilde to the user's home directory.
     private static func resolvePath(_ path: String) -> String {
         if path.hasPrefix("~") {
             let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -157,6 +149,12 @@ struct FilePathParser {
 
 // MARK: - File Link Text View
 
+/// Renders message content with clickable file path links.
+///
+/// Uses NSTextView under the hood for reliable link tap handling.
+/// SwiftUI's `Text` with `AttributedString.link` does not reliably
+/// handle `file://` URLs on macOS, so we use NSViewRepresentable
+/// wrapping NSTextView which supports all URL schemes natively.
 struct FileLinkText: View {
     let content: String
     @Environment(ThemeManager.self) var themeManager
@@ -164,34 +162,132 @@ struct FileLinkText: View {
     @State private var cache = FileExistenceCache()
 
     var body: some View {
-        Text(attributedString())
+        let segments = FilePathParser.parse(content)
+        let hasLinks = segments.contains { if case .link = $0 { return true } else { return false } }
+
+        if hasLinks {
+            FileLinkTextView(
+                attributedString: buildAttributedString(segments),
+                onLinkTap: { path in
+                    let url = URL(fileURLWithPath: path)
+                    NSWorkspace.shared.open(url)
+                }
+            )
             .font(themeManager.font(.body))
             .textSelection(.enabled)
-            .onDisappear {
-                cache.invalidate()
-            }
+            .onDisappear { cache.invalidate() }
+        } else {
+            Text(content)
+                .font(themeManager.font(.body))
+                .textSelection(.enabled)
+        }
     }
 
-    private func attributedString() -> AttributedString {
-        let segments = FilePathParser.parse(content)
-        var result = AttributedString("")
+    private func buildAttributedString(_ segments: [ContentSegment]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let bodyFont = NSFont.systemFont(ofSize: 14, weight: .regular)
+
         for segment in segments {
             switch segment {
             case .text(let str):
-                result.append(AttributedString(str))
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: bodyFont,
+                    .foregroundColor: NSColor.labelColor,
+                ]
+                result.append(NSAttributedString(string: str, attributes: attrs))
+
             case .link(let path, let display):
                 let exists = cache.check(path)
-                var linkAttr = AttributedString(display)
+                let attrs: [NSAttributedString.Key: Any]
                 if exists {
-                    linkAttr.foregroundColor = themeManager.color(.accentPrimary)
-                    linkAttr.underlineStyle = .single
-                    linkAttr.link = URL(fileURLWithPath: path)
+                    attrs = [
+                        .font: bodyFont,
+                        .foregroundColor: NSColor.systemBlue,
+                        .underlineStyle: NSUnderlineStyle.single.rawValue,
+                        .link: URL(fileURLWithPath: path),
+                        .cursor: NSCursor.pointingHand,
+                    ]
                 } else {
-                    linkAttr.foregroundColor = themeManager.color(.textSecondary)
+                    attrs = [
+                        .font: bodyFont,
+                        .foregroundColor: NSColor.secondaryLabelColor,
+                    ]
                 }
-                result.append(linkAttr)
+                result.append(NSAttributedString(string: display, attributes: attrs))
             }
         }
         return result
+    }
+}
+
+// MARK: - NSTextView Wrapper
+
+/// NSViewRepresentable wrapping NSTextView for reliable link handling.
+/// NSTextView natively supports `file://` URLs via `linkTextAttributes`
+/// and delegate callbacks, unlike SwiftUI's Text.
+struct FileLinkTextView: NSViewRepresentable {
+    let attributedString: NSAttributedString
+    let onLinkTap: (String) -> Void
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSTextView.scrollableTextView()
+        guard let textView = scrollView.documentView as? NSTextView else {
+            return scrollView
+        }
+
+        textView.delegate = context.coordinator
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.allowsUndo = false
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.isAutomaticLinkDetectionEnabled = false
+
+        // Enable link cursor on hover
+        textView.linkTextAttributes = [
+            .cursor: NSCursor.pointingHand,
+        ]
+
+        textView.textStorage?.setAttributedString(attributedString)
+
+        // Make the scroll view transparent
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+
+        // Size to fit content
+        textView.sizeToFit()
+        scrollView.hasVerticalRuler = false
+        scrollView.borderType = .noBorder
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+        textView.textStorage?.setAttributedString(attributedString)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onLinkTap: onLinkTap)
+    }
+
+    class Coordinator: NSObject, NSTextViewDelegate {
+        let onLinkTap: (String) -> Void
+
+        init(onLinkTap: @escaping (String) -> Void) {
+            self.onLinkTap = onLinkTap
+        }
+
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            if let url = link as? URL, url.isFileURL {
+                onLinkTap(url.path)
+                return true
+            }
+            // Let the system handle non-file URLs
+            return false
+        }
     }
 }
