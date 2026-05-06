@@ -7,7 +7,7 @@ struct MessageContent: View {
 
     var body: some View {
         if let content = message.content, !content.isEmpty {
-            Text(content)
+            FileLinkText(content: content)
                 .font(themeManager.font(.body))
                 .textSelection(.enabled)
         } else {

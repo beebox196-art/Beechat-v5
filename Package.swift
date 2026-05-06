@@ -71,5 +71,9 @@ let package = Package(
             resources: [
                 .process("Assets.xcassets"),
             ]),
+        .testTarget(
+            name: "BeeChatAppTests",
+            dependencies: ["BeeChatApp"],
+            path: "Tests/BeeChatAppTests"),
     ]
 )
