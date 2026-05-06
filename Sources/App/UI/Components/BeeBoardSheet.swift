@@ -28,6 +28,18 @@ struct BeeBoardSheet: View {
         .frame(minWidth: 900, minHeight: 620)
         .background(themeManager.color(.bgSurface))
         .onAppear { viewModel.load() }
+        .sheet(
+            isPresented: Binding(
+                get: { viewModel.detailPinId != nil },
+                set: { if !$0 { viewModel.closeDetail() } }
+            )
+        ) {
+            if let detailPinId = viewModel.detailPinId,
+               let pinIndex = viewModel.pins.firstIndex(where: { $0.id == detailPinId }) {
+                BeeBoardPinDetailView(pin: viewModel.binding(for: viewModel.pins[pinIndex]))
+                    .environment(themeManager)
+            }
+        }
         .alert(
             "Delete Pin?",
             isPresented: Binding(
@@ -86,6 +98,22 @@ struct BeeBoardSheet: View {
                 .foregroundColor(themeManager.color(.textPrimary))
 
             Spacer()
+
+            TextField("Search pins…", text: $viewModel.searchText)
+                .textFieldStyle(.plain)
+                .font(themeManager.font(.body))
+                .foregroundColor(themeManager.color(.textPrimary))
+                .frame(width: 160)
+                .padding(.horizontal, themeManager.spacing(.sm))
+                .padding(.vertical, themeManager.spacing(.xs))
+                .background(
+                    RoundedRectangle(cornerRadius: themeManager.radius(.md))
+                        .fill(themeManager.color(.bgPanel))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: themeManager.radius(.md))
+                        .stroke(themeManager.color(.borderSubtle), lineWidth: 1)
+                )
 
             Button("Done") {
                 dismiss()

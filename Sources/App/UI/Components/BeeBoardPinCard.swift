@@ -10,29 +10,52 @@ struct BeeBoardPinCard: View {
     let onSelect: () -> Void
     let onMove: (CGPoint) -> Void
     let onRequestDelete: () -> Void
+    let onExpand: () -> Void
+    let onAddTag: (String) -> Void
+    let onRemoveTag: (String) -> Void
+    let onUpdatePriority: (Int) -> Void
 
     @State private var dragStart: CGPoint?
     @State private var dragOffset: CGSize = .zero
+    @State private var tagInput = ""
     @FocusState private var isTitleFocused: Bool
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: themeManager.spacing(.sm)) {
-            header
+    static let priorityColors: [Int: String] = [
+        1: "#60a5fa", // low — blue
+        2: "#e9c46a", // medium — honey
+        3: "#f4a261", // high — apricot
+        4: "#e76f51"  // urgent — coral
+    ]
 
-            if isSelected {
-                editFields
-                colourPicker
-            } else {
-                readOnlyBody
+    var body: some View {
+        HStack(spacing: 0) {
+            if pin.priority > 0, let hex = Self.priorityColors[pin.priority] {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color(hex: hex) ?? Color.clear)
+                    .frame(width: 4)
             }
 
-            Spacer(minLength: themeManager.spacing(.xs))
+            VStack(alignment: .leading, spacing: themeManager.spacing(.sm)) {
+                header
 
-            Text(pin.createdAt.formatted(date: .abbreviated, time: .omitted))
-                .font(themeManager.font(.caption2))
-                .foregroundColor(themeManager.color(.textSecondary).opacity(0.75))
+                if isSelected {
+                    editFields
+                    colourPicker
+                    tagEditor
+                } else {
+                    readOnlyBody
+                }
+
+                tagPills
+
+                Spacer(minLength: themeManager.spacing(.xs))
+
+                Text(pin.createdAt.formatted(date: .abbreviated, time: .omitted))
+                    .font(themeManager.font(.caption2))
+                    .foregroundColor(themeManager.color(.textSecondary).opacity(0.75))
+            }
+            .padding(themeManager.spacing(.md))
         }
-        .padding(themeManager.spacing(.md))
         .frame(width: CGFloat(pin.width), height: CGFloat(pin.height), alignment: .topLeading)
         .background(cardBackground)
         .overlay(cardBorder)
@@ -54,6 +77,14 @@ struct BeeBoardPinCard: View {
         }
         .gesture(dragGesture)
         .contextMenu {
+            Menu("Priority") {
+                ForEach([(0, "None"), (1, "Low"), (2, "Medium"), (3, "High"), (4, "Urgent")], id: \.0) { value, label in
+                    Button(label) {
+                        onUpdatePriority(value)
+                    }
+                }
+            }
+            Divider()
             Button("Delete Pin", role: .destructive) {
                 onRequestDelete()
             }
@@ -81,6 +112,16 @@ struct BeeBoardPinCard: View {
                     .foregroundColor(themeManager.color(.textPrimary))
                     .lineLimit(1)
             }
+
+            Spacer()
+
+            Button(action: onExpand) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 10))
+                    .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("Expand pin")
         }
     }
 
@@ -110,6 +151,58 @@ struct BeeBoardPinCard: View {
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.65))
                     .italic()
             }
+        }
+    }
+
+    private var tagPills: some View {
+        let tagList = (try? JSONDecoder().decode([String].self, from: Data(pin.tags.utf8))) ?? []
+        guard !tagList.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(tagList, id: \.self) { tag in
+                        HStack(spacing: 2) {
+                            Text(tag)
+                                .font(.caption2)
+                            if isSelected {
+                                Button(action: { onRemoveTag(tag) }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.caption2)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(tagColor(for: tag).opacity(0.2)))
+                        .foregroundColor(tagColor(for: tag))
+                    }
+                }
+            }
+        )
+    }
+
+    private var tagEditor: some View {
+        HStack(spacing: 4) {
+            TextField("Add tag", text: $tagInput)
+                .textFieldStyle(.plain)
+                .font(.caption2)
+                .onSubmit {
+                    if !tagInput.isEmpty {
+                        onAddTag(tagInput)
+                        tagInput = ""
+                    }
+                }
+            Button(action: {
+                if !tagInput.isEmpty {
+                    onAddTag(tagInput)
+                    tagInput = ""
+                }
+            }) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.caption2)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -173,6 +266,11 @@ struct BeeBoardPinCard: View {
             }
     }
 
+    private func tagColor(for tag: String) -> Color {
+        let index = abs(tag.hashValue) % palette.count
+        return Color(hex: palette[index]) ?? Color.gray
+    }
+
     private var titleBinding: Binding<String> {
         Binding(
             get: { pin.title },
@@ -204,7 +302,11 @@ struct BeeBoardPinCard: View {
         palette: BeeBoardViewModel.warmAuroraPalette,
         onSelect: {},
         onMove: { _ in },
-        onRequestDelete: {}
+        onRequestDelete: {},
+        onExpand: {},
+        onAddTag: { _ in },
+        onRemoveTag: { _ in },
+        onUpdatePriority: { _ in }
     )
     .padding()
     .environment(ThemeManager())

@@ -24,12 +24,17 @@ struct BeeBoardCanvasView: View {
                         palette: BeeBoardViewModel.warmAuroraPalette,
                         onSelect: { viewModel.select(pinId: pin.id) },
                         onMove: { point in viewModel.movePin(id: pin.id, to: point) },
-                        onRequestDelete: { viewModel.requestDelete(pinId: pin.id) }
+                        onRequestDelete: { viewModel.requestDelete(pinId: pin.id) },
+                        onExpand: { viewModel.openDetail(pinId: pin.id) },
+                        onAddTag: { tag in viewModel.addTag(pinId: pin.id, tag: tag) },
+                        onRemoveTag: { tag in viewModel.removeTag(pinId: pin.id, tag: tag) },
+                        onUpdatePriority: { prio in viewModel.updatePriority(pinId: pin.id, priority: prio) }
                     )
                     .position(
                         x: CGFloat(pin.positionX),
                         y: CGFloat(pin.positionY)
                     )
+                    .opacity(viewModel.matchingPinIds.contains(pin.id) ? 1.0 : 0.25)
                     .zIndex(viewModel.selectedPinId == pin.id ? 2 : 1)
                 }
             }

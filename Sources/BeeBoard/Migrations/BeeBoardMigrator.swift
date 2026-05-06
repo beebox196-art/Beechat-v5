@@ -37,6 +37,24 @@ public enum BeeBoardMigrator {
             }
         }
 
+        migrator.registerMigration("BeeBoardMigration002_PriorityTagsExpand") { db in
+            if try db.columns(in: "beeboard_pins").first(where: { $0.name == "group_id" }) == nil {
+                try db.alter(table: "beeboard_pins") { t in
+                    t.add(column: "group_id", .text)
+                }
+            }
+            if try db.columns(in: "beeboard_pins").first(where: { $0.name == "priority" }) == nil {
+                try db.alter(table: "beeboard_pins") { t in
+                    t.add(column: "priority", .integer).defaults(to: 0)
+                }
+            }
+            if try db.columns(in: "beeboard_pins").first(where: { $0.name == "tags" }) == nil {
+                try db.alter(table: "beeboard_pins") { t in
+                    t.add(column: "tags", .text).defaults(to: "[]")
+                }
+            }
+        }
+
         try migrator.migrate(writer)
     }
 }

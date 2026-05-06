@@ -13,8 +13,32 @@ public struct Pin: Codable, FetchableRecord, MutablePersistableRecord, TableReco
     public var positionY: Double
     public var width: Double
     public var height: Double
+    public var groupId: String?
+    public var priority: Int
+    public var tags: String
     public var createdAt: Date
     public var updatedAt: Date
+
+    public enum CodingKeys: String, CodingKey {
+        case id
+        case boardId
+        case title
+        case content
+        case colorHex
+        case positionX
+        case positionY
+        case width
+        case height
+        case groupId = "group_id"
+        case priority
+        case tags
+        case createdAt
+        case updatedAt
+    }
+
+    public static let columnNamesForCodingKeys: [CodingKeys: String] = [
+        .groupId: "group_id"
+    ]
 
     public init(
         id: String = UUID().uuidString,
@@ -26,6 +50,9 @@ public struct Pin: Codable, FetchableRecord, MutablePersistableRecord, TableReco
         positionY: Double = 0,
         width: Double = 200,
         height: Double = 100,
+        groupId: String? = nil,
+        priority: Int = 0,
+        tags: String = "[]",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -38,6 +65,9 @@ public struct Pin: Codable, FetchableRecord, MutablePersistableRecord, TableReco
         self.positionY = positionY
         self.width = width
         self.height = height
+        self.groupId = groupId
+        self.priority = priority
+        self.tags = tags
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
