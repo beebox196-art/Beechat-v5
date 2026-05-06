@@ -16,6 +16,9 @@ let package = Package(
         .library(
             name: "BeeChatSyncBridge",
             targets: ["BeeChatSyncBridge"]),
+        .library(
+            name: "BeeBoard",
+            targets: ["BeeBoard"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
@@ -39,6 +42,13 @@ let package = Package(
                 .target(name: "BeeChatGateway"),
             ],
             path: "Sources/BeeChatSyncBridge"),
+        .target(
+            name: "BeeBoard",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+                .target(name: "BeeChatPersistence"),
+            ],
+            path: "Sources/BeeBoard"),
         .testTarget(
             name: "BeeChatPersistenceTests",
             dependencies: ["BeeChatPersistence"],
@@ -65,6 +75,7 @@ let package = Package(
                 .target(name: "BeeChatPersistence"),
                 .target(name: "BeeChatGateway"),
                 .target(name: "BeeChatSyncBridge"),
+                .target(name: "BeeBoard"),
                 .product(name: "ChatField", package: "ChatField"),
             ],
             path: "Sources/App",

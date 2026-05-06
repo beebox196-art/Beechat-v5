@@ -2,6 +2,7 @@ import SwiftUI
 import BeeChatSyncBridge
 import BeeChatPersistence
 import BeeChatGateway
+import BeeBoard
 import os
 
 @main
@@ -65,6 +66,7 @@ final class AppState {
                 let dbManager = DatabaseManager.shared
                 let dbPath = defaultDatabasePath()
                 try dbManager.openDatabase(at: dbPath)
+                try BeeBoardMigrator.migrate(dbManager: dbManager)
 
                 let persistenceStore = BeeChatPersistenceStore(dbManager: dbManager)
 

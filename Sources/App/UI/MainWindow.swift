@@ -2,6 +2,7 @@ import SwiftUI
 import BeeChatSyncBridge
 import BeeChatPersistence
 import GRDB
+import BeeBoard
 
 struct MainWindow: View {
     @Environment(ThemeManager.self) var themeManager
@@ -20,6 +21,7 @@ struct MainWindow: View {
     @State private var showThemePicker = false
     @State private var showFolderPicker = false
     @State private var showAgentActivity = false
+    @State private var showBeeBoard = false
     @FocusState private var isNewTopicFieldFocused: Bool
 
     private var sidebarSelection: Binding<String?> {
@@ -101,6 +103,16 @@ struct MainWindow: View {
                     .accessibilityLabel("Team Activity")
                     .accessibilityHint("Show which agents are currently working")
                     .animation(themeManager.animation(.micro), value: syncBridgeObserver.agentActivityTracker.hasWorkingAgents)
+
+                    Button(action: { showBeeBoard = true }) {
+                        Image(systemName: "pin.square")
+                            .font(themeManager.font(.body))
+                            .foregroundColor(themeManager.color(.textSecondary))
+                    }
+                    .buttonStyle(.plain)
+                    .help("BeeBoard")
+                    .accessibilityLabel("BeeBoard")
+                    .accessibilityHint("Open the idea board")
 
                     Spacer()
 
@@ -260,6 +272,10 @@ struct MainWindow: View {
         }
         .sheet(isPresented: $showAgentActivity) {
             AgentActivityPanel(tracker: syncBridgeObserver.agentActivityTracker)
+                .environment(themeManager)
+        }
+        .sheet(isPresented: $showBeeBoard) {
+            BeeBoardSheet()
                 .environment(themeManager)
         }
 
