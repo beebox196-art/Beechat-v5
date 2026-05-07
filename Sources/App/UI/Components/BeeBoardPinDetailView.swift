@@ -180,23 +180,29 @@ struct BeeBoardPinDetailView: View {
     @ViewBuilder
     private func attachmentView(for attachment: PinAttachment) -> some View {
         ZStack(alignment: .topTrailing) {
-            if attachment.isImage {
-                if let image = NSImage(contentsOf: AttachmentStorage.url(for: attachment.relativePath)) {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: 120, maxHeight: 90)
-                        .clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.sm)))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: themeManager.radius(.sm))
-                                .stroke(themeManager.color(.borderSubtle), lineWidth: 1)
-                        )
+            Button {
+                let url = AttachmentStorage.url(for: attachment.relativePath)
+                NSWorkspace.shared.open(url)
+            } label: {
+                if attachment.isImage {
+                    if let image = NSImage(contentsOf: AttachmentStorage.url(for: attachment.relativePath)) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: 120, maxHeight: 90)
+                            .clipShape(RoundedRectangle(cornerRadius: themeManager.radius(.sm)))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: themeManager.radius(.sm))
+                                    .stroke(themeManager.color(.borderSubtle), lineWidth: 1)
+                            )
+                    } else {
+                        fallbackFileIcon(for: attachment)
+                    }
                 } else {
                     fallbackFileIcon(for: attachment)
                 }
-            } else {
-                fallbackFileIcon(for: attachment)
             }
+            .buttonStyle(.plain)
 
             Button(action: { onRemoveAttachment(attachment.id) }) {
                 Image(systemName: "xmark.circle.fill")
@@ -207,6 +213,7 @@ struct BeeBoardPinDetailView: View {
             .buttonStyle(.plain)
             .offset(x: 6, y: -6)
         }
+        .padding(.top, 8)
     }
 
     @ViewBuilder
@@ -308,26 +315,42 @@ struct BeeBoardPinDetailView: View {
     @ViewBuilder
     private func linkRow(for link: PinLink) -> some View {
         HStack(spacing: themeManager.spacing(.sm)) {
-            Image(systemName: "link")
-                .font(.system(size: 12))
-                .foregroundColor(themeManager.color(.accentPrimary))
-
-            VStack(alignment: .leading, spacing: 2) {
-                if let title = link.title {
-                    Text(title)
-                        .font(themeManager.font(.body))
-                        .foregroundColor(themeManager.color(.textPrimary))
-                        .lineLimit(1)
-                } else {
-                    Text(link.url)
-                        .font(themeManager.font(.body))
-                        .foregroundColor(themeManager.color(.textSecondary))
-                        .lineLimit(1)
+            Button {
+                if let url = URL(string: link.url) {
+                    NSWorkspace.shared.open(url)
                 }
-                Text(domain(from: link.url))
-                    .font(themeManager.font(.caption))
-                    .foregroundColor(themeManager.color(.textSecondary).opacity(0.7))
-                    .lineLimit(1)
+            } label: {
+                HStack(spacing: themeManager.spacing(.sm)) {
+                    Image(systemName: "link")
+                        .font(.system(size: 12))
+                        .foregroundColor(themeManager.color(.accentPrimary))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let title = link.title {
+                            Text(title)
+                                .font(themeManager.font(.body))
+                                .foregroundColor(themeManager.color(.textPrimary))
+                                .lineLimit(1)
+                        } else {
+                            Text(link.url)
+                                .font(themeManager.font(.body))
+                                .foregroundColor(themeManager.color(.textSecondary))
+                                .lineLimit(1)
+                        }
+                        Text(domain(from: link.url))
+                            .font(themeManager.font(.caption))
+                            .foregroundColor(themeManager.color(.textSecondary).opacity(0.7))
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.pointingHand.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
             }
 
             Spacer()
