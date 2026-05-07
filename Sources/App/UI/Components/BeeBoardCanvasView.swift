@@ -12,6 +12,18 @@ struct BeeBoardCanvasView: View {
             ZStack(alignment: .topLeading) {
                 canvasBackground
 
+                // Groups behind pins
+                ForEach(viewModel.groupFrames()) { groupFrame in
+                    BeeBoardGroupView(
+                        groupFrame: groupFrame,
+                        onMoveBy: { translation in
+                            viewModel.moveGroup(id: groupFrame.group.id, by: translation)
+                        }
+                    )
+                    .position(x: groupFrame.rect.midX, y: groupFrame.rect.midY)
+                    .zIndex(0)
+                }
+
                 if viewModel.pins.isEmpty {
                     emptyState
                         .position(x: 420, y: 260)
@@ -21,21 +33,24 @@ struct BeeBoardCanvasView: View {
                     BeeBoardPinCard(
                         pin: viewModel.binding(for: pin),
                         isSelected: viewModel.selectedPinId == pin.id,
+                        isMultiSelected: viewModel.selectedPinIds.contains(pin.id),
+                        isSearchMatch: viewModel.matchesSearch(pin),
+                        isDimmed: viewModel.isDimmedBySearch(pin),
+                        tags: viewModel.tags(for: pin),
                         palette: BeeBoardViewModel.warmAuroraPalette,
                         onSelect: { viewModel.select(pinId: pin.id) },
                         onMove: { point in viewModel.movePin(id: pin.id, to: point) },
                         onRequestDelete: { viewModel.requestDelete(pinId: pin.id) },
                         onExpand: { viewModel.openDetail(pinId: pin.id) },
-                        onAddTag: { tag in viewModel.addTag(pinId: pin.id, tag: tag) },
-                        onRemoveTag: { tag in viewModel.removeTag(pinId: pin.id, tag: tag) },
+                        onTagsChange: { tags in viewModel.setTags(tags, for: pin.id) },
                         onUpdatePriority: { prio in viewModel.updatePriority(pinId: pin.id, priority: prio) }
                     )
                     .position(
                         x: CGFloat(pin.positionX),
                         y: CGFloat(pin.positionY)
                     )
-                    .opacity(viewModel.matchingPinIds.contains(pin.id) ? 1.0 : 0.25)
-                    .zIndex(viewModel.selectedPinId == pin.id ? 2 : 1)
+                    .opacity(viewModel.isDimmedBySearch(pin) ? 0.25 : 1.0)
+                    .zIndex(viewModel.selectedPinId == pin.id ? 3 : 2)
                 }
             }
             .frame(width: canvasSize.width, height: canvasSize.height)
@@ -59,7 +74,7 @@ struct BeeBoardCanvasView: View {
             .simultaneousGesture(
                 TapGesture()
                     .onEnded {
-                        viewModel.selectedPinId = nil
+                        viewModel.clearSelection()
                     }
             )
     }

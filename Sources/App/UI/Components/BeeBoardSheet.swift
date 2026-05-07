@@ -25,13 +25,24 @@ struct BeeBoardSheet: View {
                 }
             }
         }
-        .frame(minWidth: 900, minHeight: 620)
+        .frame(minWidth: 980, minHeight: 680)
         .background(themeManager.color(.bgSurface))
         .onAppear { viewModel.load() }
+        .sheet(isPresented: $viewModel.isCreatingGroup) {
+            BeeBoardCreateGroupSheet(
+                palette: BeeBoardViewModel.warmAuroraPalette,
+                onCreate: { name, colorHex in
+                    viewModel.createGroup(name: name, colorHex: colorHex)
+                }
+            )
+            .environment(themeManager)
+        }
         .sheet(
             isPresented: Binding(
                 get: { viewModel.detailPinId != nil },
-                set: { if !$0 { viewModel.closeDetail() } }
+                set: { isPresented in
+                    if !isPresented { viewModel.closeDetail() }
+                }
             )
         ) {
             if let detailPinId = viewModel.detailPinId,
@@ -45,18 +56,12 @@ struct BeeBoardSheet: View {
             isPresented: Binding(
                 get: { viewModel.pinPendingDelete != nil },
                 set: { isPresented in
-                    if !isPresented {
-                        viewModel.cancelDelete()
-                    }
+                    if !isPresented { viewModel.cancelDelete() }
                 }
             )
         ) {
-            Button("Cancel", role: .cancel) {
-                viewModel.cancelDelete()
-            }
-            Button("Delete", role: .destructive) {
-                viewModel.confirmDelete()
-            }
+            Button("Cancel", role: .cancel) { viewModel.cancelDelete() }
+            Button("Delete", role: .destructive) { viewModel.confirmDelete() }
         } message: {
             Text("This removes the pin from BeeBoard.")
         }
@@ -65,22 +70,18 @@ struct BeeBoardSheet: View {
             isPresented: Binding(
                 get: { viewModel.errorMessage != nil },
                 set: { isPresented in
-                    if !isPresented {
-                        viewModel.errorMessage = nil
-                    }
+                    if !isPresented { viewModel.errorMessage = nil }
                 }
             )
         ) {
-            Button("OK", role: .cancel) {
-                viewModel.errorMessage = nil
-            }
+            Button("OK", role: .cancel) { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "Unknown error")
         }
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: themeManager.spacing(.md)) {
             Button(action: { viewModel.createPinAtCenter() }) {
                 Image(systemName: "plus.circle")
                     .font(themeManager.font(.subheading))
@@ -88,16 +89,36 @@ struct BeeBoardSheet: View {
             }
             .buttonStyle(.plain)
             .help("Create Pin")
-            .accessibilityLabel("Create Pin")
-            .accessibilityHint("Create a new manual pin on the board")
 
-            Spacer()
+            Button(action: { viewModel.toggleSelectionMode() }) {
+                Image(systemName: viewModel.isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+                    .font(themeManager.font(.subheading))
+                    .foregroundColor(viewModel.isSelectionMode ? themeManager.color(.accentPrimary) : themeManager.color(.textSecondary))
+            }
+            .buttonStyle(.plain)
+            .help("Selection Mode")
 
-            Text("BeeBoard")
-                .font(themeManager.font(.heading))
-                .foregroundColor(themeManager.color(.textPrimary))
+            Button("Group") {
+                viewModel.isCreatingGroup = true
+            }
+            .disabled(viewModel.selectedPinIds.count < 2)
+            .foregroundColor(viewModel.selectedPinIds.count >= 2 ? themeManager.color(.accentPrimary) : themeManager.color(.textSecondary))
 
-            Spacer()
+            Picker("Sort", selection: sortBinding) {
+                Text("Manual").tag(BeeBoardSortOption?.none)
+                ForEach(BeeBoardSortOption.allCases) { option in
+                    Text(option.rawValue).tag(BeeBoardSortOption?.some(option))
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 120)
+
+            if viewModel.canUndoSort {
+                Button("Undo Sort") {
+                    viewModel.undoSort()
+                }
+                .foregroundColor(themeManager.color(.accentPrimary))
+            }
 
             TextField("Search pins…", text: $viewModel.searchText)
                 .textFieldStyle(.plain)
@@ -115,6 +136,14 @@ struct BeeBoardSheet: View {
                         .stroke(themeManager.color(.borderSubtle), lineWidth: 1)
                 )
 
+            Spacer()
+
+            Text("BeeBoard")
+                .font(themeManager.font(.heading))
+                .foregroundColor(themeManager.color(.textPrimary))
+
+            Spacer()
+
             Button("Done") {
                 dismiss()
             }
@@ -123,6 +152,15 @@ struct BeeBoardSheet: View {
         }
         .padding(.horizontal, themeManager.spacing(.xl))
         .padding(.vertical, themeManager.spacing(.lg))
+    }
+
+    private var sortBinding: Binding<BeeBoardSortOption?> {
+        Binding(
+            get: { viewModel.activeSortOption },
+            set: { option in
+                if let option { viewModel.applySort(option) }
+            }
+        )
     }
 }
 

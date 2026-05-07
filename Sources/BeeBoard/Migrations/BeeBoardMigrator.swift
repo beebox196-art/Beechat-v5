@@ -55,6 +55,22 @@ public enum BeeBoardMigrator {
             }
         }
 
+        migrator.registerMigration("BeeBoardMigration003_PinGroups") { db in
+            if try !db.tableExists("pin_groups") {
+                try db.create(table: "pin_groups") { t in
+                    t.column("id", .text).primaryKey()
+                    t.column("boardId", .text).notNull()
+                        .references("beeboard_boards", column: "id", onDelete: .cascade)
+                    t.column("name", .text).notNull().defaults(to: "Group")
+                    t.column("colorHex", .text).notNull().defaults(to: "#8fa895")
+                    t.column("createdAt", .datetime).notNull().defaults(to: Date())
+                    t.column("updatedAt", .datetime).notNull().defaults(to: Date())
+                }
+
+                try db.create(index: "idx_pin_groups_boardId", on: "pin_groups", columns: ["boardId"])
+            }
+        }
+
         try migrator.migrate(writer)
     }
 }
