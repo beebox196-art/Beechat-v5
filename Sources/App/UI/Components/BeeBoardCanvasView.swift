@@ -34,7 +34,6 @@ struct BeeBoardCanvasView: View {
                         pin: viewModel.binding(for: pin),
                         isSelected: viewModel.selectedPinId == pin.id,
                         isMultiSelected: viewModel.selectedPinIds.contains(pin.id),
-                        isSearchMatch: viewModel.matchesSearch(pin),
                         isDimmed: viewModel.isDimmedBySearch(pin),
                         tags: viewModel.tags(for: pin),
                         palette: BeeBoardViewModel.warmAuroraPalette,

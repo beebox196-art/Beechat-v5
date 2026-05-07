@@ -7,7 +7,6 @@ struct BeeBoardPinCard: View {
 
     let isSelected: Bool
     let isMultiSelected: Bool
-    let isSearchMatch: Bool
     let isDimmed: Bool
     let tags: [String]
     let palette: [String]
@@ -321,7 +320,6 @@ struct BeeBoardPinCard: View {
         ),
         isSelected: true,
         isMultiSelected: false,
-        isSearchMatch: true,
         isDimmed: false,
         tags: ["sales", "ai"],
         palette: BeeBoardViewModel.warmAuroraPalette,

@@ -208,7 +208,7 @@ final class BeeBoardViewModel {
         guard let index = pins.firstIndex(where: { $0.id == id }) else { return }
 
         let oldGroupId = pins[index].groupId
-        let oldGroupFrame = oldGroupId.flatMap { groupFrame(for: $0, excluding: nil)?.rect }
+        let oldGroupFrame = oldGroupId.flatMap { groupFrame(for: $0)?.rect }
 
         pins[index].positionX = Double(max(0, point.x))
         pins[index].positionY = Double(max(0, point.y))
@@ -368,7 +368,7 @@ final class BeeBoardViewModel {
     }
 
     func groupFrames() -> [BeeBoardGroupFrame] {
-        groups.compactMap { groupFrame(for: $0.id, excluding: nil) }
+        groups.compactMap { groupFrame(for: $0.id) }
     }
 
     // MARK: - Sort
@@ -491,11 +491,9 @@ final class BeeBoardViewModel {
         }
     }
 
-    private func groupFrame(for groupId: String, excluding excludedPinId: String?) -> BeeBoardGroupFrame? {
+    private func groupFrame(for groupId: String) -> BeeBoardGroupFrame? {
         guard let group = groups.first(where: { $0.id == groupId }) else { return nil }
-        let members = pins.filter { pin in
-            pin.groupId == groupId && pin.id != excludedPinId
-        }
+        let members = pins.filter { $0.groupId == groupId }
         guard !members.isEmpty else { return nil }
 
         let minX = members.map { $0.positionX - ($0.width / 2) }.min() ?? 0
