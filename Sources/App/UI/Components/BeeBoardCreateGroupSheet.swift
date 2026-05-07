@@ -76,7 +76,7 @@ struct BeeBoardCreateGroupSheet: View {
 
 #Preview {
     BeeBoardCreateGroupSheet(
-        palette: BeeBoardViewModel.warmAuroraPalette,
+        palette: BeeBoardViewModel.groupColorPalette,
         onCreate: { _, _ in }
     )
     .environment(ThemeManager())

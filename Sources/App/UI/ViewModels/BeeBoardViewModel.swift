@@ -21,7 +21,15 @@ struct BeeBoardGroupFrame: Identifiable {
 @MainActor
 @Observable
 final class BeeBoardViewModel {
-    static let warmAuroraPalette: [String] = [
+    static let priorityColors: [Int: String] = [
+        0: "#8b95a5",  // none — muted grey-blue
+        1: "#60a5fa",  // low — soft blue
+        2: "#e9c46a",  // medium — honey
+        3: "#f4a261",  // high — apricot
+        4: "#e76f51"   // urgent — coral
+    ]
+
+    static let groupColorPalette: [String] = [
         "#f5a623", // amber
         "#d4a574", // warm sand
         "#c77d63", // terracotta
@@ -94,6 +102,15 @@ final class BeeBoardViewModel {
             let board = try boardRepository.fetchOrCreateDefaultBoard()
             self.board = board
             self.pins = try pinRepository.fetchPins(boardId: board.id)
+            for index in self.pins.indices {
+                let expected = Self.priorityColors[self.pins[index].priority] ?? Self.priorityColors[0]!
+                if self.pins[index].colorHex != expected {
+                    self.pins[index].colorHex = expected
+                }
+            }
+            if !self.pins.isEmpty {
+                try pinRepository.updatePositions(self.pins.map { (id: $0.id, x: $0.positionX, y: $0.positionY) })
+            }
             self.groups = try groupRepository.fetchGroups(boardId: board.id)
         } catch {
             errorMessage = "Failed to load BeeBoard: \(error.localizedDescription)"
@@ -118,7 +135,7 @@ final class BeeBoardViewModel {
             boardId: board.id,
             title: "",
             content: nil,
-            colorHex: Self.warmAuroraPalette[0],
+            colorHex: Self.priorityColors[0]!,
             positionX: Double(x),
             positionY: Double(y),
             width: 220,
@@ -246,7 +263,9 @@ final class BeeBoardViewModel {
 
     func updatePriority(pinId: String, priority: Int) {
         guard let index = pins.firstIndex(where: { $0.id == pinId }) else { return }
-        pins[index].priority = priority
+        let clamped = min(max(priority, 0), 4)
+        pins[index].priority = clamped
+        pins[index].colorHex = Self.priorityColors[clamped] ?? Self.priorityColors[0]!
         pins[index].updatedAt = Date()
         scheduleSave(pins[index])
     }

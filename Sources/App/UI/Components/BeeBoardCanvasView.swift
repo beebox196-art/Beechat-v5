@@ -36,7 +36,7 @@ struct BeeBoardCanvasView: View {
                         isMultiSelected: viewModel.selectedPinIds.contains(pin.id),
                         isDimmed: viewModel.isDimmedBySearch(pin),
                         tags: viewModel.tags(for: pin),
-                        palette: BeeBoardViewModel.warmAuroraPalette,
+                        tagPalette: BeeBoardViewModel.groupColorPalette,
                         onSelect: { viewModel.select(pinId: pin.id) },
                         onMove: { point in viewModel.movePin(id: pin.id, to: point) },
                         onRequestDelete: { viewModel.requestDelete(pinId: pin.id) },

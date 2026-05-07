@@ -9,7 +9,7 @@ struct BeeBoardPinCard: View {
     let isMultiSelected: Bool
     let isDimmed: Bool
     let tags: [String]
-    let palette: [String]
+    let tagPalette: [String]
     let onSelect: () -> Void
     let onMove: (CGPoint) -> Void
     let onRequestDelete: () -> Void
@@ -24,13 +24,6 @@ struct BeeBoardPinCard: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Priority stripe
-            if pin.priority > 0 {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(priorityColor)
-                    .frame(width: 4)
-            }
-
             VStack(alignment: .leading, spacing: themeManager.spacing(.sm)) {
                 header
 
@@ -38,7 +31,6 @@ struct BeeBoardPinCard: View {
                     editFields
                     priorityPicker
                     tagEditor
-                    colourPicker
                 } else {
                     readOnlyBody
                     tagPills
@@ -211,30 +203,6 @@ struct BeeBoardPinCard: View {
         .font(themeManager.font(.caption))
     }
 
-    private var colourPicker: some View {
-        HStack(spacing: themeManager.spacing(.xs)) {
-            ForEach(palette, id: \.self) { hex in
-                Button {
-                    pin.colorHex = hex
-                } label: {
-                    Circle()
-                        .fill(Color(hex: hex) ?? themeManager.color(.accentPrimary))
-                        .frame(width: 16, height: 16)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    pin.colorHex == hex
-                                        ? themeManager.color(.textPrimary)
-                                        : themeManager.color(.borderSubtle),
-                                    lineWidth: pin.colorHex == hex ? 2 : 1
-                                )
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     private var priorityColor: Color {
         switch pin.priority {
         case 1: return Color(hex: "#60a5fa") ?? .blue
@@ -248,6 +216,21 @@ struct BeeBoardPinCard: View {
     private var cardBackground: some View {
         RoundedRectangle(cornerRadius: themeManager.radius(.lg))
             .fill(themeManager.color(.bgElevated))
+            .overlay(
+                RoundedRectangle(cornerRadius: themeManager.radius(.lg))
+                    .fill(priorityColor.opacity(tintOpacity))
+            )
+    }
+
+    private var tintOpacity: Double {
+        switch pin.priority {
+        case 0: return 0.06
+        case 1: return 0.12
+        case 2: return 0.15
+        case 3: return 0.18
+        case 4: return 0.22
+        default: return 0.06
+        }
     }
 
     private var cardBorder: some View {
@@ -287,8 +270,8 @@ struct BeeBoardPinCard: View {
     }
 
     private func tagColor(for tag: String) -> Color {
-        let index = abs(tag.hashValue) % max(palette.count, 1)
-        return Color(hex: palette[index]) ?? themeManager.color(.accentPrimary)
+        let index = abs(tag.hashValue) % max(tagPalette.count, 1)
+        return Color(hex: tagPalette[index]) ?? themeManager.color(.accentPrimary)
     }
 
     private var titleBinding: Binding<String> {
@@ -322,7 +305,7 @@ struct BeeBoardPinCard: View {
         isMultiSelected: false,
         isDimmed: false,
         tags: ["sales", "ai"],
-        palette: BeeBoardViewModel.warmAuroraPalette,
+        tagPalette: BeeBoardViewModel.groupColorPalette,
         onSelect: {},
         onMove: { _ in },
         onRequestDelete: {},

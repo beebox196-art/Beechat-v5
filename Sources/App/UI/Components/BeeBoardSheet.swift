@@ -30,7 +30,7 @@ struct BeeBoardSheet: View {
         .onAppear { viewModel.load() }
         .sheet(isPresented: $viewModel.isCreatingGroup) {
             BeeBoardCreateGroupSheet(
-                palette: BeeBoardViewModel.warmAuroraPalette,
+                palette: BeeBoardViewModel.groupColorPalette,
                 onCreate: { name, colorHex in
                     viewModel.createGroup(name: name, colorHex: colorHex)
                 }
