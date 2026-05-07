@@ -84,6 +84,12 @@ struct BeeBoardPinCard: View {
                 .fill(Color(hex: pin.colorHex) ?? themeManager.color(.accentPrimary))
                 .frame(width: 10, height: 10)
 
+            if pin.pinType == "rich" {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 9))
+                    .foregroundColor(themeManager.color(.textSecondary))
+            }
+
             if isSelected {
                 TextField("Title", text: titleBinding)
                     .textFieldStyle(.plain)

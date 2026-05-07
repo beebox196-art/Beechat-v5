@@ -38,8 +38,14 @@ struct BeeBoardSheet: View {
         ) {
             if let detailPinId = viewModel.detailPinId,
                let pinIndex = viewModel.pins.firstIndex(where: { $0.id == detailPinId }) {
-                BeeBoardPinDetailView(pin: viewModel.binding(for: viewModel.pins[pinIndex]))
-                    .environment(themeManager)
+                BeeBoardPinDetailView(
+                    pin: viewModel.binding(for: viewModel.pins[pinIndex]),
+                    onAddAttachment: { url in viewModel.addAttachment(from: url, to: detailPinId) },
+                    onRemoveAttachment: { id in viewModel.removeAttachment(id: id, from: detailPinId) },
+                    onAddLink: { url in viewModel.addLink(url: url, to: detailPinId) },
+                    onRemoveLink: { id in viewModel.removeLink(id: id, from: detailPinId) }
+                )
+                .environment(themeManager)
             }
         }
         .alert(

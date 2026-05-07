@@ -442,6 +442,114 @@ final class BeeBoardViewModel {
         canUndoSort = false
     }
 
+    // MARK: - PinData, Attachments & Links
+
+    func pinData(for pin: Pin) -> PinData {
+        guard let data = pin.pinData?.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(PinData.self, from: data) else {
+            return PinData()
+        }
+        return decoded
+    }
+
+    func setPinData(_ pinData: PinData, for pinId: String) {
+        guard let index = pins.firstIndex(where: { $0.id == pinId }) else { return }
+        guard let data = try? JSONEncoder().encode(pinData),
+              let string = String(data: data, encoding: .utf8) else { return }
+
+        pins[index].pinData = string
+        pins[index].pinType = (pinData.attachments.isEmpty && pinData.links.isEmpty) ? "note" : "rich"
+        pins[index].updatedAt = Date()
+        scheduleSave(pins[index])
+    }
+
+    func addAttachment(from url: URL, to pinId: String) {
+        do {
+            let relativePath = try AttachmentStorage.copy(from: url)
+            let isImage = ["png", "jpg", "jpeg", "gif", "webp", "tiff", "bmp", "heic"].contains(
+                url.pathExtension.lowercased()
+            )
+            let attachment = PinAttachment(
+                fileName: url.lastPathComponent,
+                fileExtension: url.pathExtension,
+                isImage: isImage,
+                relativePath: relativePath
+            )
+            var data = pinData(for: pins.first { $0.id == pinId } ?? Pin(boardId: "", title: ""))
+            data.attachments.append(attachment)
+            setPinData(data, for: pinId)
+        } catch {
+            errorMessage = "Failed to add attachment: \(error.localizedDescription)"
+        }
+    }
+
+    func removeAttachment(id: String, from pinId: String) {
+        guard let pin = pins.first(where: { $0.id == pinId }) else { return }
+        var data = pinData(for: pin)
+        if let attachment = data.attachments.first(where: { $0.id == id }) {
+            AttachmentStorage.remove(relativePath: attachment.relativePath)
+        }
+        data.attachments.removeAll { $0.id == id }
+        setPinData(data, for: pinId)
+    }
+
+    func addLink(url: String, to pinId: String) {
+        guard let pin = pins.first(where: { $0.id == pinId }) else { return }
+        var data = pinData(for: pin)
+        let link = PinLink(url: url)
+        data.links.append(link)
+        setPinData(data, for: pinId)
+
+        // Fetch title asynchronously
+        fetchLinkTitle(linkId: link.id, url: url, pinId: pinId)
+    }
+
+    func removeLink(id: String, from pinId: String) {
+        guard let pin = pins.first(where: { $0.id == pinId }) else { return }
+        var data = pinData(for: pin)
+        data.links.removeAll { $0.id == id }
+        setPinData(data, for: pinId)
+    }
+
+    private func fetchLinkTitle(linkId: String, url: String, pinId: String) {
+        Task {
+            guard let url = URL(string: url) else { return }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 8
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", forHTTPHeaderField: "User-Agent")
+
+            let title: String? = await withCheckedContinuation { continuation in
+                URLSession.shared.dataTask(with: request) { data, response, _ in
+                    guard let data,
+                          let html = String(data: data, encoding: .utf8),
+                          let range = html.range(of: "<title[^>]*>", options: .regularExpression),
+                          let closeRange = html.range(of: "</title>", range: range.lowerBound..<html.endIndex) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let titleContent = String(html[range.upperBound..<closeRange.lowerBound])
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    continuation.resume(returning: titleContent.isEmpty ? nil : titleContent)
+                }.resume()
+            }
+
+            if let title {
+                await MainActor.run { [weak self] in
+                    self?.updateLinkTitle(linkId: linkId, title: title, pinId: pinId)
+                }
+            }
+        }
+    }
+
+    private func updateLinkTitle(linkId: String, title: String, pinId: String) {
+        guard let index = pins.firstIndex(where: { $0.id == pinId }) else { return }
+        var data = pinData(for: pins[index])
+        if let linkIndex = data.links.firstIndex(where: { $0.id == linkId }) {
+            data.links[linkIndex].title = title
+            setPinData(data, for: pinId)
+        }
+    }
+
     // MARK: - Private
 
     private func applyGridLayout(to sortedPins: [Pin]) {

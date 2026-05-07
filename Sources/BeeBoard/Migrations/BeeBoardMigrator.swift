@@ -71,6 +71,19 @@ public enum BeeBoardMigrator {
             }
         }
 
+        migrator.registerMigration("BeeBoardMigration004_PinData") { db in
+            if try db.columns(in: "beeboard_pins").first(where: { $0.name == "pinType" }) == nil {
+                try db.alter(table: "beeboard_pins") { t in
+                    t.add(column: "pinType", .text).notNull().defaults(to: "note")
+                }
+            }
+            if try db.columns(in: "beeboard_pins").first(where: { $0.name == "pinData" }) == nil {
+                try db.alter(table: "beeboard_pins") { t in
+                    t.add(column: "pinData", .text)  // JSON string, nullable
+                }
+            }
+        }
+
         try migrator.migrate(writer)
     }
 }
