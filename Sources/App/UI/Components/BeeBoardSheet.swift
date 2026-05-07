@@ -28,15 +28,6 @@ struct BeeBoardSheet: View {
         .frame(minWidth: 980, minHeight: 680)
         .background(themeManager.color(.bgSurface))
         .onAppear { viewModel.load() }
-        .sheet(isPresented: $viewModel.isCreatingGroup) {
-            BeeBoardCreateGroupSheet(
-                palette: BeeBoardViewModel.groupColorPalette,
-                onCreate: { name, colorHex in
-                    viewModel.createGroup(name: name, colorHex: colorHex)
-                }
-            )
-            .environment(themeManager)
-        }
         .sheet(
             isPresented: Binding(
                 get: { viewModel.detailPinId != nil },
@@ -89,20 +80,6 @@ struct BeeBoardSheet: View {
             }
             .buttonStyle(.plain)
             .help("Create Pin")
-
-            Button(action: { viewModel.toggleSelectionMode() }) {
-                Image(systemName: viewModel.isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
-                    .font(themeManager.font(.subheading))
-                    .foregroundColor(viewModel.isSelectionMode ? themeManager.color(.accentPrimary) : themeManager.color(.textSecondary))
-            }
-            .buttonStyle(.plain)
-            .help("Selection Mode")
-
-            Button("Group") {
-                viewModel.isCreatingGroup = true
-            }
-            .disabled(viewModel.selectedPinIds.count < 2)
-            .foregroundColor(viewModel.selectedPinIds.count >= 2 ? themeManager.color(.accentPrimary) : themeManager.color(.textSecondary))
 
             Picker("Sort", selection: sortBinding) {
                 Text("Manual").tag(BeeBoardSortOption?.none)

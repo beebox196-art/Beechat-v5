@@ -6,7 +6,6 @@ struct BeeBoardPinCard: View {
     @Binding var pin: Pin
 
     let isSelected: Bool
-    let isMultiSelected: Bool
     let isDimmed: Bool
     let tags: [String]
     let tagPalette: [String]
@@ -236,15 +235,9 @@ struct BeeBoardPinCard: View {
     private var cardBorder: some View {
         RoundedRectangle(cornerRadius: themeManager.radius(.lg))
             .stroke(
-                borderColor,
-                lineWidth: isSelected || isMultiSelected ? 2 : 1
+                isSelected ? themeManager.color(.accentPrimary) : themeManager.color(.borderSubtle),
+                lineWidth: isSelected ? 2 : 1
             )
-    }
-
-    private var borderColor: Color {
-        if isSelected { return themeManager.color(.accentPrimary) }
-        if isMultiSelected { return themeManager.color(.accentSecondary) }
-        return themeManager.color(.borderSubtle)
     }
 
     private var dragGesture: some Gesture {
@@ -302,7 +295,6 @@ struct BeeBoardPinCard: View {
             )
         ),
         isSelected: true,
-        isMultiSelected: false,
         isDimmed: false,
         tags: ["sales", "ai"],
         tagPalette: BeeBoardViewModel.groupColorPalette,

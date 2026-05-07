@@ -12,18 +12,6 @@ struct BeeBoardCanvasView: View {
             ZStack(alignment: .topLeading) {
                 canvasBackground
 
-                // Groups behind pins
-                ForEach(viewModel.groupFrames()) { groupFrame in
-                    BeeBoardGroupView(
-                        groupFrame: groupFrame,
-                        onMoveBy: { translation in
-                            viewModel.moveGroup(id: groupFrame.group.id, by: translation)
-                        }
-                    )
-                    .position(x: groupFrame.rect.midX, y: groupFrame.rect.midY)
-                    .zIndex(0)
-                }
-
                 if viewModel.pins.isEmpty {
                     emptyState
                         .position(x: 420, y: 260)
@@ -33,7 +21,6 @@ struct BeeBoardCanvasView: View {
                     BeeBoardPinCard(
                         pin: viewModel.binding(for: pin),
                         isSelected: viewModel.selectedPinId == pin.id,
-                        isMultiSelected: viewModel.selectedPinIds.contains(pin.id),
                         isDimmed: viewModel.isDimmedBySearch(pin),
                         tags: viewModel.tags(for: pin),
                         tagPalette: BeeBoardViewModel.groupColorPalette,
@@ -49,7 +36,7 @@ struct BeeBoardCanvasView: View {
                         y: CGFloat(pin.positionY)
                     )
                     .opacity(viewModel.isDimmedBySearch(pin) ? 0.25 : 1.0)
-                    .zIndex(viewModel.selectedPinId == pin.id ? 3 : 2)
+                    .zIndex(viewModel.selectedPinId == pin.id ? 2 : 1)
                 }
             }
             .frame(width: canvasSize.width, height: canvasSize.height)
