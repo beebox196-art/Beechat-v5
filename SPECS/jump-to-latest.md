@@ -1,7 +1,7 @@
 # BeeChat v5: Jump to Latest Message
 
 **Spec ID:** BC5-SPEC-005  
-**Date:** 2026-05-08 (v3 — final, build-ready)  
+**Date:** 2026-05-08 (v4 — final, build-ready)  
 **Author:** Bee (coordinator)  
 **Reviewers:** Q (implementation), Mel (UX), Kieran (safety)  
 **Status:** APPROVED — Ready for Build  
@@ -23,18 +23,26 @@ When a conversation has many messages, BeeChat sometimes jumps to the top on top
 
 ## Solution
 
-All changes in one file: `MessageCanvas.swift`.
+All changes in two files: `MessageCanvas.swift` (primary) and `MainWindow.swift` (one-line parameter addition).
 
 ### 1. Scroll position detection (macOS 14 compatible)
 
-Use GeometryReader + PreferenceKey (not `onScrollGeometryChange`, which requires macOS 15+). Add hysteresis to prevent button flicker:
+Use GeometryReader + PreferenceKey (not `onScrollGeometryChange`, which requires macOS 15+). Add hysteresis to prevent button flicker.
+
+**Add coordinate space to the ScrollView** (without this, GeometryReader returns `.zero`):
+
+```swift
+ScrollView(.vertical, showsIndicators: true) { ... }
+    .coordinateSpace(name: "messageScrollView")
+```
+
+New state:
 
 ```swift
 @State private var isAtBottom: Bool = true
-@State private var lastScrollGeometry: CGFloat = 0
 
-private let enterBottomThreshold: CGFloat = 50   // must be within 50px to count as "at bottom"
-private let leaveBottomThreshold: CGFloat = 120  // must be >120px away to count as "scrolled up"
+private let enterBottomThreshold: CGFloat = 50   // within 50px = "at bottom"
+private let leaveBottomThreshold: CGFloat = 120  // >120px away = "scrolled up"
 ```
 
 Place a GeometryReader on the bottom-anchor:
@@ -53,20 +61,16 @@ Color.clear
     )
 ```
 
-Handle preference change with hysteresis:
+Handle preference change with hysteresis. `bottomY` is the minY of the bottom-anchor in the scroll view's coordinate space:
 
 ```swift
 .onPreferenceChange(BottomAnchorPreferenceKey.self) { bottomY in
-    lastScrollGeometry = bottomY
-    let visibleHeight = // read from another preference or estimate
-    let distanceFromBottom = bottomY
-    
-    if distanceFromBottom < enterBottomThreshold {
+    if bottomY < enterBottomThreshold {
         isAtBottom = true
-    } else if distanceFromBottom > leaveBottomThreshold {
+    } else if bottomY > leaveBottomThreshold {
         isAtBottom = false
     }
-    // Between enterBottom and leaveBottom: keep current state (hysteresis)
+    // Between thresholds: keep current state (hysteresis prevents flicker)
 }
 ```
 
@@ -86,9 +90,9 @@ Gate ALL scroll-triggering handlers on `isAtBottom`, with two exceptions:
         anchorMessageId = nil
     } else if isAtBottom || isUserMessage || isStreaming {
         scrollToBottom()
-    } else {
-        showJumpButton = true
     }
+    // else: user is scrolled up reading — don't force scroll.
+    // Jump button shows automatically via !isAtBottom.
 }
 .onChange(of: isStreaming) { _, isNowStreaming in
     if isNowStreaming { scrollToBottom() }
@@ -98,7 +102,7 @@ Gate ALL scroll-triggering handlers on `isAtBottom`, with two exceptions:
 }
 ```
 
-Note: `isStreaming` and `showStreamingBubble` handlers always scroll — streaming should auto-follow regardless of scroll position. This matches user expectations.
+Note: `isStreaming` and `showStreamingBubble` handlers always scroll — streaming should auto-follow regardless of scroll position. This matches user expectations. No separate `showJumpButton` state — button visibility is driven entirely by `!isAtBottom`.
 
 ### 3. Detect user-sent messages
 
@@ -109,9 +113,11 @@ private var isUserMessage: Bool {
 }
 ```
 
-When the user sends a message, it's added to the array and `messages.count` fires. The handler checks `isUserMessage` and always scrolls.
+When the user sends a message, it's added to the array and `messages.count` fires. The handler checks `isUserMessage` and always scrolls. Confirmed: `Message.role` is `public var role: String`.
 
 ### 4. Jump to Latest button
+
+Button visibility driven by `!isAtBottom`. No separate `showJumpButton` state.
 
 ```swift
 if !isAtBottom {
@@ -137,7 +143,7 @@ if !isAtBottom {
 
 ### 5. Fix "scrolls to top" bug with retry
 
-Store `ScrollViewProxy` in `@State` for safe async capture. Use retry mechanism:
+Store `ScrollViewProxy` in `@State` for safe async capture. Set it as the first line of `.onAppear` before calling `scrollToBottom()`. Use retry mechanism:
 
 ```swift
 @State private var scrollProxy: ScrollViewProxy?
@@ -157,13 +163,31 @@ private func scrollToBottom() {
 }
 ```
 
+In `.onAppear`:
+```swift
+.onAppear {
+    scrollProxy = proxy
+    scrollToBottom()
+}
+```
+
+**Note on 200ms fallback:** If the user scrolls up within 200ms of a `scrollToBottom()` call, the fallback could override their manual scroll. This is an extremely unlikely edge case (user must send a message AND start scrolling up within 200ms). Accepted risk.
+
 ### 6. Reset on topic switch
+
+Add `topicId: String?` parameter to `MessageCanvas`. Pass `messageViewModel.selectedTopicId` from MainWindow.
+
+```swift
+var topicId: String? = nil
+```
 
 When the topic changes, reset scroll state:
 
 ```swift
-.onChange(of: topicId) { _, _ in
-    isAtBottom = true
+.onChange(of: topicId) { _, newId in
+    if newId != nil {
+        isAtBottom = true
+    }
 }
 ```
 
@@ -171,7 +195,7 @@ This ensures a new topic always starts scrolled to bottom, even if the previous 
 
 ### 7. Clean up dead state
 
-Remove `@State private var autoScroll = true` — it's never used.
+Remove `@State private var autoScroll = true` — it's never used. Confirmed: only reference in the entire codebase is the declaration line.
 
 ### 8. PreferenceKey definition
 
@@ -184,13 +208,15 @@ private struct BottomAnchorPreferenceKey: PreferenceKey {
 }
 ```
 
+Available since macOS 10.15. No availability issues on macOS 14.
+
 ---
 
 ## What Does NOT Change
 
 - `MessageListObserver` — no changes
 - `MessageViewModel` — no changes
-- `MainWindow` — no changes (except `MessageCanvas` gets a `topicId` parameter if needed)
+- `MainWindow` — passes `topicId: messageViewModel.selectedTopicId` to `MessageCanvas` (one-line addition)
 - `Composer` — no changes
 - Database — no changes
 - `SyncBridge` — no changes
@@ -202,21 +228,23 @@ private struct BottomAnchorPreferenceKey: PreferenceKey {
 
 ## Implementation Steps
 
-1. Remove `@State private var autoScroll = true`
-2. Add `@State private var isAtBottom: Bool = true`
-3. Add `@State private var scrollProxy: ScrollViewProxy?`
-4. Add `@State private var lastScrollGeometry: CGFloat = 0`
-5. Add `BottomAnchorPreferenceKey` struct
-6. Add GeometryReader overlay on `bottom-anchor`
-7. Add `.onPreferenceChange` with hysteresis thresholds (50px/120px)
-8. Store proxy in `.onAppear` and update all `scrollToBottom` call sites
-9. Gate `.onChange(of: messages.count)` on `isAtBottom || isUserMessage || isStreaming`
-10. Keep `.onChange(of: isStreaming)` and `.onChange(of: showStreamingBubble)` always-scrolling (streaming auto-follows)
-11. Add Jump button overlay
-12. Add `.onChange(of: topicId)` to reset `isAtBottom`
-13. Add retry mechanism to `scrollToBottom()`
-14. Add accessibility labels to Jump button
-15. Test all 12 scenarios
+1. Add `var topicId: String? = nil` parameter to `MessageCanvas`
+2. Pass `topicId: messageViewModel.selectedTopicId` from `MainWindow`
+3. Remove `@State private var autoScroll = true`
+4. Add `@State private var isAtBottom: Bool = true`
+5. Add `@State private var scrollProxy: ScrollViewProxy?`
+6. Add `BottomAnchorPreferenceKey` struct
+7. Add `.coordinateSpace(name: "messageScrollView")` to the ScrollView
+8. Add GeometryReader overlay on `bottom-anchor`
+9. Add `.onPreferenceChange` with hysteresis thresholds (50px/120px)
+10. Store proxy in `.onAppear` (set `scrollProxy = proxy` as first line) and update all `scrollToBottom` call sites
+11. Gate `.onChange(of: messages.count)` on `isAtBottom || isUserMessage || isStreaming`
+12. Keep `.onChange(of: isStreaming)` and `.onChange(of: showStreamingBubble)` always-scrolling (streaming auto-follows)
+13. Add Jump button overlay (visibility driven by `!isAtBottom`, no separate `showJumpButton` state)
+14. Add `.onChange(of: topicId)` to reset `isAtBottom`
+15. Add retry mechanism to `scrollToBottom()`
+16. Add accessibility labels to Jump button
+17. Test all 12 scenarios
 
 **Estimated: 0.75 day**
 
@@ -249,7 +277,9 @@ private struct BottomAnchorPreferenceKey: PreferenceKey {
 | 2 | Retry causes visible double-scroll | Very Low | Low | Second attempt is unanimated no-op if first succeeded |
 | 3 | `isAtBottom` not reset on topic switch | N/A | N/A | Explicit `.onChange(of: topicId)` reset |
 | 4 | Streaming forces scroll when user scrolled up | By design | Low | Matches user expectations — streams auto-follow |
-| 5 | LazyVStack doesn't render bottom-anchor | Low | Medium | Retry fallback after 200ms; `.id()` on MessageCanvas forces recreation |
+| 5 | LazyVStack doesn't render bottom-anchor | Low | Medium | Retry fallback after 200ms |
+| 6 | 200ms fallback overrides manual scroll | Very Low | Low | User must scroll up within 200ms of send — accepted risk |
+| 7 | `scrollProxy` goes stale across view rebuilds | Very Low | Low | `scrollTo` on stale proxy is a no-op, not a crash |
 
 ---
 
