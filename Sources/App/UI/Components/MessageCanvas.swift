@@ -29,9 +29,7 @@ struct MessageCanvas: View {
     @State private var scrollProxy: ScrollViewProxy?
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String?
-
-    private let enterBottomThreshold: CGFloat = 50
-    private let leaveBottomThreshold: CGFloat = 120
+    @State private var debounceTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -79,19 +77,26 @@ struct MessageCanvas: View {
                         }
 
                         Color.clear
-                            .frame(height: 1)
+                            .frame(height: 120)
                             .id("bottom-anchor")
-                            .overlay(
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: BottomAnchorPreferenceKey.self,
-                                        value: geo.frame(in: .named("messageScrollView")).minY
-                                    )
+                            .onAppear {
+                                debounceTask?.cancel()
+                                debounceTask = Task {
+                                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                                    guard !Task.isCancelled else { return }
+                                    await MainActor.run { isAtBottom = true }
                                 }
-                            )
+                            }
+                            .onDisappear {
+                                debounceTask?.cancel()
+                                debounceTask = Task {
+                                    try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                                    guard !Task.isCancelled else { return }
+                                    await MainActor.run { isAtBottom = false }
+                                }
+                            }
                     }
                 }
-                .coordinateSpace(name: "messageScrollView")
                 .scrollContentBackground(.hidden)
                 .background(
                     WidthReader { width in
@@ -101,14 +106,6 @@ struct MessageCanvas: View {
                 )
                 .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
                     measuredWidth = newWidth
-                }
-                .onPreferenceChange(BottomAnchorPreferenceKey.self) { bottomY in
-                    if bottomY < enterBottomThreshold {
-                        isAtBottom = true
-                    } else if bottomY > leaveBottomThreshold {
-                        isAtBottom = false
-                    }
-                    // Between thresholds: keep current state (hysteresis prevents flicker)
                 }
                 .onChange(of: messages.count) { _, _ in
                     if let anchorId = anchorMessageId {
@@ -209,10 +206,4 @@ private struct WidthPreferenceKey: PreferenceKey {
     }
 }
 
-/// Preference key for tracking the bottom anchor position in the scroll view.
-private struct BottomAnchorPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
+
