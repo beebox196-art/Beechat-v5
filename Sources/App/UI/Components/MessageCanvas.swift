@@ -31,6 +31,7 @@ struct MessageCanvas: View {
     @State private var anchorMessageId: String?
     @State private var debounceTask: Task<Void, Never>?
     @State private var lastScrollTime: Date = .distantPast
+    @State private var pendingTopicScroll: Bool = false
 
     var body: some View {
         ZStack {
@@ -78,7 +79,7 @@ struct MessageCanvas: View {
                         }
 
                         Color.clear
-                            .frame(height: 120)
+                            .frame(height: 2)
                             .id("bottom-anchor")
                             .onAppear {
                                 debounceTask?.cancel()
@@ -114,6 +115,10 @@ struct MessageCanvas: View {
                             proxy.scrollTo(anchorId, anchor: .top)
                         }
                         anchorMessageId = nil
+                    } else if pendingTopicScroll {
+                        // Topic switched — scroll to bottom once messages render
+                        pendingTopicScroll = false
+                        scrollToBottom(animated: true)
                     } else if isAtBottom || isUserMessage || isStreaming {
                         scrollToBottom(animated: false)
                     }
@@ -136,7 +141,12 @@ struct MessageCanvas: View {
                     if newId != nil {
                         isAtBottom = true
                         lastScrollTime = .distantPast
-                        scrollToBottom(animated: true)
+                        if messages.isEmpty {
+                            // No messages yet — defer scroll until they render
+                            pendingTopicScroll = true
+                        } else {
+                            scrollToBottom(animated: true)
+                        }
                     }
                 }
                 .onAppear {
@@ -185,19 +195,24 @@ struct MessageCanvas: View {
             lastScrollTime = now
         }
 
+        // Prefer scrolling to the last message when available — more reliable than
+        // bottom-anchor because the anchor is only 2pt and ScrollView may not
+        // layout LazyVStack content immediately on topic switch.
+        let targetId = messages.last?.id ?? "bottom-anchor"
+
         if animated {
             DispatchQueue.main.async { [proxy] in
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                    proxy.scrollTo(targetId, anchor: .bottom)
                 }
             }
-            // Fallback for LazyVStack layout timing on topic switch
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [proxy] in
-                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+            // Fallback: re-scroll after layout settles (LazyVStack renders asynchronously)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [proxy] in
+                proxy.scrollTo(targetId, anchor: .bottom)
             }
         } else {
             // Synchronous — no animation, no fallback, no dispatch delay
-            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+            proxy.scrollTo(targetId, anchor: .bottom)
         }
     }
 }
