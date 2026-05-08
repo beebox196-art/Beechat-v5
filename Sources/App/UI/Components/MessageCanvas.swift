@@ -30,6 +30,7 @@ struct MessageCanvas: View {
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String?
     @State private var debounceTask: Task<Void, Never>?
+    @State private var lastScrollTime: Date = .distantPast
 
     var body: some View {
         ZStack {
@@ -114,18 +115,18 @@ struct MessageCanvas: View {
                         }
                         anchorMessageId = nil
                     } else if isAtBottom || isUserMessage || isStreaming {
-                        scrollToBottom()
+                        scrollToBottom(animated: false)
                     }
                     // else: user is scrolled up reading — don't force scroll.
                 }
                 .onChange(of: isStreaming) { _, isNowStreaming in
                     if isNowStreaming {
-                        scrollToBottom()
+                        scrollToBottom(animated: false)
                     }
                 }
                 .onChange(of: showStreamingBubble) { _, isShowing in
                     if isShowing {
-                        scrollToBottom()
+                        scrollToBottom(animated: false)
                     }
                 }
                 .onChange(of: thinkingState) { oldState, newState in
@@ -134,11 +135,13 @@ struct MessageCanvas: View {
                 .onChange(of: topicId) { _, newId in
                     if newId != nil {
                         isAtBottom = true
+                        lastScrollTime = .distantPast
+                        scrollToBottom(animated: true)
                     }
                 }
                 .onAppear {
                     scrollProxy = proxy
-                    scrollToBottom()
+                    scrollToBottom(animated: true)
                 }
             }
             .environment(\.canvasWidth, measuredWidth)
@@ -146,7 +149,7 @@ struct MessageCanvas: View {
             // Jump to Latest button — visible when user has scrolled up
             if !isAtBottom {
                 Button(action: {
-                    scrollToBottom()
+                    scrollToBottom(animated: true)
                     isAtBottom = true
                 }) {
                     Image(systemName: "chevron.down")
@@ -172,16 +175,28 @@ struct MessageCanvas: View {
         return lastMessage.role == "user"
     }
 
-    private func scrollToBottom() {
+    private func scrollToBottom(animated: Bool = false) {
         guard let proxy = scrollProxy else { return }
-        // First attempt: next run loop (after layout)
-        DispatchQueue.main.async { [proxy] in
-            withAnimation(.easeInOut(duration: 0.2)) {
+
+        // During streaming/thinking, deduplicate: skip if scrolled recently
+        if isStreaming || thinkingState != .idle {
+            let now = Date()
+            guard now.timeIntervalSince(lastScrollTime) > 0.3 else { return }
+            lastScrollTime = now
+        }
+
+        if animated {
+            DispatchQueue.main.async { [proxy] in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                }
+            }
+            // Fallback for LazyVStack layout timing on topic switch
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [proxy] in
                 proxy.scrollTo("bottom-anchor", anchor: .bottom)
             }
-        }
-        // Fallback: 200ms later (guarantees LazyVStack has rendered)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [proxy] in
+        } else {
+            // Synchronous — no animation, no fallback, no dispatch delay
             proxy.scrollTo("bottom-anchor", anchor: .bottom)
         }
     }
