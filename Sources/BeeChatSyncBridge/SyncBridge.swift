@@ -52,6 +52,8 @@ public actor SyncBridge {
     /// Cooldown tracker: messages remaining before next auto-reset check
     private var resetCooldownCount: [String: Int] = [:]
     private static let resetCooldownMessages = 5
+    /// Tracks sessions that have already received topic context injection
+    private var contextInjectedKeys: Set<String> = []
 
     public init(config: SyncBridgeConfiguration) {
         self.config = config
@@ -188,7 +190,7 @@ public actor SyncBridge {
         return messages
     }
 
-    public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String {
+    public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil, topic: Topic? = nil) async throws -> String {
         guard !sendingSessionKeys.contains(sessionKey) else {
             throw SyncBridgeError.concurrentSendInProgress
         }
@@ -205,6 +207,7 @@ public actor SyncBridge {
         }
         
         var effectiveText = text
+        var didAutoReset = false
         
         // Check cooldown
         let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
@@ -233,6 +236,7 @@ public actor SyncBridge {
                         if ok {
                             effectiveText = formatCombinedContext(recentMessages, userMessage: text)
                             resetCooldownCount[sessionKey] = Self.resetCooldownMessages
+                            didAutoReset = true
                         }
                     } catch {
                         print("[SyncBridge] Auto-reset failed for \(sessionKey): \(error)")
@@ -243,6 +247,15 @@ public actor SyncBridge {
                 // Gateway unreachable — send without reset
                 print("[SyncBridge] Usage check failed, sending without reset: \(error)")
             }
+        }
+        
+        // Topic context injection
+        if isTopicContextEnabled, let topic, !contextInjectedKeys.contains(sessionKey) {
+            if !didAutoReset {
+                let header = buildContextHeader(topic: topic)
+                effectiveText = "\(header)\n\n\(effectiveText)"
+            }
+            contextInjectedKeys.insert(sessionKey)
         }
         
         // Create delivery ledger entry
@@ -288,7 +301,21 @@ public actor SyncBridge {
     // MARK: - Session Reset Flow
 
     public func resetSession(sessionKey: String) async throws -> Bool {
+        contextInjectedKeys.remove(sessionKey)  // re-inject on next send
         return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
+    }
+
+    // MARK: - Topic Context Injection
+
+    /// Feature flag for topic context injection. Uses UserDefaults directly
+    /// because @AppStorage doesn't compile in an actor context.
+    private var isTopicContextEnabled: Bool {
+        UserDefaults.standard.object(forKey: "feature_topicContextInjection") as? Bool ?? true
+    }
+
+    /// Build a context header that tells the agent which topic the user is in.
+    func buildContextHeader(topic: Topic) -> String {
+        return "[TOPIC-CONTEXT]\nTopic: \(topic.name)"
     }
 
     // MARK: - Auto-reset helpers
@@ -308,6 +335,7 @@ public actor SyncBridge {
                 if let content = msg.content {
                     if content.hasPrefix("[SESSION-CONTEXT]") { return false }
                     if content.hasPrefix("[SESSION-RESET]") { return false }
+                    if content.hasPrefix("[TOPIC-CONTEXT]") { return false }
                     if msg.role == "assistant" && content.contains("[tool_use:") { return false }
                 }
                 return true

@@ -407,11 +407,13 @@ struct MainWindow: View {
                 print("[MainWindow] Created topic: \(title) (id=\(topicId), gatewayKey=\(gatewayKey))")
 
                 if let bridge = appState.syncBridge {
+                    let newTopicForContext = Topic(id: topicId, name: title, sessionKey: gatewayKey)
                     do {
                         let runId = try await bridge.sendMessage(
                             sessionKey: gatewayKey,
                             text: "Start",
-                            thinking: nil
+                            thinking: nil,
+                            topic: newTopicForContext
                         )
                         print("[MainWindow] Gateway session created for topic \(topicId), runId: \(runId)")
                     } catch {

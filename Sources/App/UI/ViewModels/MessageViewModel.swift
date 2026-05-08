@@ -138,9 +138,11 @@ final class MessageViewModel {
             BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — no syncBridge")
             return
         }
+        let topic: Topic? = topics.first(where: { $0.id == topicId }).map { Topic(id: $0.id, name: $0.title, sessionKey: $0.sessionKey) }
+
         do {
             BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for sessionKey=\(sessionKey)")
-            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text)
+            _ = try await bridge.sendMessage(sessionKey: sessionKey, text: text, topic: topic)
             BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for sessionKey=\(sessionKey)")
         } catch SyncBridgeError.concurrentSendInProgress {
             BeeChatLogger.log("[ThinkingBee] sendMessage — duplicate send to same session blocked: \(sessionKey)")

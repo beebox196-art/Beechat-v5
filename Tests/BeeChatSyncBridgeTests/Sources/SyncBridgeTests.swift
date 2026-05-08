@@ -304,4 +304,55 @@ final class SyncBridgeTests: XCTestCase {
         let updated = try ledgerRepo.fetchByIdempotencyKey("idem-1")
         XCTAssertEqual(updated?.status, .failed)
     }
+    
+    // MARK: - Topic Context Injection Tests
+
+    func testBuildContextHeaderReturnsCorrectFormat() async {
+        let topic = Topic(id: "test-id", name: "Topcon-Eval", sessionKey: "agent:main:test")
+        let header = await bridge().buildContextHeader(topic: topic)
+        XCTAssertEqual(header, "[TOPIC-CONTEXT]\nTopic: Topcon-Eval")
+    }
+
+    func testBuildContextHeaderWithSpecialCharacters() async {
+        let topic = Topic(id: "test-id", name: "AI & Crypto", sessionKey: "agent:main:test")
+        let header = await bridge().buildContextHeader(topic: topic)
+        XCTAssertEqual(header, "[TOPIC-CONTEXT]\nTopic: AI & Crypto")
+    }
+
+    func testFetchLocalHistoryFiltersTopicContext() async throws {
+        // Insert messages with different prefixes
+        let sessionKey = "session-filter-test-\(UUID().uuidString)"
+        let m1 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "[TOPIC-CONTEXT]\nTopic: Test", timestamp: Date())
+        let m2 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "[SESSION-CONTEXT] Continuing", timestamp: Date())
+        let m3 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "[SESSION-RESET] Reset", timestamp: Date())
+        let m4 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "Hello world", timestamp: Date())
+        try DatabaseManager.shared.write { db in
+            var msg = m1; try msg.insert(db)
+            msg = m2; try msg.insert(db)
+            msg = m3; try msg.insert(db)
+            msg = m4; try msg.insert(db)
+        }
+
+        let bridgeInstance = bridge()
+        let result = try await bridgeInstance.fetchLocalHistory(sessionKey: sessionKey, limit: 30)
+
+        // Only the plain message should survive filtering
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result.first?.content, "Hello world")
+
+        // Cleanup
+        try DatabaseManager.shared.write { db in
+            try Message.filter(Column("sessionId") == sessionKey).deleteAll(db)
+        }
+    }
+
+    // MARK: - Helper
+
+    private func bridge() -> SyncBridge {
+        let config = SyncBridgeConfiguration(
+            gatewayClient: GatewayClient(config: .init(url: "http://localhost", token: "test")),
+            persistenceStore: store!
+        )
+        return SyncBridge(config: config)
+    }
 }
