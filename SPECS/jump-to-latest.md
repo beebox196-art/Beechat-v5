@@ -73,15 +73,11 @@ if !isAtBottom {
         scrollToBottom(proxy: proxy)
         isAtBottom = true
     }) {
-        HStack(spacing: 4) {
-            Image(systemName: "arrow.down")
-            Text("Latest")
-        }
-        .font(.caption)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
+        Image(systemName: "chevron.down")
+            .font(.system(size: 14, weight: .semibold))
+            .frame(width: 36, height: 36)
+            .background(.ultraThinMaterial)
+            .clipShape(Circle()))
     }
     .buttonStyle(.plain)
     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -222,8 +218,8 @@ This ensures the layout pass is complete before we try to scroll.
 
 ## Questions for Review
 
-1. **Jump button style** — Capsule with `.ultraThinMaterial` (frosted glass) is the macOS convention. Alternative: small circular button with chevron. Preference?
-2. **"New messages" count** — Should the button show a count? E.g. "3 new" vs just "Latest". Simpler without, but count adds information.
+1. ~~Jump button style~~ — **Circle with chevron down.** Decided: circular button with frosted glass background.
+2. ~~"New messages" count~~ — **No count.** Sidebar unread indicator handles this. Button is just a jump-to-latest affordance.
 3. **Animation** — Button appears/disappears with opacity+slide. Is this the right feel, or should it be instant?
 
 ---
