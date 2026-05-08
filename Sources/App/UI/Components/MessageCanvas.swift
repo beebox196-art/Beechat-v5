@@ -29,7 +29,6 @@ struct MessageCanvas: View {
     @State private var scrollProxy: ScrollViewProxy?
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String?
-    @State private var visibleHeight: CGFloat = 0
 
     private let enterBottomThreshold: CGFloat = 50
     private let leaveBottomThreshold: CGFloat = 120
@@ -95,26 +94,18 @@ struct MessageCanvas: View {
                 .coordinateSpace(name: "messageScrollView")
                 .scrollContentBackground(.hidden)
                 .background(
-                    GeometryReader { geo in
+                    WidthReader { width in
                         Color.clear
-                            .preference(key: WidthPreferenceKey.self, value: geo.size.width)
-                            .preference(key: VisibleHeightPreferenceKey.self, value: geo.size.height)
+                            .preference(key: WidthPreferenceKey.self, value: width)
                     }
                 )
                 .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
                     measuredWidth = newWidth
                 }
-                .onPreferenceChange(VisibleHeightPreferenceKey.self) { newHeight in
-                    visibleHeight = newHeight
-                }
                 .onPreferenceChange(BottomAnchorPreferenceKey.self) { bottomY in
-                    // bottomY = anchor's minY in scroll view coordinate space
-                    // When at bottom: bottomY ≈ visibleHeight (anchor visible near bottom edge)
-                    // When scrolled up: bottomY > visibleHeight (anchor is below visible area)
-                    let distanceBelowVisible = bottomY - visibleHeight
-                    if distanceBelowVisible < enterBottomThreshold {
+                    if bottomY < enterBottomThreshold {
                         isAtBottom = true
-                    } else if distanceBelowVisible > leaveBottomThreshold {
+                    } else if bottomY > leaveBottomThreshold {
                         isAtBottom = false
                     }
                     // Between thresholds: keep current state (hysteresis prevents flicker)
@@ -200,18 +191,19 @@ struct MessageCanvas: View {
 }
 
 
+private struct WidthReader<Content: View>: View {
+    var content: (CGFloat) -> Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            self.content(geometry.size.width)
+        }
+    }
+}
 
 /// Preference key for passing measured width up the view hierarchy.
 private struct WidthPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 1200
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-/// Preference key for tracking the visible height of the scroll view.
-private struct VisibleHeightPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
