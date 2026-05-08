@@ -191,6 +191,7 @@ struct MainWindow: View {
                         streamingContent: activeTopicStreamingContent,
                         thinkingState: syncBridgeObserver.thinkingState,
                         canLoadEarlier: messageViewModel.canLoadEarlier,
+                        topicId: messageViewModel.selectedTopicId,
                         onLoadEarlier: { messageViewModel.loadEarlierMessages() }
                     )
                 } else {

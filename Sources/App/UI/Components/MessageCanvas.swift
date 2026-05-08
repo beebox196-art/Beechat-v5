@@ -11,6 +11,7 @@ struct MessageCanvas: View {
     var streamingContent: String = ""
     var thinkingState: ThinkingState = .idle
     var canLoadEarlier: Bool = false
+    var topicId: String? = nil
     var onLoadEarlier: () -> Void = {}
 
     private var showStreamingBubble: Bool {
@@ -24,9 +25,13 @@ struct MessageCanvas: View {
         return true
     }
 
-    @State private var autoScroll = true
+    @State private var isAtBottom: Bool = true
+    @State private var scrollProxy: ScrollViewProxy?
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String?
+
+    private let enterBottomThreshold: CGFloat = 50
+    private let leaveBottomThreshold: CGFloat = 120
 
     var body: some View {
         ZStack {
@@ -76,8 +81,17 @@ struct MessageCanvas: View {
                         Color.clear
                             .frame(height: 1)
                             .id("bottom-anchor")
+                            .overlay(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: BottomAnchorPreferenceKey.self,
+                                        value: geo.frame(in: .named("messageScrollView")).minY
+                                    )
+                                }
+                            )
                     }
                 }
+                .coordinateSpace(name: "messageScrollView")
                 .scrollContentBackground(.hidden)
                 .background(
                     WidthReader { width in
@@ -88,40 +102,89 @@ struct MessageCanvas: View {
                 .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
                     measuredWidth = newWidth
                 }
+                .onPreferenceChange(BottomAnchorPreferenceKey.self) { bottomY in
+                    if bottomY < enterBottomThreshold {
+                        isAtBottom = true
+                    } else if bottomY > leaveBottomThreshold {
+                        isAtBottom = false
+                    }
+                    // Between thresholds: keep current state (hysteresis prevents flicker)
+                }
                 .onChange(of: messages.count) { _, _ in
                     if let anchorId = anchorMessageId {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             proxy.scrollTo(anchorId, anchor: .top)
                         }
                         anchorMessageId = nil
-                    } else {
-                        scrollToBottom(proxy: proxy)
+                    } else if isAtBottom || isUserMessage || isStreaming {
+                        scrollToBottom()
                     }
+                    // else: user is scrolled up reading — don't force scroll.
                 }
                 .onChange(of: isStreaming) { _, isNowStreaming in
                     if isNowStreaming {
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom()
                     }
                 }
                 .onChange(of: showStreamingBubble) { _, isShowing in
                     if isShowing {
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom()
                     }
                 }
                 .onChange(of: thinkingState) { oldState, newState in
                     BeeChatLogger.log("[ThinkingBee] MessageCanvas: thinkingState changed \(oldState) → \(newState)")
                 }
+                .onChange(of: topicId) { _, newId in
+                    if newId != nil {
+                        isAtBottom = true
+                    }
+                }
                 .onAppear {
-                    scrollToBottom(proxy: proxy)
+                    scrollProxy = proxy
+                    scrollToBottom()
                 }
             }
             .environment(\.canvasWidth, measuredWidth)
+
+            // Jump to Latest button — visible when user has scrolled up
+            if !isAtBottom {
+                Button(action: {
+                    scrollToBottom()
+                    isAtBottom = true
+                }) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Jump to latest message")
+                .accessibilityHint("Scrolls to the most recent message")
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .padding(.bottom, 12)
+                .padding(.trailing, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
         }
         .frame(maxHeight: .infinity)
     }
 
-    private func scrollToBottom(proxy: ScrollViewProxy) {
-        withAnimation(.easeInOut(duration: 0.2)) {
+    private var isUserMessage: Bool {
+        guard let lastMessage = messages.last else { return false }
+        return lastMessage.role == "user"
+    }
+
+    private func scrollToBottom() {
+        guard let proxy = scrollProxy else { return }
+        // First attempt: next run loop (after layout)
+        DispatchQueue.main.async { [proxy] in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+            }
+        }
+        // Fallback: 200ms later (guarantees LazyVStack has rendered)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [proxy] in
             proxy.scrollTo("bottom-anchor", anchor: .bottom)
         }
     }
@@ -141,6 +204,14 @@ private struct WidthReader<Content: View>: View {
 /// Preference key for passing measured width up the view hierarchy.
 private struct WidthPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 1200
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Preference key for tracking the bottom anchor position in the scroll view.
+private struct BottomAnchorPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
