@@ -32,7 +32,7 @@ No new UI. No new RPC methods. No gateway changes. Just a text prefix on the fir
 Additive column. Nil default. No data loss.
 
 ```swift
-migrator.registerMigration("v7_add_project_path") { db in
+migrator.registerMigration("Migration012_AddProjectPath") { db in
     try db.alter(table: "topics") { t in
         t.add(column: "projectPath", .text)
     }
@@ -62,15 +62,17 @@ extension Topic {
 
 ### 3. In-Memory Context Tracking
 
-In `SyncBridge`, add a set to track which sessions have already received topic context. Same pattern as existing `resetCooldownCount`.
+In `SyncBridge`, add a set to track which sessions have already been handled. Same pattern as existing `resetCooldownCount`.
 
 ```swift
 private var contextInjectedKeys: Set<String> = []
 ```
 
-- Insert after context is injected
-- Clear entry when session resets (alongside `resetCooldownCount` cleanup)
+- Insert on the first `sendMessage` call for a session (unconditionally — whether topic context or auto-reset provided the context)
+- Never remove entries — once a session has been handled, it shouldn't get `[TOPIC-CONTEXT]` again until app restart
 - Empty on app launch → context is always injected on first send after restart (correct behaviour)
+
+**Why never remove?** App restart clears the set. There's no mid-session scenario where re-injecting topic context adds value — the agent already knows the topic.
 
 ### 4. Context Header Builder
 
@@ -108,33 +110,35 @@ public func sendMessage(sessionKey: String, text: String, thinking: String? = ni
     // ... existing concurrency guard ...
     
     var effectiveText = text
+    var didAutoReset = false  // local flag for this call only
     
     // ... existing auto-reset + cooldown logic ...
-    // (auto-reset modifies effectiveText with [SESSION-CONTEXT] if it fires)
+    // (if auto-reset fires: didAutoReset = true, effectiveText gets [SESSION-CONTEXT])
     
     // --- NEW: Topic context injection ---
-    let didAutoReset = sendingSessionKeys.contains(sessionKey) && /* auto-reset just ran */
-    if !didAutoReset && topic != nil && !contextInjectedKeys.contains(sessionKey) {
-        if let topic = topic {
-            let header = buildContextHeader(topic: topic)
+    // Mark session as context-aware regardless of path taken.
+    // This prevents double-injection on the next call after auto-reset.
+    if topic != nil && !contextInjectedKeys.contains(sessionKey) {
+        if !didAutoReset {
+            let header = buildContextHeader(topic: topic!)
             effectiveText = "\(header)\n\n\(effectiveText)"
-            contextInjectedKeys.insert(sessionKey)
         }
+        // Always insert — whether we injected topic context OR auto-reset ran.
+        // Either way, the agent now has context and shouldn't receive [TOPIC-CONTEXT] again.
+        contextInjectedKeys.insert(sessionKey)
     }
     
     // ... existing ledger + chat.send logic (unchanged) ...
 }
 ```
 
-**Key rule:** Context injection only happens when ALL three conditions are met:
-1. Auto-reset did NOT fire for this `sendMessage` call
-2. A `Topic` was provided by the caller
-3. This session key hasn't received context before (not in `contextInjectedKeys`)
+**Key rule:** `contextInjectedKeys.insert(sessionKey)` happens unconditionally on the first `sendMessage` for that session — regardless of whether auto-reset or topic injection provided the context. This prevents the 2nd message after auto-reset incorrectly getting a `[TOPIC-CONTEXT]` header.
 
-This means:
-- First message in a new topic → context header prepended ✅
-- Continuing an existing session → no header ✅
-- After auto-reset → auto-reset already prepended `[SESSION-CONTEXT]`, topic context skipped ✅
+**What happens in each scenario:**
+- First message in a new topic → `[TOPIC-CONTEXT]` header prepended, key inserted ✅
+- Continuing an existing session → key already in set, no header ✅
+- After auto-reset → `[SESSION-CONTEXT]` from auto-reset, key inserted (no `[TOPIC-CONTEXT]`) ✅
+- 2nd message after auto-reset → key already in set, no header ✅
 - After app restart → `contextInjectedKeys` is empty, context injected on first send ✅
 
 ### 6. Update fetchLocalHistory Filter
@@ -207,7 +211,7 @@ When `false`, the entire context injection block is skipped. Default `true`.
 6. Add context injection block after auto-reset, before ledger creation
 7. Add `[TOPIC-CONTEXT]` to `fetchLocalHistory` filter
 8. Add feature flag check around injection block
-9. Clear `contextInjectedKeys` entry on session reset
+9. Never remove entries from `contextInjectedKeys` — app restart clears it, which is sufficient
 10. Write migration test (v6→v7)
 
 **Estimated: 1–1.5 days**
@@ -219,12 +223,17 @@ When `false`, the entire context injection block is skipped. Default `true`.
 | New topic, first message | `[TOPIC-CONTEXT]` header prepended |
 | Second message in same topic | No header |
 | After auto-reset | Only `[SESSION-CONTEXT]` (from auto-reset), no `[TOPIC-CONTEXT]` |
-| After auto-reset, next normal send | No header (`contextInjectedKeys` already set) |
+| After auto-reset, next normal send | No header — key was inserted during the auto-reset call |
 | Topic with no project path | Header has `Topic: <name>` only |
 | Topic with project path | Header has `Topic:` + `Project:` lines |
 | Malformed `metadataJSON` | Header omits activeFocus/tags, no crash |
 | App restart, send in existing topic | Header injected (`contextInjectedKeys` empty on launch) |
-| Feature flag = false | No header prepended |
+| 2nd message after auto-reset (during cooldown) | No header — key was inserted on the auto-reset call |
+| Concurrent sends to different topics | Both get headers independently (different session keys) |
+| Topic with valid JSON but wrong schema (`{"color":"blue"}`) | Header omits focus/tags, no crash |
+| Feature flag toggled mid-session | No double injection — key already in set |
+| Caller passes topic where `topic.sessionKey != sessionKey` | Injection fires for the wrong topic — caller must ensure match |
+| `DeliveryLedgerEntry.originalContent` | Stores `text` (user input), `content` stores `effectiveText` (with header) — correct |
 | DB migration from v6 | App launches, topics load, `projectPath` is nil |
 | `fetchLocalHistory` filter | Messages with `[TOPIC-CONTEXT]` prefix excluded from auto-reset context |
 
@@ -236,12 +245,13 @@ When `false`, the entire context injection block is skipped. Default `true`.
 sendMessage(sessionKey, text, topic: topic?)
   │
   ├─ Auto-reset check (existing)
-  │   └─ If usage > threshold: reset, prepend [SESSION-CONTEXT], skip topic injection
+  │   ├─ If usage > threshold: reset, prepend [SESSION-CONTEXT]
+  │   └─ didAutoReset = true
   │
   ├─ Topic context injection (NEW)
-  │   └─ If !didAutoReset && topic != nil && !contextInjectedKeys.contains(sessionKey):
-  │       prepend [TOPIC-CONTEXT] header
-  │       insert sessionKey into contextInjectedKeys
+  │   └─ If topic != nil && !contextInjectedKeys.contains(sessionKey):
+  │       ├─ If !didAutoReset: prepend [TOPIC-CONTEXT] header
+  │       └─ Always: insert sessionKey into contextInjectedKeys
   │
   ├─ Ledger entry (existing)
   │
