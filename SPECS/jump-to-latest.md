@@ -1,7 +1,7 @@
 # BeeChat v5: Jump to Latest Message
 
 **Spec ID:** BC5-SPEC-005  
-**Date:** 2026-05-08 (v2 — revised after team review)  
+**Date:** 2026-05-08 (v3 — final, build-ready)  
 **Author:** Bee (coordinator)  
 **Reviewers:** Q (implementation), Mel (UX), Kieran (safety)  
 **Status:** APPROVED — Ready for Build  
@@ -11,85 +11,112 @@
 
 ## Problem Statement
 
-When a conversation has many messages, BeeChat sometimes jumps to the top (oldest messages) on topic switch. The user must manually scroll down. When scrolled up reading older messages, new messages appear below with no indication. There is no way to jump back to the latest message.
+When a conversation has many messages, BeeChat sometimes jumps to the top on topic switch. When scrolled up, new messages appear below with no indication and no way to jump back.
 
 ---
 
 ## Root Cause
 
-`MessageCanvas` calls `scrollToBottom` via `.onChange(of: messages.count)` when messages arrive, but `LazyVStack` hasn't laid out the bottom-anchor yet. `scrollTo` on a non-existent ID is a no-op, so the view stays at the top.
+`scrollToBottom` fires when `messages.count` changes (0→N on topic switch), but `LazyVStack` hasn't laid out the bottom-anchor yet. `scrollTo` on a non-existent ID is a no-op, so the view stays at the top.
 
 ---
 
 ## Solution
 
-Three changes, one file (`MessageCanvas.swift`):
+All changes in one file: `MessageCanvas.swift`.
 
-### 1. Detect scroll position with `onScrollGeometryChange`
+### 1. Scroll position detection (macOS 14 compatible)
 
-Use the macOS 14+ native API instead of GeometryReader+PreferenceKey. This fires only when the computed value changes, not on every frame — no jank.
+Use GeometryReader + PreferenceKey (not `onScrollGeometryChange`, which requires macOS 15+). Add hysteresis to prevent button flicker:
 
 ```swift
 @State private var isAtBottom: Bool = true
+@State private var lastScrollGeometry: CGFloat = 0
 
-ScrollView(.vertical, showsIndicators: true) { ... }
-    .onScrollGeometryChange(for: Bool.self) { geometry in
-        let remaining = geometry.contentSize.height - geometry.contentBounds.maxY
-        return remaining < bottomThreshold
-    } action: { oldValue, newValue in
-        // Hysteresis: use different thresholds for entering/leaving bottom
-        // to prevent flicker during momentum scrolling
-        if oldValue && !newValue {
-            // Was at bottom, now scrolled up — only trigger if clearly away
-            let remaining = // recompute from geometry
-            isAtBottom = remaining < leaveBottomThreshold
-        } else if !oldValue && newValue {
-            // Was scrolled up, now near bottom — use stricter threshold
-            isAtBottom = true
-        } else {
-            isAtBottom = newValue
-        }
-    }
+private let enterBottomThreshold: CGFloat = 50   // must be within 50px to count as "at bottom"
+private let leaveBottomThreshold: CGFloat = 120  // must be >120px away to count as "scrolled up"
 ```
 
-**Hysteresis thresholds:**
-- `enterBottom` (stricter): 50px — must be within 50px to count as "at bottom"
-- `leaveBottom` (looser): 120px — must scroll more than 120px away to leave "at bottom"
+Place a GeometryReader on the bottom-anchor:
 
-This prevents flicker when the user scrolls near the boundary.
+```swift
+Color.clear
+    .frame(height: 1)
+    .id("bottom-anchor")
+    .overlay(
+        GeometryReader { geo in
+            Color.clear.preference(
+                key: BottomAnchorPreferenceKey.self,
+                value: geo.frame(in: .named("messageScrollView")).minY
+            )
+        }
+    )
+```
 
-### 2. Conditional auto-scroll with streaming and send overrides
+Handle preference change with hysteresis:
 
-Gate auto-scroll on `isAtBottom`, except for two cases:
+```swift
+.onPreferenceChange(BottomAnchorPreferenceKey.self) { bottomY in
+    lastScrollGeometry = bottomY
+    let visibleHeight = // read from another preference or estimate
+    let distanceFromBottom = bottomY
+    
+    if distanceFromBottom < enterBottomThreshold {
+        isAtBottom = true
+    } else if distanceFromBottom > leaveBottomThreshold {
+        isAtBottom = false
+    }
+    // Between enterBottom and leaveBottom: keep current state (hysteresis)
+}
+```
+
+### 2. Conditional auto-scroll
+
+Gate ALL scroll-triggering handlers on `isAtBottom`, with two exceptions:
+
+- **User sends a message** → always scroll to bottom
+- **Streaming is active** → always scroll to bottom (users expect to follow streams)
 
 ```swift
 .onChange(of: messages.count) { _, _ in
     if let anchorId = anchorMessageId {
-        // Preserve position when loading earlier messages
         withAnimation(.easeInOut(duration: 0.15)) {
-            proxy.scrollTo(anchorId, anchor: .top)
+            scrollProxy?.scrollTo(anchorId, anchor: .top)
         }
         anchorMessageId = nil
-    } else if isAtBottom || isUserMessage || isActiveTopicStreaming {
-        scrollToBottom(proxy: proxy)
+    } else if isAtBottom || isUserMessage || isStreaming {
+        scrollToBottom()
     } else {
-        // User is scrolled up reading — don't force them down
         showJumpButton = true
     }
 }
+.onChange(of: isStreaming) { _, isNowStreaming in
+    if isNowStreaming { scrollToBottom() }
+}
+.onChange(of: showStreamingBubble) { _, isShowing in
+    if isShowing { scrollToBottom() }
+}
 ```
 
-- `isUserMessage`: true when the latest message has role "user" — always scroll to see your own message
-- `isActiveTopicStreaming`: true when streaming is active for the current topic — always follow the stream
+Note: `isStreaming` and `showStreamingBubble` handlers always scroll — streaming should auto-follow regardless of scroll position. This matches user expectations.
 
-### 3. Jump to Latest button overlay
+### 3. Detect user-sent messages
 
-A circular frosted-glass button that appears when the user is not at the bottom:
+```swift
+private var isUserMessage: Bool {
+    guard let lastMessage = messages.last else { return false }
+    return lastMessage.role == "user"
+}
+```
+
+When the user sends a message, it's added to the array and `messages.count` fires. The handler checks `isUserMessage` and always scrolls.
+
+### 4. Jump to Latest button
 
 ```swift
 if !isAtBottom {
     Button(action: {
-        scrollToBottom(proxy: scrollProxy)
+        scrollToBottom()
         isAtBottom = true
     }) {
         Image(systemName: "chevron.down")
@@ -108,9 +135,9 @@ if !isAtBottom {
 }
 ```
 
-### 4. Fix the "scrolls to top" bug
+### 5. Fix "scrolls to top" bug with retry
 
-Store `ScrollViewProxy` in `@State` for safe async capture. Use a retry mechanism for `LazyVStack` layout timing:
+Store `ScrollViewProxy` in `@State` for safe async capture. Use retry mechanism:
 
 ```swift
 @State private var scrollProxy: ScrollViewProxy?
@@ -130,35 +157,66 @@ private func scrollToBottom() {
 }
 ```
 
-### 5. Clean up dead state
+### 6. Reset on topic switch
 
-Remove `@State private var autoScroll = true` — it's unused and would conflict with `isAtBottom`.
+When the topic changes, reset scroll state:
+
+```swift
+.onChange(of: topicId) { _, _ in
+    isAtBottom = true
+}
+```
+
+This ensures a new topic always starts scrolled to bottom, even if the previous topic was scrolled up.
+
+### 7. Clean up dead state
+
+Remove `@State private var autoScroll = true` — it's never used.
+
+### 8. PreferenceKey definition
+
+```swift
+private struct BottomAnchorPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+```
 
 ---
 
 ## What Does NOT Change
 
 - `MessageListObserver` — no changes
-- `MessageViewModel` — no changes  
-- `MainWindow` — no changes
+- `MessageViewModel` — no changes
+- `MainWindow` — no changes (except `MessageCanvas` gets a `topicId` parameter if needed)
 - `Composer` — no changes
 - Database — no changes
 - `SyncBridge` — no changes
+- `WidthReader` / `WidthPreferenceKey` — untouched
+- `anchorMessageId` logic for "Load earlier messages" — untouched
+- `ThinkingBeeIndicator`, `TypingIndicator`, `StreamingBubble` — untouched
 
 ---
 
 ## Implementation Steps
 
-1. Remove dead `autoScroll` state from `MessageCanvas`
+1. Remove `@State private var autoScroll = true`
 2. Add `@State private var isAtBottom: Bool = true`
 3. Add `@State private var scrollProxy: ScrollViewProxy?`
-4. Store proxy in `onAppear` of `ScrollViewReader`
-5. Add `onScrollGeometryChange` with hysteresis thresholds
-6. Gate auto-scroll on `isAtBottom || isUserMessage || isActiveTopicStreaming`
-7. Add Jump to Latest overlay button
-8. Replace `scrollToBottom(proxy:)` with retry mechanism
-9. Add accessibility labels
-10. Test all 10 scenarios
+4. Add `@State private var lastScrollGeometry: CGFloat = 0`
+5. Add `BottomAnchorPreferenceKey` struct
+6. Add GeometryReader overlay on `bottom-anchor`
+7. Add `.onPreferenceChange` with hysteresis thresholds (50px/120px)
+8. Store proxy in `.onAppear` and update all `scrollToBottom` call sites
+9. Gate `.onChange(of: messages.count)` on `isAtBottom || isUserMessage || isStreaming`
+10. Keep `.onChange(of: isStreaming)` and `.onChange(of: showStreamingBubble)` always-scrolling (streaming auto-follows)
+11. Add Jump button overlay
+12. Add `.onChange(of: topicId)` to reset `isAtBottom`
+13. Add retry mechanism to `scrollToBottom()`
+14. Add accessibility labels to Jump button
+15. Test all 12 scenarios
 
 **Estimated: 0.75 day**
 
@@ -172,14 +230,26 @@ Remove `@State private var autoScroll = true` — it's unused and would conflict
 | 2 | Send a message while at bottom | Auto-scrolls to new message |
 | 3 | Scroll up to read older messages | No auto-scroll, Jump button appears |
 | 4 | Tap Jump to Latest button | Scrolls to bottom, button disappears |
-| 5 | New message arrives while scrolled up | Jump button stays visible |
-| 6 | Scroll back to bottom manually | Jump button disappears |
-| 7 | Streaming starts while at bottom | Auto-scrolls during stream |
-| 8 | Streaming starts while scrolled up | No forced scroll, Jump button visible |
+| 5 | New message arrives while scrolled up | Jump button stays visible, no forced scroll |
+| 6 | Scroll back to bottom manually | Jump button disappears (hysteresis: within 50px) |
+| 7 | Streaming starts while at bottom | Auto-scrolls during streaming |
+| 8 | Streaming starts while scrolled up | Auto-scrolls to bottom (streaming always follows) |
 | 9 | User sends message while scrolled up | Always scrolls to bottom |
 | 10 | Load earlier messages | Scroll position preserved (anchor) |
 | 11 | Topic switch after scrolling up in previous topic | New topic starts at bottom |
-| 12 | Momentum scrolling near bottom | No button flicker (hysteresis) |
+| 12 | Momentum scroll near bottom boundary | No button flicker (hysteresis) |
+
+---
+
+## Risk Table
+
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|------|-----------|--------|------------|
+| 1 | PreferenceKey fires too frequently | Low | Medium | Hysteresis prevents state flicker; SwiftUI coalesces preference changes |
+| 2 | Retry causes visible double-scroll | Very Low | Low | Second attempt is unanimated no-op if first succeeded |
+| 3 | `isAtBottom` not reset on topic switch | N/A | N/A | Explicit `.onChange(of: topicId)` reset |
+| 4 | Streaming forces scroll when user scrolled up | By design | Low | Matches user expectations — streams auto-follow |
+| 5 | LazyVStack doesn't render bottom-anchor | Low | Medium | Retry fallback after 200ms; `.id()` on MessageCanvas forces recreation |
 
 ---
 
