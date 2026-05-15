@@ -56,7 +56,7 @@ extension AnyCodable: Equatable {
             guard a.count == b.count else { return false }
             for (key, val) in a {
                 guard let bVal = b[key] else { return false }
-                if !AnyCodable(val).isEqual(to: AnyCodable(bVal)) { return false }
+                if AnyCodable(val) != AnyCodable(bVal) { return false }
             }
             return true
         case (is NSNull, is NSNull): return true
@@ -66,7 +66,7 @@ extension AnyCodable: Equatable {
     private static func compareAnyArrays(_ lhs: [Any], _ rhs: [Any]) -> Bool {
         guard lhs.count == rhs.count else { return false }
         for (a, b) in zip(lhs, rhs) {
-            if !AnyCodable(a).isEqual(to: AnyCodable(b)) { return false }
+            if AnyCodable(a) != AnyCodable(b) { return false }
         }
         return true
     }
