@@ -1,8 +1,8 @@
 import Foundation
 
 public struct ConnectParams: Codable, Sendable {
-    public let minProtocol: Int = 3
-    public let maxProtocol: Int = 3
+    public let minProtocol: Int = 4
+    public let maxProtocol: Int = 4
     public let client: ClientInfo
     public let role: String
     public let scopes: [String]
@@ -73,7 +73,7 @@ public struct HelloOk: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: HelloOkCodingKeys.self)
         self.type = (try? container.decode(String.self, forKey: .type)) ?? "hello-ok"
-        self.protocol = (try? container.decode(Int.self, forKey: .protocol)) ?? 3
+        self.protocol = (try? container.decode(Int.self, forKey: .protocol)) ?? 4
         self.server = try container.decode(ServerInfo.self, forKey: .server)
         self.features = (try? container.decode(Features.self, forKey: .features)) ?? Features()
         self.snapshot = try? container.decodeIfPresent([String: AnyCodable].self, forKey: .snapshot)

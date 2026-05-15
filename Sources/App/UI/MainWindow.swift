@@ -17,6 +17,10 @@ struct MainWindow: View {
 
     @State private var showDeleteAlert = false
     @State private var deleteErrorMsg: String?
+    @State private var showResetAlert = false
+    @State private var resetTargetSessionKey: String? = nil
+    @State private var showResetErrorAlert = false
+    @State private var resetErrorMsg: String?
     @State private var showThemePicker = false
     @State private var showFolderPicker = false
     @State private var showAgentActivity = false
@@ -29,10 +33,15 @@ struct MainWindow: View {
             set: { newId in
                 if let id = newId, id != messageViewModel.selectedTopicId {
                     messageViewModel.selectTopic(id: id)
+                    let newSessionKey = messageViewModel.selectedTopic?.sessionKey
                     // Update observer's knowledge of which session is selected
-                    syncBridgeObserver.currentSelectedSessionKey = messageViewModel.selectedTopic?.sessionKey
+                    syncBridgeObserver.currentSelectedSessionKey = newSessionKey
                     // Clear unread for the newly selected topic
-                    syncBridgeObserver.clearUnread(for: messageViewModel.selectedTopic?.sessionKey)
+                    syncBridgeObserver.clearUnread(for: newSessionKey)
+                    // If this topic is already streaming in the background, catch up the UI
+                    if let key = newSessionKey, syncBridgeObserver.isStreamingSession(key) {
+                        syncBridgeObserver.catchUpStreaming(for: key)
+                    }
                 }
             }
         )
@@ -41,30 +50,7 @@ struct MainWindow: View {
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
-                List(selection: sidebarSelection) {
-                    ForEach(messageViewModel.topics) { topic in
-                        let usage = messageViewModel.usage(for: topic.sessionKey)
-                        let normalizedKey = topic.sessionKey.map { SessionKeyNormalizer.stripPrefix($0).lowercased() } ?? ""
-                        let unreadCount = syncBridgeObserver.unreadCounts[normalizedKey] ?? 0
-                        let topicThinkingState: ThinkingState = syncBridgeObserver.isStreamingSession(topic.sessionKey) ? syncBridgeObserver.thinkingState : .idle
-                        SessionRow(
-                            topic: topic,
-                            thinkingState: topicThinkingState,
-                            sessionUsage: usage,
-                            unreadCount: unreadCount
-                        )
-                            .tag(topic.id as String?)
-                            .contextMenu {
-                                Button("Delete Topic", role: .destructive) {
-                                    deleteTopic(topic.id)
-                                }
-                            }
-                    }
-                }
-                .listStyle(.sidebar)
-                .scrollContentBackground(.hidden)
-                .background(themeManager.color(.bgSurface))
-                .frame(maxHeight: .infinity)
+                sidebarList
 
                 Divider()
 
@@ -172,28 +158,19 @@ struct MainWindow: View {
                     let activeTopicStreamingContent = isActiveTopicStreaming
                         ? syncBridgeObserver.streamingContent : ""
 
-                    if syncBridgeObserver.autoResetting {
-                        HStack(spacing: 6) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Refreshing context...")
-                                .font(.caption)
-                                .foregroundColor(themeManager.color(.textSecondary))
-                        }
-                        .padding(.horizontal, themeManager.spacing(.md))
-                        .padding(.vertical, themeManager.spacing(.xs))
-                        .transition(.opacity)
+                    ZStack(alignment: .top) {
+                        MessageCanvas(
+                            messages: messageViewModel.messages,
+                            isStreaming: isActiveTopicStreaming,
+                            streamingContent: activeTopicStreamingContent,
+                            thinkingState: syncBridgeObserver.thinkingState,
+                            canLoadEarlier: messageViewModel.canLoadEarlier,
+                            topicId: messageViewModel.selectedTopicId,
+                            onLoadEarlier: { messageViewModel.loadEarlierMessages() }
+                        )
+                        resetIndicator
+                            .padding(.top, 4)
                     }
-
-                    MessageCanvas(
-                        messages: messageViewModel.messages,
-                        isStreaming: isActiveTopicStreaming,
-                        streamingContent: activeTopicStreamingContent,
-                        thinkingState: syncBridgeObserver.thinkingState,
-                        canLoadEarlier: messageViewModel.canLoadEarlier,
-                        topicId: messageViewModel.selectedTopicId,
-                        onLoadEarlier: { messageViewModel.loadEarlierMessages() }
-                    )
                 } else {
                     Color.clear.frame(maxHeight: .infinity)
                 }
@@ -215,6 +192,14 @@ struct MainWindow: View {
         .onChange(of: appState.isReady) { _, ready in
             if ready {
                 wireUpObservers()
+            }
+        }
+        .onChange(of: messageViewModel.selectedTopicId) { _, _ in
+            // Clear stale pending reset context when switching topics
+            if let bridge = appState.syncBridge {
+                Task {
+                    await bridge.clearPendingResetContext(except: messageViewModel.selectedTopic?.sessionKey)
+                }
             }
         }
         .onChange(of: appState.connectionState) { _, newState in
@@ -260,6 +245,12 @@ struct MainWindow: View {
         } message: {
             Text(deleteErrorMsg ?? "Unknown error")
         }
+        .alert("Reset Failed", isPresented: $showResetErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(resetErrorMsg ?? "Could not reset session. Please check your connection.")
+        }
+        .resetSessionAlert(isPresented: $showResetAlert, resetError: $resetErrorMsg, showError: $showResetErrorAlert, sessionKey: resetTargetSessionKey, bridge: appState.syncBridge)
         .sheet(isPresented: $showThemePicker) {
             ThemePicker()
                 .environment(themeManager)
@@ -443,9 +434,127 @@ struct MainWindow: View {
             }
         }
     }
+
+    // MARK: - Sidebar List
+
+    @ViewBuilder
+    private var sidebarList: some View {
+        List(selection: sidebarSelection) {
+            ForEach(messageViewModel.topics) { topic in
+                let usage = messageViewModel.usage(for: topic.sessionKey)
+                let normalizedKey = topic.sessionKey.map { SessionKeyNormalizer.stripPrefix($0).lowercased() } ?? ""
+                let unreadCount = syncBridgeObserver.unreadCounts[normalizedKey] ?? 0
+                let topicThinkingState: ThinkingState = syncBridgeObserver.isStreamingSession(topic.sessionKey) ? syncBridgeObserver.thinkingState : .idle
+                SessionRow(
+                    topic: topic,
+                    thinkingState: topicThinkingState,
+                    sessionUsage: usage,
+                    unreadCount: unreadCount,
+                    onReset: {
+                        resetTargetSessionKey = topic.sessionKey
+                        showResetAlert = true
+                    }
+                )
+                    .tag(topic.id as String?)
+                    .contextMenu {
+                        Button("Reset Session") {
+                            resetTargetSessionKey = topic.sessionKey
+                            showResetAlert = true
+                        }
+
+                        Divider()
+
+                        Button("Delete Topic", role: .destructive) {
+                            deleteTopic(topic.id)
+                        }
+                    }
+            }
+        }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(themeManager.color(.bgSurface))
+        .frame(maxHeight: .infinity)
+    }
+
+    // MARK: - Reset Indicator
+
+    @ViewBuilder
+    private var resetIndicator: some View {
+        if syncBridgeObserver.autoResetting {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Refreshing context...")
+                    .font(.caption)
+                    .foregroundColor(themeManager.color(.textSecondary))
+            }
+            .padding(.horizontal, themeManager.spacing(.md))
+            .padding(.vertical, themeManager.spacing(.xs))
+            .background(.ultraThinMaterial)
+            .cornerRadius(8)
+            .transition(.opacity)
+        } else if syncBridgeObserver.manualResetting {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Resetting session...")
+                    .font(.caption)
+                    .foregroundColor(themeManager.color(.textSecondary))
+            }
+            .padding(.horizontal, themeManager.spacing(.md))
+            .padding(.vertical, themeManager.spacing(.xs))
+            .background(.ultraThinMaterial)
+            .cornerRadius(8)
+            .transition(.opacity)
+        } else if syncBridgeObserver.showAutoResetToast {
+            Text("Session refreshed")
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial)
+                .cornerRadius(8)
+                .transition(.opacity)
+        }
+    }
 }
 
 extension Notification.Name {
     static let deleteSelectedTopic = Notification.Name("deleteSelectedTopic")
     static let newTopic = Notification.Name("newTopic")
+}
+
+// MARK: - Reset Session Alert Modifier
+
+struct ResetSessionAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    @Binding var resetError: String?
+    @Binding var showError: Bool
+    let sessionKey: String?
+    let bridge: SyncBridge?
+
+    func body(content: Content) -> some View {
+        content.alert("Reset Session?", isPresented: $isPresented) {
+            Button("Cancel", role: .cancel) { }
+            Button("Reset") {
+                if let key = sessionKey, let bridge = bridge {
+                    Task {
+                        do {
+                            _ = try await bridge.manualReset(sessionKey: key)
+                        } catch {
+                            resetError = "Could not reset session. Please check your connection."
+                            showError = true
+                        }
+                    }
+                }
+            }
+        } message: {
+            Text("The last 30 messages will be carried forward as context for the next reply.")
+        }
+    }
+}
+
+extension View {
+    func resetSessionAlert(isPresented: Binding<Bool>, resetError: Binding<String?>, showError: Binding<Bool>, sessionKey: String?, bridge: SyncBridge?) -> some View {
+        modifier(ResetSessionAlertModifier(isPresented: isPresented, resetError: resetError, showError: showError, sessionKey: sessionKey, bridge: bridge))
+    }
 }

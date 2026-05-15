@@ -46,8 +46,13 @@ public struct EventRouter {
 
         switch state {
         case "delta":
-            if let text = messageText {
-                await syncBridge.processChatDelta(sessionKey: sessionKey, text: text)
+            // v4 streaming: use deltaText with replace semantics
+            if let deltaText = chatEvent.deltaText, !deltaText.isEmpty {
+                let shouldReplace = chatEvent.replace ?? false
+                await syncBridge.processChatDelta(sessionKey: sessionKey, text: deltaText, replace: shouldReplace)
+            } else if let text = messageText {
+                // v3 fallback: message.content carries cumulative text (always replace)
+                await syncBridge.processChatDelta(sessionKey: sessionKey, text: text, replace: true)
             }
         case "final":
             if let text = messageText, let msg = chatEvent.message {
@@ -68,6 +73,9 @@ public struct EventRouter {
                 }
             }
             try await syncBridge.processChatFinal(sessionKey: sessionKey)
+        case "aborted":
+            // v4: agent run was cancelled/aborted
+            try await syncBridge.processChatError(sessionKey: sessionKey, errorMessage: chatEvent.stopReason ?? "Aborted")
         case "error":
             try await syncBridge.processChatError(sessionKey: sessionKey, errorMessage: errorMessage ?? "Unknown error")
         default:

@@ -5,7 +5,7 @@ struct SessionRow: View {
     let topic: TopicViewModel
     var thinkingState: ThinkingState = .idle
     var sessionUsage: Double? = nil
-    var unreadCount: Int = 0  // NEW: in-memory unread count from SyncBridgeObserver
+    var unreadCount: Int = 0  // In-memory unread count from SyncBridgeObserver
     var onReset: (() -> Void)? = nil
     var onSelect: (() -> Void)?
 
@@ -29,8 +29,8 @@ struct SessionRow: View {
         }
     }
 
-    /// Whether the session usage threshold (50%) is reached, triggering the red dot.
-    var shouldShowRedDot: Bool {
+    /// Whether the session usage threshold (50%) is reached, triggering the amber dot.
+    var shouldShowResetDot: Bool {
         guard let usage = sessionUsage else { return false }
         return usage >= 0.50
     }
@@ -49,25 +49,27 @@ struct SessionRow: View {
 
             Spacer()
 
-            // Unread indicator: blue dot only (ONLY when unread > 0)
-            // No count text, no bold — just a dot like iMessage/Slack
+            // Unread indicator: blue/accent dot only (ONLY when unread > 0)
             if unreadCount > 0 {
                 Circle()
-                    .fill(themeManager.color(.accentPrimary))  // Blue/accent, NEVER red
+                    .fill(themeManager.color(.accentPrimary))
                     .frame(width: 8, height: 8)
+                    .accessibilityLabel("Unread messages")
             }
 
-            // Session reset red dot — appears at 50% usage, tap to reset
-            if shouldShowRedDot {
+            // Session reset amber dot — appears at 50% usage, tap to reset
+            if shouldShowResetDot {
                 Button(action: { onReset?() }) {
                     Circle()
-                        .fill(Color.red)
+                        .fill(Color.orange)
                         .frame(width: 10, height: 10)
-                        .shadow(color: Color.red.opacity(0.4), radius: 3, x: 0, y: 0)
+                        .shadow(color: Color.orange.opacity(0.3), radius: 3, x: 0, y: 0)
+                        .contentShape(Rectangle())
+                        .frame(width: 24, height: 24)  // Larger hit target for accessibility
                 }
                 .buttonStyle(.plain)
                 .help("Session at \(Int((sessionUsage ?? 0) * 100))% — tap to reset")
-                .accessibilityLabel("Reset session: \(topic.title) is at \(Int((sessionUsage ?? 0) * 100))% context usage")
+                .accessibilityLabel("Session at \(Int((sessionUsage ?? 0) * 100))% — tap to reset")
             }
         }
         .accessibilityElement(children: .combine)
@@ -79,6 +81,9 @@ struct SessionRow: View {
         var parts = ["\(topic.title), \(healthDescription), \(topic.messageCount) messages"]
         if unreadCount > 0 {
             parts.append("unread")
+        }
+        if shouldShowResetDot {
+            parts.append("session at \(Int((sessionUsage ?? 0) * 100))% — reset available")
         }
         return parts.joined(separator: ", ")
     }

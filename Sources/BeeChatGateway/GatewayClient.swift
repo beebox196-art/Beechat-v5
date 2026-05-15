@@ -1,3 +1,4 @@
+import os
 import Foundation
 
 public actor GatewayClient {
@@ -27,7 +28,16 @@ public actor GatewayClient {
             self.token = token
             self.deviceToken = deviceToken
             self.clientMode = clientMode
-            self.clientInfo = clientInfo ?? .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: clientMode)
+            let defaultClientInfo: ConnectParams.ClientInfo = {
+                #if os(iOS)
+                return .init(id: "openclaw-ios", version: "1.0", platform: "ios", mode: clientMode)
+                #elseif os(macOS)
+                return .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: clientMode)
+                #else
+                return .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: clientMode)
+                #endif
+            }()
+            self.clientInfo = clientInfo ?? defaultClientInfo
             self.requestTimeout = requestTimeout
             self.maxRetries = maxRetries
             self.baseRetryDelay = baseRetryDelay
@@ -126,28 +136,77 @@ public actor GatewayClient {
         nextRequestId += 1
         let frame = RequestFrame(id: id, method: method, params: params)
         
-        return try await withCheckedThrowingContinuation { continuation in
-            Task {
-                await pendingRequests.add(id: id, timeout: config.requestTimeout, resolve: { payload in
-                    continuation.resume(returning: payload)
-                }, reject: { error in
-                    continuation.resume(throwing: error)
-                })
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Atomic guard against double-resume. OSAllocatedUnfairLock provides
+                // thread-safe access across actor boundaries (resolve/reject closures run
+                // on PendingRequestMap's actor; catch block runs on calling Task's executor).
+                let hasResumed = OSAllocatedUnfairLock(initialState: false)
                 
-                do {
-                    let data = try JSONEncoder().encode(frame)
-                    guard let text = String(data: data, encoding: .utf8) else {
-                        let error = NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode request frame as UTF-8"])
-                        await pendingRequests.remove(id: id, reason: error.localizedDescription)
-                        continuation.resume(throwing: error)
-                        return
+                Task {
+                    await self.pendingRequests.add(id: id, timeout: self.config.requestTimeout, resolve: { payload in
+                        let shouldResume = hasResumed.withLock { flag -> Bool in
+                            if flag { return false }
+                            flag = true
+                            return true
+                        }
+                        if shouldResume {
+                            continuation.resume(returning: payload)
+                        }
+                    }, reject: { error in
+                        let shouldResume = hasResumed.withLock { flag -> Bool in
+                            if flag { return false }
+                            flag = true
+                            return true
+                        }
+                        if shouldResume {
+                            continuation.resume(throwing: error)
+                        }
+                    })
+                    
+                    do {
+                        let data = try JSONEncoder().encode(frame)
+                        guard let text = String(data: data, encoding: .utf8) else {
+                            let error = NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode request frame as UTF-8"])
+                            let alreadyHandled = await self.pendingRequests.remove(id: id, reason: error.localizedDescription)
+                            if !alreadyHandled {
+                                let shouldResume = hasResumed.withLock { flag -> Bool in
+                                    if flag { return false }
+                                    flag = true
+                                    return true
+                                }
+                                if shouldResume {
+                                    continuation.resume(throwing: error)
+                                }
+                            }
+                            return
+                        }
+                        try await self.transport.send(text)
+                    } catch {
+                        let alreadyHandled = await self.pendingRequests.remove(id: id, reason: error.localizedDescription)
+                        if !alreadyHandled {
+                            let shouldResume = hasResumed.withLock { flag -> Bool in
+                                if flag { return false }
+                                flag = true
+                                return true
+                            }
+                            if shouldResume {
+                                continuation.resume(throwing: error)
+                            }
+                        }
                     }
-                    try await transport.send(text) 
-                } catch {
-                    await pendingRequests.remove(id: id, reason: error.localizedDescription)
-                    continuation.resume(throwing: error)
                 }
             }
+        } onCancel: { [weak self] in
+            guard let self else { return }
+            // Fire-and-forget: onCancel is synchronous so we can't await actor methods.
+            // The remove() call will reject the pending request if it exists, which
+            // resumes the continuation via the reject callback. If the entry doesn't
+            // exist yet (cancel fired before add()), remove() is a no-op and the
+            // continuation will be resumed by timeout instead. This window is
+            // extremely narrow (one actor hop) and the fallback is bounded by
+            // requestTimeout.
+            Task { await self.pendingRequests.remove(id: id, reason: "Request cancelled") }
         }
     }
     
@@ -319,7 +378,7 @@ public actor GatewayClient {
     }
     
     private func manuallyDecodeHelloOk(payload: [String: AnyCodable]) -> HelloOk? {
-        let protocolVersion = (payload["protocol"]?.value as? Int) ?? 3
+        let protocolVersion = (payload["protocol"]?.value as? Int) ?? 4
         let maxPayload = (payload["policy"]?.value as? [String: Any])?["maxPayload"] as? Int
             ?? (payload["policy"]?.value as? [String: AnyCodable])?["maxPayload"]?.value as? Int
             ?? 1048576
@@ -411,8 +470,24 @@ public actor GatewayClient {
                     signedAtMs: signedAt,
                     token: config.token,
                     nonce: nonce,
-                    platform: "macos",
-                    deviceFamily: "desktop"
+                    platform: {
+                        #if os(iOS)
+                        return "ios"
+                        #elseif os(macOS)
+                        return "macos"
+                        #else
+                        return "macos"
+                        #endif
+                    }(),
+                    deviceFamily: {
+                        #if os(iOS)
+                        return "mobile"
+                        #elseif os(macOS)
+                        return "desktop"
+                        #else
+                        return "desktop"
+                        #endif
+                    }()
                 )
                 
                 deviceIdentity = ConnectParams.DeviceIdentity(
@@ -439,7 +514,15 @@ public actor GatewayClient {
                 deviceToken: currentDeviceToken
             ),
             locale: Locale.current.identifier,
-            userAgent: "BeeChat/1.0 (macOS)",
+            userAgent: {
+                #if os(iOS)
+                return "BeeChat/1.0 (iOS)"
+                #elseif os(macOS)
+                return "BeeChat/1.0 (macOS)"
+                #else
+                return "BeeChat/1.0 (macOS)"
+                #endif
+            }(),
             device: deviceIdentity
         )
         

@@ -56,8 +56,24 @@ public enum DeviceCrypto {
         signedAtMs: Int,
         token: String?,
         nonce: String,
-        platform: String = "macos",
-        deviceFamily: String = "desktop"
+        platform: String = {
+            #if os(iOS)
+            return "ios"
+            #elseif os(macOS)
+            return "macos"
+            #else
+            return "macos"
+            #endif
+        }(),
+        deviceFamily: String = {
+            #if os(iOS)
+            return "mobile"
+            #elseif os(macOS)
+            return "desktop"
+            #else
+            return "desktop"
+            #endif
+        }()
     ) throws -> String {
         let canonical = "v3|\(deviceId)|\(clientId)|\(clientMode)|\(role)|\(scopes.joined(separator: ","))|\(signedAtMs)|\(token ?? "")|\(nonce)|\(platform)|\(deviceFamily)"
 

@@ -8,4 +8,6 @@ public protocol SyncBridgeDelegate: AnyObject {
     func syncBridge(_ bridge: SyncBridge, didStopStreaming sessionKey: String)
     func syncBridge(_ bridge: SyncBridge, didStartAutoReset sessionKey: String)
     func syncBridge(_ bridge: SyncBridge, didStopAutoReset sessionKey: String)
+    func syncBridge(_ bridge: SyncBridge, didStartManualReset sessionKey: String)
+    func syncBridge(_ bridge: SyncBridge, didStopManualReset sessionKey: String)
 }

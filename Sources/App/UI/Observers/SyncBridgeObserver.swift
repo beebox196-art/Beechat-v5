@@ -79,22 +79,28 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStartStreaming sessionKey: String) {
         Task { @MainActor in
-            // Normalise keys before comparison so bare UUIDs and full gateway keys match
             let normalizedIncoming = self.normalizedSessionKey(sessionKey)
             let normalizedCurrent = self.currentSelectedSessionKey.map(self.normalizedSessionKey)
 
-            // Agent activity tracking
+            // Always track agent activity for all sessions
             self.agentActivityTracker.didStartStreaming(sessionKey: sessionKey)
 
-            // Mark unread if streaming started in a topic that isn't currently selected
             if normalizedIncoming != normalizedCurrent {
+                // Background session — count as unread and track for later catch-up
                 self.unreadCounts[normalizedIncoming, default: 0] += 1
                 BeeChatLogger.log("[ThinkingBee] didStartStreaming — mismatch (incoming=\(sessionKey) [\(normalizedIncoming)] current=\(self.currentSelectedSessionKey ?? "nil") [\(normalizedCurrent ?? "nil")]) — counting unread")
+
+                // Track background streaming session for topic-switching catch-up.
+                // Note: if multiple background sessions start while nothing is streaming,
+                // the last one wins for streamingSessionKey. Full multi-session tracking
+                // requires Set<String> — tracked as future Fix B2.
+                if !self.isStreaming {
+                    self.streamingSessionKey = sessionKey
+                }
                 return
             }
 
-            // Only cancel thinking timeout for the currently selected session
-            // (must happen after the guard so background sessions don't kill the timeout)
+            // Active topic — full UI transition
             self.cancelThinkingTimeout()
 
             let oldState = self.thinkingState
@@ -109,20 +115,27 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStopStreaming sessionKey: String) {
         Task { @MainActor in
-            // Always update the activity tracker — even for non-selected sessions
-            // (e.g. subagent sessions that stop while user is viewing a different topic)
+            // Always update agent activity tracker
             self.agentActivityTracker.didStopStreaming(sessionKey: sessionKey)
 
             let normalizedIncoming = self.normalizedSessionKey(sessionKey)
             let normalizedCurrent = self.currentSelectedSessionKey.map(self.normalizedSessionKey)
 
-            guard normalizedIncoming == normalizedCurrent else {
-                BeeChatLogger.log("[ThinkingBee] didStopStreaming — GUARD SKIPPED (incoming=\(sessionKey) [\(normalizedIncoming)] current=\(self.currentSelectedSessionKey ?? "nil") [\(normalizedCurrent ?? "nil")])")
-                return
+            // Clean up streaming state if this was the tracked streaming session,
+            // regardless of whether it matches the current topic.
+            if self.normalizedSessionKey(self.streamingSessionKey ?? "") == normalizedIncoming {
+                let oldState = self.thinkingState
+                BeeChatLogger.log("[ThinkingBee] didStopStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .idle")
+                self.resetStreamingState()
+            } else if normalizedIncoming != normalizedCurrent {
+                // Background session we weren't tracking — just log
+                BeeChatLogger.log("[ThinkingBee] didStopStreaming — background session ended (incoming=\(sessionKey) [\(normalizedIncoming)] current=\(self.currentSelectedSessionKey ?? "nil") [\(normalizedCurrent ?? "nil")])")
+            } else {
+                // Current topic stopped streaming but streamingSessionKey was stale.
+                // Defensive: reset anyway to avoid stuck state.
+                BeeChatLogger.log("[ThinkingBee] didStopStreaming — current topic but stale streamingSessionKey, resetting defensively (incoming=\(sessionKey))")
+                self.resetStreamingState()
             }
-            let oldState = self.thinkingState
-            BeeChatLogger.log("[ThinkingBee] didStopStreaming(sessionKey=\(sessionKey)) — Transition: \(oldState) → .idle")
-            self.resetStreamingState()
         }
     }
 
@@ -135,7 +148,24 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     nonisolated func syncBridge(_ bridge: SyncBridge, didStopAutoReset sessionKey: String) {
         Task { @MainActor in
             self.autoResetting = false
+            self.showAutoResetToast = true
+            // Auto-dismiss toast after 3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                self.showAutoResetToast = false
+            }
         }
+    }
+
+    /// Called when the user switches to a topic that is already streaming in the background.
+    /// Restarts the poll and transitions UI to streaming state.
+    func catchUpStreaming(for sessionKey: String) {
+        cancelThinkingTimeout()
+        thinkingState = .streaming
+        isStreaming = true
+        streamingSessionKey = sessionKey
+        startStreamingPoll()
+        startStreamingTimeout()
+        BeeChatLogger.log("[ThinkingBee] catchUpStreaming(sessionKey=\(sessionKey)) — restarted streaming for selected topic")
     }
 
     /// Reset all streaming state back to idle
@@ -151,12 +181,18 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     private func startStreamingPoll() {
         stopStreamingPoll()
-        streamingPollTask = Task {
+        streamingPollTask = Task { [weak self] in
             while !Task.isCancelled {
-                if let bridge = syncBridge {
+                guard let self, self.isStreaming else { return }
+                if let bridge = self.syncBridge {
                     let selectedKey = self.streamingSessionKey ?? ""
                     let content = await bridge.streamingContent(for: selectedKey)
-                    self.streamingContent = content
+                    // Diff guard: only mutate state when content actually changes.
+                    // Without this, identical 50 ms polls invalidate SwiftUI body
+                    // and trigger LazyVStack infinite layout recomputation.
+                    if self.streamingContent != content {
+                        self.streamingContent = content
+                    }
                 }
                 // Yield to prevent CPU spin — 50ms gives ~20fps update rate for streaming content
                 do {
@@ -231,6 +267,22 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     /// Set to true while an auto-reset is in progress (for UI binding).
     var autoResetting: Bool = false
+    /// Set to true while a manual reset is in progress (for UI binding).
+    var manualResetting: Bool = false
+    /// Set to true briefly when an auto-reset completes (for toast).
+    var showAutoResetToast: Bool = false
+
+    nonisolated func syncBridge(_ bridge: SyncBridge, didStartManualReset sessionKey: String) {
+        Task { @MainActor in
+            self.manualResetting = true
+        }
+    }
+
+    nonisolated func syncBridge(_ bridge: SyncBridge, didStopManualReset sessionKey: String) {
+        Task { @MainActor in
+            self.manualResetting = false
+        }
+    }
 
     // MARK: - Agent Activity Tracking (C2)
 

@@ -138,8 +138,8 @@ final class BeeBoardViewModel {
             colorHex: Self.priorityColors[0]!,
             positionX: Double(x),
             positionY: Double(y),
-            width: 220,
-            height: 132,
+            width: 160,
+            height: 140,
             groupId: nil,
             priority: 0,
             tags: "[]",
@@ -555,8 +555,10 @@ final class BeeBoardViewModel {
     private func applyGridLayout(to sortedPins: [Pin]) {
         let startX: CGFloat = 150
         let startY: CGFloat = 130
-        let columnWidth: CGFloat = 260
-        let rowHeight: CGFloat = 180
+        let maxPinWidth: CGFloat = pins.map { CGFloat($0.width) }.max() ?? 160
+        let maxPinHeight: CGFloat = pins.map { CGFloat($0.height) }.max() ?? 140
+        let columnWidth: CGFloat = maxPinWidth + 40
+        let rowHeight: CGFloat = maxPinHeight + 40
         let columns = 4
 
         var updates: [(id: String, x: Double, y: Double)] = []

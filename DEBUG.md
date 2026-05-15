@@ -1,43 +1,125 @@
-# DEBUG.md — Message Display Investigation (2026-04-22)
+# DEBUG.md — BeeChat 99% CPU Hang Root Cause
 
-## Symptoms
-1. User sends "hello world" → message does NOT appear in the message display area
-2. AI responses flash up briefly (streaming works) then DISAPPEAR — they're not retained
-3. Gateway connection is working, messages ARE being sent and responses ARE coming back
+**Date:** 2026-05-13  
+**Reporter:** Q (subagent)  
+**Incident:** BeeChatApp PID 5690 at 99% CPU, 10.2GB footprint  
+**Sample:** `CRASH-sample-2026-05-13.txt`  
+**Consensus:** `CONSENSUS-crash-hang-2026-05-10.md`
 
-## Root Cause
-**Schema mismatch between `Message` model and `messages` database table.**
+---
 
-The `messages` table had a legacy schema from an earlier version of the app:
-- DB column `topicId` → Model expects `sessionId` (MISMATCH)
-- DB `content NOT NULL` → Model has `content: String?` (NULL allowed)
-- DB `senderId NOT NULL` → Model has `senderId: String?` (NULL allowed)
-- DB `senderName NOT NULL` → Model has `senderName: String?` (NULL allowed)
-- DB missing columns: `role`, `editedAt`, `metadata`, `createdAt`
-- DB has unused columns: `messageId`, `isFromGateway`, `runId`, `state`
+## 1. What the Sample Shows
 
-This meant:
-1. `Message.insert(db)` failed — GRDB tried to insert into non-existent columns (`sessionId`, `role`, etc.) and didn't provide required columns (`content`, `senderId`, `senderName`, `topicId`, `state`)
-2. `Message.filter(Column("sessionId") == sessionKey).fetchAll(db)` failed — `sessionId` column doesn't exist
-3. Both failures were caught and printed as errors, but silently swallowed — messages never persisted, never displayed
+Out of **1448 main-thread samples**, **1370** are inside:
 
-## Evidence
-- `sqlite3 beechat.sqlite ".schema messages"` showed legacy schema with `topicId` instead of `sessionId`
-- `SELECT COUNT(*) FROM messages` returned 0 — no messages ever persisted
-- Migration002 only created the table if it didn't exist (`!db.tableExists("messages")`) — so legacy table was never replaced
+```
+NSRunLoop.flushObservers
+  → NSHostingView.beginTransaction()
+    → ViewGraphRootValueUpdater.updateGraph
+      → LazySubviewPlacements.placeSubviews
+        → ForEachList.applyNodes
+          → LazyStack.place
+```
 
-## Fixes Applied
+This is **not a deadlock**. It is a **SwiftUI infinite layout recomputation loop** — the main thread is continuously re-laying-out `LazyVStack` message positions and never settles.
 
-### Fix 1: Migration006 — Recreate messages table
-**File:** `Sources/BeeChatPersistence/Database/DatabaseManager.swift`
+---
 
-Added `Migration006_RecreateMessages` that drops the legacy `messages` table and recreates it with the correct schema matching the `Message` model. Safe because the table had 0 rows.
+## 2. Why It Loops Forever
 
-### Fix 2: MessageObserver ordering + scheduling
-**File:** `Sources/BeeChatSyncBridge/Observation/MessageObserver.swift`
+Three state-update paths fire in rapid succession, each triggering the next, creating a cycle that never quiesces:
 
-- Added `.order(Column("timestamp").asc).limit(500)` to the GRDB query (was missing ordering)
-- Added `scheduling: .mainActor` to the observation (matches `startLocalMessageObservation` pattern)
+### Path A — 50 ms streaming poll (unconditional write)
+`SyncBridgeObserver.startStreamingPoll()` assigns:
 
-## Build Verification
-- `swift build --product BeeChatApp` — ✅ Build succeeds
+```swift
+self.streamingContent = content   // every 50 ms, even if identical
+```
+
+`SyncBridgeObserver` is `@MainActor @Observable`. Every write to `@Published`-equivalent state triggers a full SwiftUI body re-evaluation for every view that reads `streamingContent`.
+
+### Path B — `showStreamingBubble` computed property + `.onChange` scroll
+`MessageCanvas.showStreamingBubble` depends on `streamingContent`:
+
+```swift
+private var showStreamingBubble: Bool {
+    guard !streamingContent.isEmpty else { return false }
+    if let lastAssistant = messages.last(where: { $0.role == "assistant" }),
+       lastAssistant.content == streamingContent {
+        return false
+    }
+    return true
+}
+```
+
+Every 50 ms this boolean can flip. `MessageCanvas` binds:
+
+```swift
+.onChange(of: showStreamingBubble) { _, isShowing in
+    if isShowing { scrollToBottom(proxy: proxy) }
+}
+```
+
+`scrollToBottom` calls `proxy.scrollTo("bottom-anchor", anchor: .bottom)`, which itself triggers a layout pass. Because the next 50 ms poll fires before the current layout pass completes, SwiftUI never finishes one pass before starting the next.
+
+### Path C — GRDB `ValueObservation` yields new array references
+`SyncBridge.messageStream(sessionKey:)` uses `ValueObservation.tracking` on the `messages` table. Every time the gateway writes a streaming delta to the DB, the observation fires and yields a **new `[Message]` array** (new reference, even if content is identical).
+
+`MessageListObserver.setAllMessages(_:)` → `applyWindow()` unconditionally sets:
+
+```swift
+self.messages = windowed   // new array reference every time
+```
+
+`MessageCanvas` binds `.onChange(of: messages.count)`, so every DB write also triggers `scrollToBottom` again.
+
+### Result: Three overlapping triggers
+1. `streamingContent` update every 50 ms → body re-eval
+2. `messages` array reference churn from DB → body re-eval + scroll
+3. `scrollToBottom` → `proxy.scrollTo` → new layout pass
+
+SwiftUI's `LazyVStack` recomputes `placeSubviews` for every message on every pass. With 162 messages in the windowed slice, this is expensive. The three paths overlap so that **one layout pass starts before the previous one finishes**, causing the infinite loop seen in the sample.
+
+---
+
+## 3. Why Approved Fix C Didn't Help
+
+Fix C (`guard self.isStreaming else { return }` in the poll loop) **is already present** in `SyncBridgeObserver.swift` line 186. The guard only prevents the poll from running when `isStreaming == false`. When streaming IS active, the poll still runs every 50 ms and still triggers the layout loop via Paths A, B, and C.
+
+---
+
+## 4. Fix Plan
+
+| Fix | File | What | Why |
+|-----|------|------|-----|
+| **D1** | `SyncBridgeObserver.swift` | Diff `streamingContent` before assignment | Stops Path A: no SwiftUI invalidation when string is unchanged |
+| **D2** | `MessageListObserver.swift` | Diff `allMessages` before assignment | Stops Path C: no `messages` churn when DB data is identical |
+| **D3** | `MessageCanvas.swift` | Debounce `scrollToBottom` during streaming | Stops overlapping `scrollTo` calls from stacking up |
+| **A** | `GatewayClient.swift` + `PendingRequestMap.swift` | A2 (`remove()` return value) + A1 (`hasResumed`) defense-in-depth | Prevents `CheckedContinuation` double-resume crash |
+
+### D1 — Content diff guard
+```swift
+let content = await bridge.streamingContent(for: selectedKey)
+if self.streamingContent != content {
+    self.streamingContent = content
+}
+```
+
+### D2 — Message equality check
+`Message` is not `Equatable`. We add lightweight comparison by `id` + `timestamp` + `content` to avoid churn.
+
+### D3 — Scroll debounce
+Track a `lastScrollTime` and skip `scrollToBottom` if called within ~100 ms of the previous scroll.
+
+### A — `CheckedContinuation` double-resume
+Implement consensus A2 (`remove()` returns `Bool`) + A1 (`hasResumed` in closures) + cancellation handler.
+
+---
+
+## 5. Verification
+
+After fixes, the following should hold:
+- `streamingContent` only updates when the gateway actually sends new text.
+- `messages` only updates when DB rows actually change (not on every streaming buffer write).
+- `scrollToBottom` fires at most once per 100 ms during active streaming.
+- CPU usage returns to idle baseline within 1 s of streaming stopping.

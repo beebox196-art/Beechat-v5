@@ -35,8 +35,21 @@ final class MessageListObserver {
 
     /// Single entry point for both stream and local paths
     func setAllMessages(_ allMessages: [Message]) {
+        // Diff guard: skip update when data hasn't changed to prevent
+        // SwiftUI LazyVStack churn from GRDB ValueObservation reference-only yields.
+        guard messagesDiffer(self.allMessages, allMessages) else { return }
         self.allMessages = allMessages
         applyWindow()
+    }
+
+    private func messagesDiffer(_ lhs: [Message], _ rhs: [Message]) -> Bool {
+        guard lhs.count == rhs.count else { return true }
+        for (l, r) in zip(lhs, rhs) {
+            if l.id != r.id || l.content != r.content || l.timestamp != r.timestamp || l.role != r.role {
+                return true
+            }
+        }
+        return false
     }
 
     /// Apply the display window to the full message set

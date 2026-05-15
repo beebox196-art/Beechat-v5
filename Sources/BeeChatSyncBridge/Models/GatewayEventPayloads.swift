@@ -8,8 +8,38 @@ public struct ChatEventPayload: Codable, Sendable {
     public let sessionKey: String
     public let state: String
     public let errorMessage: String?
+    public let errorKind: String?
     public let agentId: String?
     public let message: ChatMessage?
+    
+    // v4 streaming fields
+    public let runId: String?
+    public let seq: Int?
+    public let spawnedBy: String?
+    public let deltaText: String?
+    public let replace: Bool?
+    public let stopReason: String?
+    
+    private enum CodingKeys: String, CodingKey {
+        case sessionKey, state, errorMessage, errorKind, agentId, message
+        case runId, seq, spawnedBy, deltaText, replace, stopReason
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionKey = try container.decode(String.self, forKey: .sessionKey)
+        state = try container.decode(String.self, forKey: .state)
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        errorKind = try container.decodeIfPresent(String.self, forKey: .errorKind)
+        agentId = try container.decodeIfPresent(String.self, forKey: .agentId)
+        message = try container.decodeIfPresent(ChatEventPayload.ChatMessage.self, forKey: .message)
+        runId = try container.decodeIfPresent(String.self, forKey: .runId)
+        seq = try container.decodeIfPresent(Int.self, forKey: .seq)
+        spawnedBy = try container.decodeIfPresent(String.self, forKey: .spawnedBy)
+        deltaText = try container.decodeIfPresent(String.self, forKey: .deltaText)
+        replace = try container.decodeIfPresent(Bool.self, forKey: .replace)
+        stopReason = try container.decodeIfPresent(String.self, forKey: .stopReason)
+    }
     
     public struct ChatMessage: Codable, Sendable {
         public let id: String?

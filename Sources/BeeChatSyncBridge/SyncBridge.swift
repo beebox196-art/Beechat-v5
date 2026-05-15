@@ -51,9 +51,11 @@ public actor SyncBridge {
     private var sendingSessionKeys: Set<String> = []
     /// Cooldown tracker: messages remaining before next auto-reset check
     private var resetCooldownCount: [String: Int] = [:]
-    private static let resetCooldownMessages = 5
     /// Tracks sessions that have already received topic context injection
     private var contextInjectedKeys: Set<String> = []
+    /// Pending reset context payloads: sessionKey -> formatted context string
+    /// Written by manualReset(), consumed and cleared by sendMessage()
+    private var pendingResetContext: [String: String] = [:]
 
     public init(config: SyncBridgeConfiguration) {
         self.config = config
@@ -209,23 +211,36 @@ public actor SyncBridge {
         var effectiveText = text
         var didAutoReset = false
         
-        // Check cooldown
+        // Inject pending manual reset context if present (consumed once)
+        if let pendingContext = pendingResetContext.removeValue(forKey: sessionKey) {
+            if effectiveText.isEmpty {
+                effectiveText = pendingContext
+            } else {
+                effectiveText = "\(pendingContext)\n\n\(effectiveText)"
+            }
+            didAutoReset = true  // Reuse flag to skip topic context injection below
+        }
+        
+        // Auto-reset at 80% safety ceiling — always fires, no cooldown check
+        // Cooldown only applies to sub-threshold resets (which don't exist in hybrid model)
         let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
         if cooldownLeft > 0 {
             resetCooldownCount[sessionKey] = cooldownLeft - 1
             if cooldownLeft - 1 == 0 {
                 resetCooldownCount.removeValue(forKey: sessionKey)
             }
-        } else {
-            // Usage check with graceful fallback
+        }
+        
+        // Usage check for auto-reset (80% ceiling)
+        if !didAutoReset {
             do {
                 let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
                 if usage > 1.0 {
                     print("[SyncBridge] Usage RPC returned unexpected value: \(usage), capping at 1.0")
                 }
                 let cappedUsage = min(usage, 1.0)
-                let threshold = await sessionResetManager.config.redDotThreshold
-                if cappedUsage >= threshold {
+                let autoThreshold = await sessionResetManager.config.autoResetThreshold
+                if cappedUsage >= autoThreshold {
                     delegate?.syncBridge(self, didStartAutoReset: sessionKey)
                     do {
                         let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
@@ -235,7 +250,8 @@ public actor SyncBridge {
                         let ok = try await resetSession(sessionKey: sessionKey)
                         if ok {
                             effectiveText = formatCombinedContext(recentMessages, userMessage: text)
-                            resetCooldownCount[sessionKey] = Self.resetCooldownMessages
+                            let cooldown = await sessionResetManager.config.cooldownMessages
+                            resetCooldownCount[sessionKey] = cooldown
                             didAutoReset = true
                         }
                     } catch {
@@ -305,6 +321,55 @@ public actor SyncBridge {
         return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
     }
 
+    /// Manual reset triggered by user (amber dot tap or context menu).
+    /// Fetches local history, resets session on gateway, stores context for next send.
+    /// Returns true if reset succeeded, false if already pending or failed.
+    /// No cooldown — user-initiated resets always execute.
+    public func manualReset(sessionKey: String) async throws -> Bool {
+        // Guard against double-tap: if pending context already exists, this is a repeat
+        guard pendingResetContext[sessionKey] == nil else {
+            print("[SyncBridge] manualReset: pending context already exists for \(sessionKey), skipping")
+            return true
+        }
+
+        // Abort any in-flight generation
+        if streamingSessionKeys.contains(sessionKey) {
+            try? await abortGeneration(sessionKey: sessionKey)
+        }
+
+        delegate?.syncBridge(self, didStartManualReset: sessionKey)
+
+        // Fetch local history BEFORE reset (reads from local SQLite, not gateway)
+        let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
+
+        // Reset session on gateway
+        let ok = try await resetSession(sessionKey: sessionKey)
+
+        if ok {
+            // Format context and store for next send
+            let contextPayload = formatCombinedContext(recentMessages, userMessage: "")
+            pendingResetContext[sessionKey] = contextPayload
+
+            // Update usage cache so UI reflects the reset immediately
+            sessionUsageCache[sessionKey] = 0
+        }
+
+        delegate?.syncBridge(self, didStopManualReset: sessionKey)
+        return ok
+    }
+
+    /// Clear pending reset context for all sessions except the given one.
+    /// Called on topic switch to avoid stale context being injected into the wrong session.
+    public func clearPendingResetContext(except sessionKey: String?) {
+        if let key = sessionKey {
+            for k in pendingResetContext.keys where k != key {
+                pendingResetContext.removeValue(forKey: k)
+            }
+        } else {
+            pendingResetContext.removeAll()
+        }
+    }
+
     // MARK: - Topic Context Injection
 
     /// Feature flag for topic context injection. Uses UserDefaults directly
@@ -321,6 +386,10 @@ public actor SyncBridge {
     // MARK: - Auto-reset helpers
 
     /// Fetch recent non-system, non-context-polluted messages from local SQLite.
+    /// IMPORTANT: This deliberately reads from local SQLite, not the gateway.
+    /// After a session reset, the gateway's history is wiped, so reading from the gateway
+    /// would return empty. Local SQLite preserves messages for context carry-forward.
+    /// Changing this to call the gateway would break the reset flow.
     func fetchLocalHistory(sessionKey: String, limit: Int = 30) throws -> [Message] {
         let writer = try DatabaseManager.shared.writer
         return try writer.read { db in
@@ -469,11 +538,18 @@ public actor SyncBridge {
 
     // MARK: - Chat event handlers (client-friendly format from gateway)
 
-    /// Handle "chat" delta event - gateway sends accumulated text (replacement, not append)
-       internal func processChatDelta(sessionKey: String, text: String) async {
+    /// Handle "chat" delta event - v4 sends incremental text with replace semantics.
+    /// - Parameter replace: When true, set the buffer to `text` (full replacement or first delta).
+    ///   When false, append `text` to the existing buffer.
+    ///   v3 compat: callers pass replace=true when using cumulative message.content.
+       internal func processChatDelta(sessionKey: String, text: String, replace: Bool = true) async {
         let isFirstDelta = !streamingSessionKeys.contains(sessionKey)
         streamingSessionKeys.insert(sessionKey)
-        streamingBuffer[sessionKey] = text
+        if replace || isFirstDelta {
+            streamingBuffer[sessionKey] = text
+        } else {
+            streamingBuffer[sessionKey, default: ""] += text
+        }
         resetStallTimer(for: sessionKey)
         if isFirstDelta {
             delegate?.syncBridge(self, didStartStreaming: sessionKey)

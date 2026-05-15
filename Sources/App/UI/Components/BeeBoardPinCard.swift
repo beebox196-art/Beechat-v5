@@ -23,7 +23,7 @@ struct BeeBoardPinCard: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: themeManager.spacing(.sm)) {
+            VStack(alignment: .leading, spacing: themeManager.spacing(.xs)) {
                 header
 
                 if isSelected {
@@ -41,16 +41,16 @@ struct BeeBoardPinCard: View {
                     .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.75))
             }
-            .padding(themeManager.spacing(.md))
+            .padding(themeManager.spacing(.sm))
         }
         .frame(width: CGFloat(pin.width), height: CGFloat(pin.height), alignment: .topLeading)
         .background(cardBackground)
         .overlay(cardBorder)
         .shadow(
             color: themeManager.color(.shadowMedium),
-            radius: isSelected ? 8 : 4,
+            radius: isSelected ? 8 : 3,
             x: 0,
-            y: isSelected ? 4 : 2
+            y: isSelected ? 4 : 1
         )
         .contentShape(RoundedRectangle(cornerRadius: themeManager.radius(.lg)))
         .offset(dragOffset)
@@ -82,23 +82,23 @@ struct BeeBoardPinCard: View {
         HStack(spacing: themeManager.spacing(.sm)) {
             Circle()
                 .fill(Color(hex: pin.colorHex) ?? themeManager.color(.accentPrimary))
-                .frame(width: 10, height: 10)
+                .frame(width: 8, height: 8)
 
             if pin.pinType == "rich" {
                 Image(systemName: "paperclip")
-                    .font(.system(size: 9))
+                    .font(.system(size: 8))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
 
             if isSelected {
                 TextField("Title", text: titleBinding)
                     .textFieldStyle(.plain)
-                    .font(themeManager.font(.subheading))
+                    .font(themeManager.font(.body))
                     .foregroundColor(themeManager.color(.textPrimary))
                     .focused($isTitleFocused)
             } else {
                 Text(pin.title.isEmpty ? "Untitled" : pin.title)
-                    .font(themeManager.font(.subheading))
+                    .font(themeManager.font(.body))
                     .foregroundColor(themeManager.color(.textPrimary))
                     .lineLimit(1)
             }
@@ -107,7 +107,7 @@ struct BeeBoardPinCard: View {
 
             Button(action: onExpand) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 10))
+                    .font(.system(size: 8))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
             }
             .buttonStyle(.plain)
@@ -132,12 +132,12 @@ struct BeeBoardPinCard: View {
         Group {
             if let content = pin.content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(content)
-                    .font(themeManager.font(.body))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
-                    .lineLimit(2)
+                    .lineLimit(3)
             } else {
                 Text("No notes yet")
-                    .font(themeManager.font(.body))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.65))
                     .italic()
             }
@@ -146,15 +146,16 @@ struct BeeBoardPinCard: View {
 
     private var tagPills: some View {
         HStack(spacing: themeManager.spacing(.xs)) {
-            ForEach(tags.prefix(3), id: \.self) { tag in
+            ForEach(tags.prefix(4), id: \.self) { tag in
                 Text(tag)
                     .font(themeManager.font(.caption2))
                     .foregroundColor(tagColor(for: tag))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
                     .background(Capsule().fill(tagColor(for: tag).opacity(0.2)))
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var tagEditor: some View {
