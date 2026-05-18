@@ -85,17 +85,25 @@ struct MessageCanvas: View {
                 }
                 .scrollContentBackground(.hidden)
                 .defaultScrollAnchor(.bottom)
-                .onScrollGeometryChangeCompat { geo in
+                .onScrollGeometryChangeCompat({ geo in
                     // Guard against invalid geometry (empty content, zero-size container)
                     guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
                         return true // stay at bottom when geometry is invalid
                     }
-                    let threshold: CGFloat = 24
+                    // Hysteresis: enter threshold (become "at bottom") is generous,
+                    // leave threshold (become "scrolled up") is tighter.
+                    // This prevents the button flickering during layout shifts.
+                    let enterThreshold: CGFloat = 50
+                    let leaveThreshold: CGFloat = 120
                     let distanceFromBottom = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
-                    let nearBottom = distanceFromBottom < threshold
-                    isAtBottom = nearBottom
-                    return nearBottom
-                }
+                    if isAtBottom {
+                        // Currently at bottom — only leave if scrolled far up
+                        return distanceFromBottom < leaveThreshold
+                    } else {
+                        // Currently scrolled up — only enter if close to bottom
+                        return distanceFromBottom < enterThreshold
+                    }
+                }, binding: $isAtBottom)
                 .background(
                     WidthReader { width in
                         Color.clear
@@ -240,11 +248,15 @@ struct ScrollGeometry {
 
 extension View {
     /// On macOS 15+/iOS 18+: uses native `onScrollGeometryChange`.
-    /// On older platforms: uses `onChange(of: scrollPosition)` fallback, or simply
-    /// leaves `isAtBottom` true (auto-scroll via `defaultScrollAnchor(.bottom)` still works).
+    /// On older platforms: leaves `isAtBottom` true (auto-scroll via `defaultScrollAnchor(.bottom)` still works).
+    /// - Parameter handler: Tracking closure — computes whether the scroll is "at bottom".
+    ///   Should be pure; receives ScrollGeometry and returns Bool.
+    /// - Parameter binding: Binding to the isAtBottom state. Updated in the action closure
+    ///   (macOS 15+) so SwiftUI processes the state change correctly.
     @ViewBuilder
     func onScrollGeometryChangeCompat(
-        _ handler: @escaping (ScrollGeometry) -> Bool
+        _ handler: @escaping (ScrollGeometry) -> Bool,
+        binding: Binding<Bool>
     ) -> some View {
         if #available(macOS 15.0, iOS 18.0, *) {
             self.onScrollGeometryChange(for: Bool.self) { geo in
@@ -255,7 +267,7 @@ extension View {
                 )
                 return handler(sg)
             } action: { _, newValue in
-                // isAtBottom is already updated inside the handler closure
+                binding.wrappedValue = newValue
             }
         } else {
             // macOS 14 fallback: isAtBottom stays true, Jump button hidden.
