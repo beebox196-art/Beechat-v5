@@ -520,6 +520,27 @@ public class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("Migration012_AddPendingGatewaySync") { db in
+            // 1. Add pendingGatewaySync column to topics table
+            guard try db.tableExists("topics") else { return }
+            
+            let columns = try db.columns(in: "topics").map { $0.name }
+            if !columns.contains("pendingGatewaySync") {
+                try db.alter(table: "topics") { t in
+                    t.add(column: "pendingGatewaySync", .boolean).defaults(to: false)
+                }
+            }
+            
+            // 2. Add UNIQUE index on openclawSessionKey in bridge table
+            if try db.tableExists("topic_session_bridge") {
+                try db.execute(sql: "DROP INDEX IF EXISTS idx_bridge_session_key")
+                try db.execute(sql: """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_bridge_session_key
+                    ON topic_session_bridge(openclawSessionKey)
+                """)
+            }
+        }
+
         try migrator.migrate(dbPool!)
     }
 }

@@ -6,12 +6,14 @@ public class BeeChatPersistenceStore {
     private let sessionRepo: SessionRepository
     private let messageRepo: MessageRepository
     private let attachmentRepo: AttachmentRepository
+    public let topicRepo: TopicRepository
     
     public init(dbManager: DatabaseManager = .shared) {
         self.dbManager = dbManager
         self.sessionRepo = SessionRepository(dbManager: dbManager)
         self.messageRepo = MessageRepository(dbManager: dbManager)
         self.attachmentRepo = AttachmentRepository(dbManager: dbManager)
+        self.topicRepo = TopicRepository(dbManager: dbManager)
     }
     
     public func openDatabase(at path: String) throws {
@@ -50,9 +52,6 @@ public class BeeChatPersistenceStore {
     public func upsertSessions(_ sessions: [Session]) throws {
         try sessionRepo.upsert(sessions)
     }
-    
-    
-    private let topicRepo = TopicRepository()
     
     public func saveTopic(_ topic: Topic) throws {
         try topicRepo.save(topic)

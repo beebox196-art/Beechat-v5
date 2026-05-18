@@ -12,6 +12,7 @@ public struct Topic: Codable, UpsertableRecord {
     public var unreadCount: Int = 0
     public var sessionKey: String?   
     public var isArchived: Bool = false
+    public var pendingGatewaySync: Bool = false
     public var createdAt: Date
     public var updatedAt: Date
     public var metadataJSON: String?
@@ -25,6 +26,7 @@ public struct Topic: Codable, UpsertableRecord {
         unreadCount: Int = 0,
         sessionKey: String? = nil,
         isArchived: Bool = false,
+        pendingGatewaySync: Bool = false,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         metadataJSON: String? = nil,
@@ -37,6 +39,7 @@ public struct Topic: Codable, UpsertableRecord {
         self.unreadCount = unreadCount
         self.sessionKey = sessionKey
         self.isArchived = isArchived
+        self.pendingGatewaySync = pendingGatewaySync
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.metadataJSON = metadataJSON
@@ -47,7 +50,8 @@ public struct Topic: Codable, UpsertableRecord {
     public static let upsertColumns: [Column] = [
         Column("name"), Column("lastMessagePreview"), Column("lastActivityAt"),
         Column("unreadCount"), Column("sessionKey"), Column("isArchived"),
-        Column("updatedAt"), Column("metadataJSON")
+        Column("updatedAt"), Column("metadataJSON"),
+        Column("pendingGatewaySync")
     ]
 }
 

@@ -8,6 +8,99 @@ public class TopicRepository {
         self.dbManager = dbManager
     }
 
+    /// Create a new topic with an upfront gateway-format session key.
+    /// The key is generated as "agent:main:<topicId>" (lowercase) to match
+    /// gateway conventions. No nil sessionKey window.
+    public func create(name: String, pendingGatewaySync: Bool = false) throws -> Topic {
+        let topicId = UUID().uuidString
+        let gatewayKey = "agent:main:\(topicId.lowercased())"
+
+        let topic = Topic(
+            id: topicId,
+            name: name,
+            sessionKey: gatewayKey,
+            pendingGatewaySync: pendingGatewaySync
+        )
+
+        try save(topic)
+        try saveBridge(topicId: topicId, sessionKey: gatewayKey)
+
+        return topic
+    }
+
+    /// Fetch active topics with computed message counts via SQL JOIN.
+    /// M010 replaced topic-based triggers with session-based triggers,
+    /// so Topic.messageCount must be computed from the messages table.
+    public func fetchAllActiveWithCounts(limit: Int = 100) throws -> [Topic] {
+        try dbManager.reader.read { db in
+            try Topic.fetchAll(db, sql: """
+                SELECT t.*,
+                       COALESCE((
+                           SELECT COUNT(*) FROM messages m
+                           JOIN topic_session_bridge b ON b.openclawSessionKey = m.sessionId
+                           WHERE b.topicId = t.id
+                       ), 0) as messageCount
+                FROM topics t
+                WHERE t.isArchived = 0
+                ORDER BY COALESCE(t.lastActivityAt, t.createdAt) DESC
+                LIMIT \(limit)
+            """)
+        }
+    }
+
+    /// Fetch all topics with pendingGatewaySync = true.
+    public func fetchPendingSyncTopics() throws -> [Topic] {
+        try dbManager.reader.read { db in
+            try Topic.filter(Column("pendingGatewaySync") == true).fetchAll(db)
+        }
+    }
+
+    /// Archive a topic by ID.
+    public func archive(topicId: String) throws {
+        try dbManager.write { db in
+            try db.execute(
+                sql: "UPDATE topics SET isArchived = 1, updatedAt = ? WHERE id = ?",
+                arguments: [Date(), topicId]
+            )
+        }
+    }
+
+    /// Clear the pendingGatewaySync flag after successful reconciliation.
+    public func markSynced(topicId: String) throws {
+        try dbManager.write { db in
+            try db.execute(
+                sql: "UPDATE topics SET pendingGatewaySync = 0, updatedAt = ? WHERE id = ?",
+                arguments: [Date(), topicId]
+            )
+        }
+    }
+
+    /// Update topic metadata from gateway session data.
+    public func syncMetadataFromSessions(_ sessions: [Session]) throws {
+        try dbManager.write { db in
+            for session in sessions {
+                guard let topicId = try String.fetchOne(db, sql:
+                    "SELECT topicId FROM topic_session_bridge WHERE openclawSessionKey = ?",
+                    arguments: [session.id]
+                ) else { continue }
+
+                try db.execute(sql: """
+                    UPDATE topics SET
+                        lastMessagePreview = ?,
+                        lastActivityAt = ?,
+                        unreadCount = ?,
+                        updatedAt = ?
+                    WHERE id = ?
+                """, arguments: [
+                    session.lastMessagePreview,
+                    session.lastMessageAt ?? session.updatedAt,
+                    session.unreadCount,
+                    Date(),
+                    topicId
+                ])
+            }
+        }
+    }
 
     public func save(_ topic: Topic) throws {
         try dbManager.write { db in
@@ -58,11 +151,15 @@ public class TopicRepository {
 
     public func saveBridge(topicId: String, sessionKey: String) throws {
         try dbManager.write { db in
-            var bridge = TopicSessionBridge(
-                topicId: topicId,
-                openclawSessionKey: sessionKey
-            )
-            try bridge.save(db)
+            try db.execute(sql: """
+                INSERT INTO topic_session_bridge
+                    (topicId, spaceId, openclawSessionKey, bridgeVersion, status, createdAt, updatedAt)
+                VALUES
+                    (?, 'default', ?, 1, 'active', datetime('now'), datetime('now'))
+                ON CONFLICT(topicId) DO UPDATE SET
+                    openclawSessionKey = excluded.openclawSessionKey,
+                    updatedAt = excluded.updatedAt
+            """, arguments: [topicId, sessionKey])
         }
     }
 
