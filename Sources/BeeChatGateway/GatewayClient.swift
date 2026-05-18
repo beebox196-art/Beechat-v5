@@ -450,56 +450,56 @@ public actor GatewayClient {
         let role = "operator"
         let scopes = ["operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"]
         
-        // Build device identity only when we have a stored deviceToken
+        // ALWAYS build device identity — needed for pairing flow on first connect.
+        // Without device identity, the gateway clears scopes (except for Control UI clients).
+        // With device identity, local connections get auto-paired and full scopes.
         var deviceIdentity: ConnectParams.DeviceIdentity? = nil
-        if currentDeviceToken != nil {
-            print("[GW] performHandshake — building device identity (have deviceToken)")
-            do {
-                let keyPair = try DeviceCrypto.getOrCreateKeyPair()
-                let deviceId = DeviceCrypto.getDeviceId(keyPair)
-                let publicKey = DeviceCrypto.exportPublicKey(keyPair)
-                let signedAt = Int(Date().timeIntervalSince1970 * 1000)
-                
-                let signature = try DeviceCrypto.signChallenge(
-                    keyPair,
-                    deviceId: deviceId,
-                    clientId: config.clientInfo.id,
-                    clientMode: config.clientInfo.mode,
-                    role: role,
-                    scopes: scopes,
-                    signedAtMs: signedAt,
-                    token: config.token,
-                    nonce: nonce,
-                    platform: {
-                        #if os(iOS)
-                        return "ios"
-                        #elseif os(macOS)
-                        return "macos"
-                        #else
-                        return "macos"
-                        #endif
-                    }(),
-                    deviceFamily: {
-                        #if os(iOS)
-                        return "mobile"
-                        #elseif os(macOS)
-                        return "desktop"
-                        #else
-                        return "desktop"
-                        #endif
-                    }()
-                )
-                
-                deviceIdentity = ConnectParams.DeviceIdentity(
-                    id: deviceId,
-                    publicKey: publicKey,
-                    signature: signature,
-                    signedAt: signedAt,
-                    nonce: nonce
-                )
-            } catch {
-                print("[GW] Device identity build failed: \(error)")
-            }
+        do {
+            let keyPair = try DeviceCrypto.getOrCreateKeyPair()
+            let deviceId = DeviceCrypto.getDeviceId(keyPair)
+            let publicKey = DeviceCrypto.exportPublicKey(keyPair)
+            let signedAt = Int(Date().timeIntervalSince1970 * 1000)
+            
+            let signature = try DeviceCrypto.signChallenge(
+                keyPair,
+                deviceId: deviceId,
+                clientId: config.clientInfo.id,
+                clientMode: config.clientInfo.mode,
+                role: role,
+                scopes: scopes,
+                signedAtMs: signedAt,
+                token: config.token,
+                nonce: nonce,
+                platform: {
+                    #if os(iOS)
+                    return "ios"
+                    #elseif os(macOS)
+                    return "macos"
+                    #else
+                    return "macos"
+                    #endif
+                }(),
+                deviceFamily: {
+                    #if os(iOS)
+                    return "mobile"
+                    #elseif os(macOS)
+                    return "desktop"
+                    #else
+                    return "desktop"
+                    #endif
+                }()
+            )
+            
+            deviceIdentity = ConnectParams.DeviceIdentity(
+                id: deviceId,
+                publicKey: publicKey,
+                signature: signature,
+                signedAt: signedAt,
+                nonce: nonce
+            )
+        } catch {
+            print("[GW] Device identity build failed: \(error)")
+            // Connection will proceed without device identity, but scopes may be limited
         }
         
         let params = ConnectParams(
