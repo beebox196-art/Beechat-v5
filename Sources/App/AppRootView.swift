@@ -101,6 +101,7 @@ final class AppState {
                                 }
                             }
                         } catch {
+                            print("[AppState]  Bridge start failed: \(error) — \(error.localizedDescription)")
                             self.connectionState = .error
                             self.offlineStatus = "Offline — \(error.localizedDescription)"
                             self.isStartupComplete = true
@@ -111,10 +112,10 @@ final class AppState {
                         self.connectionState = .error
                         self.offlineStatus = "Offline — gateway config error"
                         self.isStartupComplete = true
-                        print("[AppState] Malformed gateway config: \(error)")
+                        print("[AppState]  Malformed gateway config: \(error)")
                     }
                 } else {
-                    print("[AppState] No openclaw.json — local DB mode only")
+                    print("[AppState]  No openclaw.json — local DB mode only")
                     self.isReady = true
                     self.connectionState = .disconnected
                     self.offlineStatus = "Offline — no gateway config found"
@@ -123,7 +124,7 @@ final class AppState {
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.connectionState = .error
-                print("[AppState] Startup failed: \(error)")
+                print("[AppState]  Startup failed: \(error)")
             }
         }
     }
@@ -172,7 +173,7 @@ final class AppState {
             url: wsURL,
             token: token,
             clientMode: "webchat",
-            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "webchat")
+            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "webchat", deviceFamily: "desktop")
         )
     }
 }
