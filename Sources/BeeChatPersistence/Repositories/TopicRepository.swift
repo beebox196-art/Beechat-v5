@@ -163,6 +163,42 @@ public class TopicRepository {
         }
     }
 
+    /// Fetch a single topic by ID, regardless of archived status.
+    /// Used for undo operations where the topic may be archived.
+    public func fetchById(_ id: String) throws -> Topic? {
+        try dbManager.reader.read { db in
+            try Topic.fetchOne(db, key: id)
+        }
+    }
+
+    /// Fetch all session keys that already have a topic bridge entry,
+    /// regardless of bridge status (active, pending, etc.).
+    /// Used by the import flow to check which sessions already have topics.
+    public func fetchAllActiveSessionKeys() throws -> Set<String> {
+        try dbManager.reader.read { db in
+            let bridges = try TopicSessionBridge.fetchAll(db)
+            return Set(bridges.map { $0.openclawSessionKey })
+        }
+    }
+
+    /// Atomically save a topic and its bridge entry in a single write transaction.
+    /// If bridge creation fails (e.g., UNIQUE constraint on openclawSessionKey),
+    /// the entire transaction rolls back — no orphaned topic is left behind.
+    public func saveAndBridgeInTransaction(_ topic: Topic, sessionKey: String) throws {
+        try dbManager.write { db in
+            var topic = topic
+            try topic.save(db)  // GRDB upsert (save is mutating on PersistableRecord)
+            // Include spaceId and bridgeVersion to match existing saveBridge() pattern
+            try db.execute(
+                sql: """
+                INSERT INTO topic_session_bridge (topicId, spaceId, openclawSessionKey, bridgeVersion, status, createdAt, updatedAt)
+                VALUES (?, 'default', ?, 1, 'active', datetime('now'), datetime('now'))
+                """,
+                arguments: [topic.id, sessionKey]
+            )
+        }
+    }
+
     public func resolveSessionKey(topicId: String) throws -> String? {
         try dbManager.reader.read { db in
             // Try topics.sessionKey first
