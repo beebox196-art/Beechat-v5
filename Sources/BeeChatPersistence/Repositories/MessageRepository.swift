@@ -27,7 +27,7 @@ public class MessageRepository {
             if let before = before {
                 query = query.filter(Column("timestamp") < before)
             }
-            return try query.order(Column("timestamp").desc)
+            return try query.order(Column("timestamp").asc)
                              .limit(limit)
                              .fetchAll(db)
         }
