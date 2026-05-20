@@ -168,14 +168,19 @@ struct MainWindow: View {
                             topicId: messageViewModel.selectedTopicId,
                             onLoadEarlier: { messageViewModel.loadEarlierMessages() }
                         )
+                        .safeAreaInset(edge: .bottom) {
+                            VStack(spacing: 0) {
+                                Divider()
+                                Composer(viewModel: composerViewModel, onSend: composerSend)
+                            }
+                            .background(themeManager.color(.bgSurface))
+                        }
                         resetIndicator
                             .padding(.top, 4)
                     }
                 } else {
                     Color.clear.frame(maxHeight: .infinity)
                 }
-                Divider()
-                Composer(viewModel: composerViewModel, onSend: composerSend)
             }
             .background(themeManager.color(.bgSurface))
         }

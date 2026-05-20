@@ -105,6 +105,7 @@ struct Composer: View {
     }
 
     private func toggleRecording() {
+
         if viewModel.isRecording {
             viewModel.stopRecording()
         } else {

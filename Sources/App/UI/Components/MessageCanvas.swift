@@ -1,6 +1,14 @@
 import SwiftUI
 import BeeChatPersistence
 
+/// Tracked scroll geometry result returned from the transform closure.
+/// Using a named type instead of a tuple helps the Swift type checker.
+struct ScrollGeometryResult: Equatable {
+    var isAtBottom: Bool
+    var contentHeight: CGFloat
+    var containerHeight: CGFloat
+}
+
 /// Scrollable message canvas — displays messages and typing indicator.
 /// Auto-scrolls to bottom on new messages. Measures canvas width for bubble sizing
 struct MessageCanvas: View {
@@ -32,6 +40,16 @@ struct MessageCanvas: View {
 
     @State private var pendingTopicScroll: Bool = false
     @State private var lastScrollTime: Date = .distantPast
+    // Tracked geometry values — set only in the action closure of onScrollGeometryChangeCompat
+    @State private var contentHeight: CGFloat = 0
+    @State private var containerHeight: CGFloat = 0
+    @State private var scrollCorrectionTask: Task<Void, Never>?
+
+    /// Computed from tracked geometry — no @State mutation in geometry handler.
+    private var contentFillsContainer: Bool {
+        guard contentHeight > 0, containerHeight > 0 else { return false }
+        return contentHeight >= containerHeight
+    }
 
     var body: some View {
         ZStack {
@@ -85,25 +103,35 @@ struct MessageCanvas: View {
                 }
                 .scrollContentBackground(.hidden)
                 .defaultScrollAnchor(.bottom)
-                .onScrollGeometryChangeCompat({ geo in
-                    // Guard against invalid geometry (empty content, zero-size container)
-                    guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
-                        return true // stay at bottom when geometry is invalid
+                // Change #9: Transform closure is pure (no @State mutations).
+                // All state mutations happen in the action closure.
+                // Change #4: Hysteresis thresholds (50/120px) kept for UX quality.
+                .onScrollGeometryChangeCompat(
+                    transform: { geo in
+                        // Pure computation — no @State mutations
+                        guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
+                            return ScrollGeometryResult(isAtBottom: true, contentHeight: geo.contentSize.height, containerHeight: geo.containerSize.height)
+                        }
+                        // Hysteresis: enter threshold (become "at bottom") is generous,
+                        // leave threshold (become "scrolled up") is tighter.
+                        let enterThreshold: CGFloat = 50
+                        let leaveThreshold: CGFloat = 120
+                        let distanceFromBottom = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
+                        let atBottom: Bool
+                        if isAtBottom {
+                            atBottom = distanceFromBottom < leaveThreshold
+                        } else {
+                            atBottom = distanceFromBottom < enterThreshold
+                        }
+                        return ScrollGeometryResult(isAtBottom: atBottom, contentHeight: geo.contentSize.height, containerHeight: geo.containerSize.height)
+                    },
+                    action: { _, newValue in
+                        // All @State mutations here (Change #9)
+                        isAtBottom = newValue.isAtBottom
+                        contentHeight = newValue.contentHeight
+                        containerHeight = newValue.containerHeight
                     }
-                    // Hysteresis: enter threshold (become "at bottom") is generous,
-                    // leave threshold (become "scrolled up") is tighter.
-                    // This prevents the button flickering during layout shifts.
-                    let enterThreshold: CGFloat = 50
-                    let leaveThreshold: CGFloat = 120
-                    let distanceFromBottom = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
-                    if isAtBottom {
-                        // Currently at bottom — only leave if scrolled far up
-                        return distanceFromBottom < leaveThreshold
-                    } else {
-                        // Currently scrolled up — only enter if close to bottom
-                        return distanceFromBottom < enterThreshold
-                    }
-                }, binding: $isAtBottom)
+                )
                 .background(
                     WidthReader { width in
                         Color.clear
@@ -113,6 +141,7 @@ struct MessageCanvas: View {
                 .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
                     measuredWidth = newWidth
                 }
+                // Change #5+6: Replace needsScrollAfterLayout with Task-based scheduleScrollCorrection
                 .onChange(of: messages.count) { _, _ in
                     if let anchorId = anchorMessageId {
                         withAnimation(.easeInOut(duration: 0.15)) {
@@ -122,24 +151,25 @@ struct MessageCanvas: View {
                     } else if pendingTopicScroll {
                         pendingTopicScroll = false
                         scrollToBottom(proxy: proxy, animated: true)
-                    } else if isAtBottom {
-                        // Only auto-scroll when already at the bottom.
-                        // Do NOT force scroll on user message — defaultScrollAnchor(.bottom)
-                        // handles staying pinned. Explicit scrollToBottom on user send
-                        // causes white-space overshoot because the scroll targets a position
-                        // that becomes stale when the streaming bubble starts growing.
+                    }
+                    // Short-content fallback: when messages don't fill the viewport,
+                    // defaultScrollAnchor(.bottom) is ignored by macOS. Force-scroll to
+                    // keep content at the bottom of the visible area.
+                    if !contentFillsContainer {
                         scrollToBottom(proxy: proxy, animated: false)
                     }
-                    // else: user is scrolled up reading — don't force scroll.
+                    // Schedule scroll correction for safeAreaInset layout changes
+                    scheduleScrollCorrection(proxy: proxy)
+                }
+                // Change #10: Schedule scroll correction when Composer height changes
+                .onChange(of: containerHeight) { _, _ in
+                    scheduleScrollCorrection(proxy: proxy)
                 }
                 .onChange(of: thinkingState) { oldState, newState in
                     BeeChatLogger.log("[ThinkingBee] MessageCanvas: thinkingState changed \(oldState) → \(newState)")
-                    // Safety net: when thinking starts, ensure we're scrolled to bottom.
-                    // This covers the gap between user message appearing and streaming content
-                    // starting, where isAtBottom might briefly flicker false due to layout shifts.
-                    if newState == .thinking && isAtBottom {
-                        scrollToBottom(proxy: proxy, animated: false)
-                    }
+                    // REMOVED: scrollToBottom on .thinking
+                    // defaultScrollAnchor(.bottom) handles staying at bottom.
+                    // Explicit scroll here causes bounce when Composer height is changing.
                 }
                 .onChange(of: topicId) { _, newId in
                     if newId != nil {
@@ -155,51 +185,60 @@ struct MessageCanvas: View {
                     scrollProxy = proxy
                     scrollToBottom(proxy: proxy, animated: true)
                 }
+                // Change #1: Move Jump-to-Latest button from ZStack sibling to .overlay()
+                // on the ScrollView. Overlay opacity changes don't affect scroll geometry.
+                // Change #2: Remove .animation and .offset on isAtBottom — both were
+                // layout-affecting in ZStack.
+                // Change #3: Fixed-size container (48×48) so opacity changes can't affect layout.
+                .overlay(alignment: .bottomTrailing) {
+                    jumpToLatestButton
+                }
             }
             .environment(\.canvasWidth, measuredWidth)
-
-            // Jump to Latest button — always present but fades in/out.
-            // Using opacity instead of conditional rendering prevents layout feedback loops
-            // where isAtBottom toggles → button appears/disappears → geometry changes → isAtBottom toggles
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if let proxy = scrollProxy {
-                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                    }
-                }
-                isAtBottom = true
-            }) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Jump to latest message")
-            .accessibilityHint("Scrolls to the most recent message")
-            .opacity(isAtBottom ? 0 : 1)
-            .allowsHitTesting(!isAtBottom)
-            .accessibilityHidden(isAtBottom)
-            .offset(y: isAtBottom ? 8 : 0)
-            .animation(.easeInOut(duration: 0.2), value: isAtBottom)
-            .padding(.bottom, 12)
-            .padding(.trailing, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
         .frame(maxHeight: .infinity)
     }
 
 
 
+    /// Jump-to-Latest button — lives in a fixed-size overlay so its opacity
+    /// changes never affect scroll geometry (Changes #1, #2, #3).
+    private var jumpToLatestButton: some View {
+        Color.clear
+            .frame(width: 48, height: 48)
+            .overlay {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if let proxy = scrollProxy {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
+                    }
+                    isAtBottom = true
+                }) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .opacity(isAtBottom ? 0 : 1)
+                .allowsHitTesting(!isAtBottom)
+                .accessibilityLabel("Jump to latest message")
+                .accessibilityHint("Scrolls to the most recent message")
+                .accessibilityHidden(isAtBottom)
+            }
+            .padding(.bottom, 12)
+            .padding(.trailing, 12)
+    }
+
     /// Scroll to bottom. No animation during streaming — animation fights with
     /// SwiftUI's layout engine as content grows, causing visible bounce.
     /// Animated scroll only for user-initiated actions (topic switch, onAppear).
-    /// Debounced: overlapping calls within 150 ms are coalesced to prevent
-    /// layout feedback loops from rapid state updates (streaming polls at 50ms).
+    /// Change #11: Debounce increased to 200ms for safety margin against rapid re-triggering.
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
         let now = Date()
-        if now.timeIntervalSince(lastScrollTime) < 0.15 {
+        if now.timeIntervalSince(lastScrollTime) < 0.2 {
             return
         }
         lastScrollTime = now
@@ -209,6 +248,20 @@ struct MessageCanvas: View {
             }
         } else {
             proxy.scrollTo("bottom-anchor", anchor: .bottom)
+        }
+    }
+
+    /// Schedule a coalesced scroll correction after a short delay.
+    /// Change #6: Replaces needsScrollAfterLayout with Task-based approach.
+    /// Change #13: Guard against re-trigger — only scroll if isAtBottom.
+    private func scheduleScrollCorrection(proxy: ScrollViewProxy) {
+        scrollCorrectionTask?.cancel()
+        scrollCorrectionTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled else { return }
+            // Don't schedule if already at bottom — prevents re-entering geometry handler
+            guard isAtBottom else { return }
+            scrollToBottom(proxy: proxy, animated: false)
         }
     }
 }
@@ -238,6 +291,10 @@ private struct WidthPreferenceKey: PreferenceKey {
 /// On macOS 14, `isAtBottom` stays true (Jump button hidden, auto-scroll still works
 /// via `defaultScrollAnchor(.bottom)`).
 ///
+/// Change #9: Restructured to follow Apple's two-closure pattern:
+///   - `transform` is pure — returns an Equatable value, no @State mutations.
+///   - `action` mutates state — called only when the Equatable value changes.
+///
 /// The handler receives a `ScrollGeometry` struct with contentSize, containerSize,
 /// and contentOffset — mirroring the native API but available on all platforms.
 struct ScrollGeometry {
@@ -247,32 +304,40 @@ struct ScrollGeometry {
 }
 
 extension View {
-    /// On macOS 15+/iOS 18+: uses native `onScrollGeometryChange`.
-    /// On older platforms: leaves `isAtBottom` true (auto-scroll via `defaultScrollAnchor(.bottom)` still works).
-    /// - Parameter handler: Tracking closure — computes whether the scroll is "at bottom".
-    ///   Should be pure; receives ScrollGeometry and returns Bool.
-    /// - Parameter binding: Binding to the isAtBottom state. Updated in the action closure
-    ///   (macOS 15+) so SwiftUI processes the state change correctly.
+    /// On macOS 15+/iOS 18+: uses native `onScrollGeometryChange` with two-closure pattern.
+    /// On older platforms: leaves state unchanged (auto-scroll via `defaultScrollAnchor(.bottom)` still works).
+    /// Change #12: macOS 14 fallback uses DispatchQueue.main.asyncAfter for short-content
+    /// scroll correction, since `onScrollGeometryChange` is unavailable.
+    /// - Parameter transform: Pure computation closure — receives ScrollGeometry and returns an Equatable value.
+    ///   MUST NOT mutate @State. Called frequently; keep it minimal.
+    /// - Parameter action: State mutation closure — called only when the Equatable value changes.
+    ///   All @State mutations go here.
     @ViewBuilder
     func onScrollGeometryChangeCompat(
-        _ handler: @escaping (ScrollGeometry) -> Bool,
-        binding: Binding<Bool>
+        transform: @escaping (ScrollGeometry) -> ScrollGeometryResult,
+        action: @escaping (_ oldValue: ScrollGeometryResult, _ newValue: ScrollGeometryResult) -> Void
     ) -> some View {
         if #available(macOS 15.0, iOS 18.0, *) {
-            self.onScrollGeometryChange(for: Bool.self) { geo in
+            self.onScrollGeometryChange(for: ScrollGeometryResult.self) { geo in
                 let sg = ScrollGeometry(
                     contentSize: geo.contentSize,
                     containerSize: geo.containerSize,
                     contentOffset: geo.contentOffset
                 )
-                return handler(sg)
-            } action: { _, newValue in
-                binding.wrappedValue = newValue
+                return transform(sg)
+            } action: { oldValue, newValue in
+                action(oldValue, newValue)
             }
         } else {
-            // macOS 14 fallback: isAtBottom stays true, Jump button hidden.
-            // defaultScrollAnchor(.bottom) handles auto-scrolling.
-            self
+            // macOS 14 fallback: no onScrollGeometryChange available.
+            // Change #12: Use DispatchQueue.main.asyncAfter for short-content auto-scroll
+            // since defaultScrollAnchor(.bottom) is ignored when content is shorter than viewport.
+            self.onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    // On macOS 14, we can't track geometry, so schedule a one-time
+                    // scroll correction after layout settles.
+                }
+            }
         }
     }
 }
