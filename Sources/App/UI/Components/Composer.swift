@@ -102,6 +102,22 @@ struct Composer: View {
         .padding(.horizontal, themeManager.spacing(.lg))
         .padding(.vertical, themeManager.spacing(.md))
         .background(themeManager.color(.bgSurface))
+        .overlay(alignment: .top) {
+            if let feedback = viewModel.sendFeedback {
+                Text(feedback)
+                    .font(themeManager.font(.caption))
+                    .foregroundColor(themeManager.color(.textSecondary))
+                    .padding(.horizontal, themeManager.spacing(.md))
+                    .padding(.vertical, themeManager.spacing(.xs))
+                    .background(
+                        Capsule()
+                            .fill(themeManager.color(.bgPanel).opacity(0.9))
+                    )
+                    .offset(y: -8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.2), value: viewModel.sendFeedback)
+            }
+        }
     }
 
     private func toggleRecording() {

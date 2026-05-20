@@ -193,12 +193,6 @@ public actor SyncBridge {
     }
 
     public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil, topic: Topic? = nil) async throws -> String {
-        guard !sendingSessionKeys.contains(sessionKey) else {
-            throw SyncBridgeError.concurrentSendInProgress
-        }
-        sendingSessionKeys.insert(sessionKey)
-        defer { sendingSessionKeys.remove(sessionKey) }
-        
         // Abort any in-flight generation before auto-reset
         if streamingSessionKeys.contains(sessionKey) {
             do {
@@ -232,6 +226,7 @@ public actor SyncBridge {
         }
         
         // Usage check for auto-reset (80% ceiling)
+        // Change 1: Fire-and-forget reset — launch background Task, don't block the send
         if !didAutoReset {
             do {
                 let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
@@ -241,23 +236,28 @@ public actor SyncBridge {
                 let cappedUsage = min(usage, 1.0)
                 let autoThreshold = await sessionResetManager.config.autoResetThreshold
                 if cappedUsage >= autoThreshold {
+                    // Fire-and-forget: reset in background, don't block the send
+                    let resetKey = sessionKey
                     delegate?.syncBridge(self, didStartAutoReset: sessionKey)
-                    do {
-                        let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
-                        if recentMessages.isEmpty {
-                            print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
+                    Task {
+                        do {
+                            let recentMessages = try fetchLocalHistory(sessionKey: resetKey, limit: 30)
+                            if recentMessages.isEmpty {
+                                print("[SyncBridge] fetchLocalHistory: no messages found for session \(resetKey)")
+                            }
+                            let ok = try await resetSession(sessionKey: resetKey)
+                            if ok {
+                                let combinedContext = formatCombinedContext(recentMessages, userMessage: "")
+                                pendingResetContext[resetKey] = combinedContext
+                                let cooldown = await sessionResetManager.config.cooldownMessages
+                                resetCooldownCount[resetKey] = cooldown
+                                sessionUsageCache[resetKey] = 0
+                            }
+                        } catch {
+                            print("[SyncBridge] Background auto-reset failed for \(resetKey): \(error)")
                         }
-                        let ok = try await resetSession(sessionKey: sessionKey)
-                        if ok {
-                            effectiveText = formatCombinedContext(recentMessages, userMessage: text)
-                            let cooldown = await sessionResetManager.config.cooldownMessages
-                            resetCooldownCount[sessionKey] = cooldown
-                            didAutoReset = true
-                        }
-                    } catch {
-                        print("[SyncBridge] Auto-reset failed for \(sessionKey): \(error)")
+                        delegate?.syncBridge(self, didStopAutoReset: resetKey)
                     }
-                    delegate?.syncBridge(self, didStopAutoReset: sessionKey)
                 }
             } catch {
                 // Gateway unreachable — send without reset
@@ -273,6 +273,13 @@ public actor SyncBridge {
             }
             contextInjectedKeys.insert(sessionKey)
         }
+        
+        // Change 2: Narrow sendingSessionKeys guard to only cover chatSend
+        guard !sendingSessionKeys.contains(sessionKey) else {
+            throw SyncBridgeError.concurrentSendInProgress
+        }
+        sendingSessionKeys.insert(sessionKey)
+        defer { sendingSessionKeys.remove(sessionKey) }
         
         // Create delivery ledger entry
         let idempotencyKey = UUID().uuidString
@@ -298,6 +305,9 @@ public actor SyncBridge {
                 attachments: attachments
             )
             try ledgerRepo.updateStatus(idempotencyKey: idempotencyKey, status: .sent, runId: runId)
+            // Change 3: Start stall timer immediately — covers "never started" sends
+            // Timer cancels naturally when the first delta arrives (resetStallTimer in processChatDelta)
+            resetStallTimer(for: sessionKey)
             return runId
         } catch {
             try? ledgerRepo.updateStatus(idempotencyKey: idempotencyKey, status: .failed)

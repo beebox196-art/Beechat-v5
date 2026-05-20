@@ -146,6 +146,7 @@ final class MessageViewModel {
             BeeChatLogger.log("[ThinkingBee] sendMessage — bridge.sendMessage RETURNED for sessionKey=\(sessionKey)")
         } catch SyncBridgeError.concurrentSendInProgress {
             BeeChatLogger.log("[ThinkingBee] sendMessage — duplicate send to same session blocked: \(sessionKey)")
+            throw SyncBridgeError.concurrentSendInProgress
         }
 
         // Persist the normalized gateway key so future observation uses the same key

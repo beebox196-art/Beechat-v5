@@ -150,7 +150,7 @@ public actor GatewayClient {
         updateState(.disconnected)
     }
     
-    public func call(method: String, params: [String: AnyCodable]? = nil) async throws -> [String: AnyCodable] {
+    public func call(method: String, params: [String: AnyCodable]? = nil, timeout: TimeInterval? = nil) async throws -> [String: AnyCodable] {
         guard state == .connected else {
             throw NSError(domain: "GatewayClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "Not connected (state: \(state.rawValue))"])
         }
@@ -158,6 +158,7 @@ public actor GatewayClient {
         let id = "bc-\(nextRequestId)"
         nextRequestId += 1
         let frame = RequestFrame(id: id, method: method, params: params)
+        let requestTimeout = timeout ?? config.requestTimeout
         
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -167,7 +168,7 @@ public actor GatewayClient {
                 let hasResumed = OSAllocatedUnfairLock(initialState: false)
                 
                 Task {
-                    await self.pendingRequests.add(id: id, timeout: self.config.requestTimeout, resolve: { payload in
+                    await self.pendingRequests.add(id: id, timeout: requestTimeout, resolve: { payload in
                         let shouldResume = hasResumed.withLock { flag -> Bool in
                             if flag { return false }
                             flag = true
