@@ -339,6 +339,12 @@ public actor SyncBridge {
 
     // MARK: - Session Reset Flow
 
+    /// Clear context injection state for a session so the next message re-injects the full header.
+    /// Called when a topic's project binding changes, so [PROJECT-CONTEXT] appears without a full reset.
+    public func requeueContextInjection(sessionKey: String) {
+        contextInjectedKeys.remove(sessionKey)
+    }
+
     public func resetSession(sessionKey: String) async throws -> Bool {
         contextInjectedKeys.remove(sessionKey)  // re-inject on next send
         return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")

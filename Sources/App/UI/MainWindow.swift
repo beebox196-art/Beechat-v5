@@ -441,9 +441,20 @@ struct MainWindow: View {
     private func saveTopicEdits(_ updatedTopic: Topic) {
         Task { @MainActor in
             do {
-                let topicRepo = TopicRepository()
+                // Detect project path change so we can re-inject context
+                let repo = TopicRepository()
+                let oldTopic = try repo.fetchById(updatedTopic.id)
+                let oldProjectPath = oldTopic?.projectPath
+                let newProjectPath = updatedTopic.projectPath
+
                 // Save the topic (name + metadataJSON with projectPath already set via setProjectPath)
-                try topicRepo.save(updatedTopic)
+                try repo.save(updatedTopic)
+
+                // If project binding changed, requeue context injection so next message gets [PROJECT-CONTEXT]
+                if oldProjectPath != newProjectPath, let sessionKey = updatedTopic.sessionKey, let bridge = appState.syncBridge {
+                    await bridge.requeueContextInjection(sessionKey: sessionKey)
+                }
+
                 // Force a refresh of the topics list so the sidebar updates
                 startLocalTopicObservation()
             } catch {
