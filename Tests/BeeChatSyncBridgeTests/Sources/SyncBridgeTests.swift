@@ -32,6 +32,7 @@ final class MockRPCClient: RPCClientProtocol {
     
     func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String { return "run-id" }
     func chatAbort(sessionKey: String) async throws -> Bool { return true }
+    func chatInject(sessionKey: String, message: String, label: String?) async throws -> Bool { return true }
 }
 
 
@@ -323,7 +324,7 @@ final class SyncBridgeTests: XCTestCase {
         // Insert messages with different prefixes
         let sessionKey = "session-filter-test-\(UUID().uuidString)"
         let m1 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "[TOPIC-CONTEXT]\nTopic: Test", timestamp: Date())
-        let m2 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "[SESSION-CONTEXT] Continuing", timestamp: Date())
+        let m2 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "[SESSION-SUMMARY] Previous discussion", timestamp: Date())
         let m3 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "[SESSION-RESET] Reset", timestamp: Date())
         let m4 = Message(id: UUID().uuidString, sessionId: sessionKey, role: "user", content: "Hello world", timestamp: Date())
         try DatabaseManager.shared.write { db in

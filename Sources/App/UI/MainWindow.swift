@@ -199,14 +199,6 @@ struct MainWindow: View {
                 wireUpObservers()
             }
         }
-        .onChange(of: messageViewModel.selectedTopicId) { _, _ in
-            // Clear stale pending reset context when switching topics
-            if let bridge = appState.syncBridge {
-                Task {
-                    await bridge.clearPendingResetContext(except: messageViewModel.selectedTopic?.sessionKey)
-                }
-            }
-        }
         .onChange(of: appState.connectionState) { _, newState in
             BeeChatLogger.log("[ThinkingBee] connectionState changed to \(newState)")
             syncBridgeObserver.connectionState = newState
@@ -489,7 +481,7 @@ struct MainWindow: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Refreshing context...")
+                Text("Summarising context...")
                     .font(.caption)
                     .foregroundColor(themeManager.color(.textSecondary))
             }
@@ -502,7 +494,7 @@ struct MainWindow: View {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Resetting session...")
+                Text("Summarising context...")
                     .font(.caption)
                     .foregroundColor(themeManager.color(.textSecondary))
             }
@@ -512,13 +504,30 @@ struct MainWindow: View {
             .cornerRadius(8)
             .transition(.opacity)
         } else if syncBridgeObserver.showAutoResetToast {
-            Text("Session refreshed")
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.ultraThinMaterial)
-                .cornerRadius(8)
-                .transition(.opacity)
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.caption2)
+                Text("Context carried forward")
+                    .font(.caption)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
+            .cornerRadius(8)
+            .transition(.opacity)
+        } else if syncBridgeObserver.showSummaryInjectionFailedToast {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                Text("Session reset — context not restored")
+                    .font(.caption)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial)
+            .cornerRadius(8)
+            .transition(.opacity)
         }
     }
 }
@@ -553,7 +562,7 @@ struct ResetSessionAlertModifier: ViewModifier {
                 }
             }
         } message: {
-            Text("The last 30 messages will be carried forward as context for the next reply.")
+            Text("A summary of recent conversation will be kept as a reminder. The full history is available in the AI's memory files.")
         }
     }
 }

@@ -5,7 +5,7 @@ import GRDB
 
 public enum SyncBridgeError: LocalizedError {
     case concurrentSendInProgress
-    
+
     public var errorDescription: String? {
         switch self {
         case .concurrentSendInProgress:
@@ -53,9 +53,8 @@ public actor SyncBridge {
     private var resetCooldownCount: [String: Int] = [:]
     /// Tracks sessions that have already received topic context injection
     private var contextInjectedKeys: Set<String> = []
-    /// Pending reset context payloads: sessionKey -> formatted context string
-    /// Written by manualReset(), consumed and cleared by sendMessage()
-    private var pendingResetContext: [String: String] = [:]
+    /// Double-tap guard for manual resets: prevents overlapping manual reset calls
+    private var manualResetKeys: Set<String> = []
 
     public init(config: SyncBridgeConfiguration) {
         self.config = config
@@ -193,28 +192,8 @@ public actor SyncBridge {
     }
 
     public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil, topic: Topic? = nil) async throws -> String {
-        // Abort any in-flight generation before auto-reset
-        if streamingSessionKeys.contains(sessionKey) {
-            do {
-                try await abortGeneration(sessionKey: sessionKey)
-            } catch {
-                print("[SyncBridge] Abort failed during auto-reset prep: \(error)")
-            }
-        }
-        
         var effectiveText = text
-        var didAutoReset = false
-        
-        // Inject pending manual reset context if present (consumed once)
-        if let pendingContext = pendingResetContext.removeValue(forKey: sessionKey) {
-            if effectiveText.isEmpty {
-                effectiveText = pendingContext
-            } else {
-                effectiveText = "\(pendingContext)\n\n\(effectiveText)"
-            }
-            didAutoReset = true  // Reuse flag to skip topic context injection below
-        }
-        
+
         // Auto-reset at 80% safety ceiling — always fires, no cooldown check
         // Cooldown only applies to sub-threshold resets (which don't exist in hybrid model)
         let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
@@ -224,63 +203,96 @@ public actor SyncBridge {
                 resetCooldownCount.removeValue(forKey: sessionKey)
             }
         }
-        
+
         // Usage check for auto-reset (80% ceiling)
         // Change 1: Fire-and-forget reset — launch background Task, don't block the send
-        if !didAutoReset {
-            do {
-                let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
-                if usage > 1.0 {
-                    print("[SyncBridge] Usage RPC returned unexpected value: \(usage), capping at 1.0")
-                }
-                let cappedUsage = min(usage, 1.0)
-                let autoThreshold = await sessionResetManager.config.autoResetThreshold
-                if cappedUsage >= autoThreshold {
-                    // Fire-and-forget: reset in background, don't block the send
-                    let resetKey = sessionKey
-                    delegate?.syncBridge(self, didStartAutoReset: sessionKey)
-                    Task {
-                        do {
-                            let recentMessages = try fetchLocalHistory(sessionKey: resetKey, limit: 30)
-                            if recentMessages.isEmpty {
-                                print("[SyncBridge] fetchLocalHistory: no messages found for session \(resetKey)")
-                            }
-                            let ok = try await resetSession(sessionKey: resetKey)
-                            if ok {
-                                let combinedContext = formatCombinedContext(recentMessages, userMessage: "")
-                                pendingResetContext[resetKey] = combinedContext
-                                let cooldown = await sessionResetManager.config.cooldownMessages
-                                resetCooldownCount[resetKey] = cooldown
-                                sessionUsageCache[resetKey] = 0
-                            }
-                        } catch {
-                            print("[SyncBridge] Background auto-reset failed for \(resetKey): \(error)")
+        do {
+            let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
+            if usage > 1.0 {
+                print("[SyncBridge] Usage RPC returned unexpected value: \(usage), capping at 1.0")
+            }
+            let cappedUsage = min(usage, 1.0)
+            let autoThreshold = await sessionResetManager.config.autoResetThreshold
+            if cappedUsage >= autoThreshold {
+                // Fire-and-forget: reset in background, don't block the send
+                let resetKey = sessionKey
+                delegate?.syncBridge(self, didStartAutoReset: sessionKey)
+                Task {
+                    do {
+                        // Wait for any in-flight streaming response to finish before resetting
+                        // (Adam's preference: don't abort, wait for completion)
+                        if streamingSessionKeys.contains(resetKey) {
+                            await waitForStreamCompletion(sessionKey: resetKey, timeout: 30)
                         }
-                        delegate?.syncBridge(self, didStopAutoReset: resetKey)
+
+                        let recentMessages = try fetchLocalHistory(sessionKey: resetKey, limit: 30)
+                        let summary = formatSessionSummary(recentMessages)
+                        let ok = try await resetSession(sessionKey: resetKey)
+
+                        if ok {
+                            // Try to inject summary — retry once on failure
+                            var injectOk = false
+                            do {
+                                injectOk = try await rpcClient.chatInject(
+                                    sessionKey: resetKey,
+                                    message: summary,
+                                    label: "SESSION-SUMMARY"
+                                )
+                            } catch {
+                                print("[SyncBridge] chat.inject failed on first attempt: \(error)")
+                                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                                do {
+                                    injectOk = try await rpcClient.chatInject(
+                                        sessionKey: resetKey,
+                                        message: summary,
+                                        label: "SESSION-SUMMARY"
+                                    )
+                                } catch {
+                                    print("[SyncBridge] chat.inject failed on retry: \(error)")
+                                }
+                            }
+
+                            if !injectOk {
+                                // KIERAN BLOCKER FIX: Don't silently fail — inject honest recovery message
+                                // Also notify UI that context was NOT carried forward
+                                let recoveryMessage = "Previous session was reset but context summary could not be restored. Ask the user if they need a recap."
+                                try await rpcClient.chatInject(
+                                    sessionKey: resetKey,
+                                    message: recoveryMessage,
+                                    label: "SESSION-SUMMARY"
+                                )
+                                delegate?.syncBridge(self, didFailSummaryInjection: resetKey)
+                            }
+
+                            let cooldown = await sessionResetManager.config.cooldownMessages
+                            resetCooldownCount[resetKey] = cooldown
+                            sessionUsageCache[resetKey] = 0
+                        }
+                    } catch {
+                        print("[SyncBridge] Background auto-reset failed for \(resetKey): \(error)")
                     }
+                    delegate?.syncBridge(self, didStopAutoReset: resetKey)
                 }
-            } catch {
-                // Gateway unreachable — send without reset
-                print("[SyncBridge] Usage check failed, sending without reset: \(error)")
             }
+        } catch {
+            // Gateway unreachable — send without reset
+            print("[SyncBridge] Usage check failed, sending without reset: \(error)")
         }
-        
-        // Topic context injection
+
+        // Topic context injection (always proceeds — no didAutoReset guard)
         if isTopicContextEnabled, let topic, !contextInjectedKeys.contains(sessionKey) {
-            if !didAutoReset {
-                let header = buildContextHeader(topic: topic)
-                effectiveText = "\(header)\n\n\(effectiveText)"
-            }
+            let header = buildContextHeader(topic: topic)
+            effectiveText = "\(header)\n\n\(effectiveText)"
             contextInjectedKeys.insert(sessionKey)
         }
-        
+
         // Change 2: Narrow sendingSessionKeys guard to only cover chatSend
         guard !sendingSessionKeys.contains(sessionKey) else {
             throw SyncBridgeError.concurrentSendInProgress
         }
         sendingSessionKeys.insert(sessionKey)
         defer { sendingSessionKeys.remove(sessionKey) }
-        
+
         // Create delivery ledger entry
         let idempotencyKey = UUID().uuidString
         let entry = DeliveryLedgerEntry(
@@ -295,7 +307,7 @@ public actor SyncBridge {
             retryCount: 0
         )
         try ledgerRepo.save(entry)
-        
+
         do {
             let runId = try await rpcClient.chatSend(
                 sessionKey: sessionKey,
@@ -332,51 +344,84 @@ public actor SyncBridge {
     }
 
     /// Manual reset triggered by user (amber dot tap or context menu).
-    /// Fetches local history, resets session on gateway, stores context for next send.
-    /// Returns true if reset succeeded, false if already pending or failed.
+    /// Fetches local history, resets session on gateway, injects summary via chat.inject.
+    /// Returns true if reset succeeded.
     /// No cooldown — user-initiated resets always execute.
     public func manualReset(sessionKey: String) async throws -> Bool {
-        // Guard against double-tap: if pending context already exists, this is a repeat
-        guard pendingResetContext[sessionKey] == nil else {
-            print("[SyncBridge] manualReset: pending context already exists for \(sessionKey), skipping")
+        // Double-tap guard
+        guard !manualResetKeys.contains(sessionKey) else {
+            print("[SyncBridge] manualReset: already resetting \(sessionKey), skipping")
             return true
         }
+        manualResetKeys.insert(sessionKey)
+        defer { manualResetKeys.remove(sessionKey) }
 
-        // Abort any in-flight generation
+        // Abort any in-flight generation (user explicitly chose to reset)
         if streamingSessionKeys.contains(sessionKey) {
             try? await abortGeneration(sessionKey: sessionKey)
         }
 
         delegate?.syncBridge(self, didStartManualReset: sessionKey)
 
-        // Fetch local history BEFORE reset (reads from local SQLite, not gateway)
-        let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
+        do {
+            let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
+            let summary = formatSessionSummary(recentMessages)
+            let ok = try await resetSession(sessionKey: sessionKey)
 
-        // Reset session on gateway
-        let ok = try await resetSession(sessionKey: sessionKey)
+            if ok {
+                // Try to inject summary — retry once on failure (same pattern as auto-reset)
+                var injectOk = false
+                do {
+                    injectOk = try await rpcClient.chatInject(
+                        sessionKey: sessionKey,
+                        message: summary,
+                        label: "SESSION-SUMMARY"
+                    )
+                } catch {
+                    print("[SyncBridge] chat.inject failed on first attempt: \(error)")
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    do {
+                        injectOk = try await rpcClient.chatInject(
+                            sessionKey: sessionKey,
+                            message: summary,
+                            label: "SESSION-SUMMARY"
+                        )
+                    } catch {
+                        print("[SyncBridge] chat.inject failed on retry: \(error)")
+                    }
+                }
 
-        if ok {
-            // Format context and store for next send
-            let contextPayload = formatCombinedContext(recentMessages, userMessage: "")
-            pendingResetContext[sessionKey] = contextPayload
+                if !injectOk {
+                    let recoveryMessage = "Previous session was reset but context summary could not be restored. Ask the user if they need a recap."
+                    try await rpcClient.chatInject(
+                        sessionKey: sessionKey,
+                        message: recoveryMessage,
+                        label: "SESSION-SUMMARY"
+                    )
+                    delegate?.syncBridge(self, didFailSummaryInjection: sessionKey)
+                }
 
-            // Update usage cache so UI reflects the reset immediately
-            sessionUsageCache[sessionKey] = 0
+                sessionUsageCache[sessionKey] = 0
+            }
+
+            delegate?.syncBridge(self, didStopManualReset: sessionKey)
+            return ok
+        } catch {
+            delegate?.syncBridge(self, didStopManualReset: sessionKey)
+            throw error
         }
-
-        delegate?.syncBridge(self, didStopManualReset: sessionKey)
-        return ok
     }
 
-    /// Clear pending reset context for all sessions except the given one.
-    /// Called on topic switch to avoid stale context being injected into the wrong session.
-    public func clearPendingResetContext(except sessionKey: String?) {
-        if let key = sessionKey {
-            for k in pendingResetContext.keys where k != key {
-                pendingResetContext.removeValue(forKey: k)
-            }
-        } else {
-            pendingResetContext.removeAll()
+    // MARK: - Stream completion wait (for auto-reset)
+
+    func waitForStreamCompletion(sessionKey: String, timeout: TimeInterval = 30) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while streamingSessionKeys.contains(sessionKey) && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+        }
+        // Safety net: if still streaming after timeout, abort
+        if streamingSessionKeys.contains(sessionKey) {
+            try? await abortGeneration(sessionKey: sessionKey)
         }
     }
 
@@ -412,9 +457,9 @@ public actor SyncBridge {
 
             messages = messages.filter { msg in
                 if let content = msg.content {
-                    if content.hasPrefix("[SESSION-CONTEXT]") { return false }
                     if content.hasPrefix("[SESSION-RESET]") { return false }
                     if content.hasPrefix("[TOPIC-CONTEXT]") { return false }
+                    if content.hasPrefix("[SESSION-SUMMARY]") { return false }
                     if msg.role == "assistant" && content.contains("[tool_use:") { return false }
                 }
                 return true
@@ -428,29 +473,80 @@ public actor SyncBridge {
         }
     }
 
-    /// Combine recent conversation history with the user's latest message.
-    func formatCombinedContext(_ recentMessages: [Message], userMessage: String) -> String {
-        var lines = ["[SESSION-CONTEXT] Continuing from a previous session. Recent conversation:"]
-        var totalChars = lines.joined(separator: "\n").count
-        let maxChars = 100_000
+    /// Compose a concise 1–2 paragraph summary from recent messages.
+    /// Target 200–400 characters. Falls back to a minimal string on low content or poor quality.
+    func formatSessionSummary(_ recentMessages: [Message]) -> String {
+        // Filter and extract meaningful content
+        var userTopics: [String] = []
+        var assistantOutcomes: [String] = []
 
         for msg in recentMessages {
-            let role = msg.role == "user" ? "User" : "Assistant"
-            let content = msg.content ?? ""
-            let msgLine = "\(role): \(content)"
-            totalChars += msgLine.count + 1
-            if totalChars > maxChars {
-                lines.append("... [history truncated — context budget exceeded]")
-                break
+            guard let content = msg.content else { continue }
+            let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.count > 2 else { continue }
+            // Skip purely procedural messages
+            let lower = trimmed.lowercased()
+            if lower == "ok" || lower == "done" || lower == "sure" || lower == "got it" {
+                continue
             }
-            lines.append(msgLine)
+            if msg.role == "user" {
+                // Extract first sentence or key phrase
+                let firstSentence = trimmed.split(separator: ".", omittingEmptySubsequences: false).first.map(String.init) ?? trimmed
+                userTopics.append(String(firstSentence.prefix(120)))
+            } else if msg.role == "assistant" {
+                // Extract last sentence or definitive statement
+                let sentences = trimmed.split(separator: ".", omittingEmptySubsequences: false)
+                let lastSentence = sentences.last.map(String.init)?.trimmingCharacters(in: .whitespaces) ?? trimmed
+                assistantOutcomes.append(String(lastSentence.prefix(120)))
+            }
         }
 
-        lines.append("")
-        lines.append("The user's latest message follows:")
-        lines.append("")
-        lines.append(userMessage)
-        return lines.joined(separator: "\n")
+        // Quality gate: need some signal
+        let totalSignal = userTopics.joined() + assistantOutcomes.joined()
+        if recentMessages.count < 3 || totalSignal.count < 50 {
+            return "Previous session reset. Brief conversation history available if needed."
+        }
+
+        // Compose paragraph 1 — Topics + Progress
+        var para1 = "We were discussing "
+        if userTopics.count >= 2 {
+            para1 += userTopics.prefix(2).joined(separator: " and ") + "."
+        } else if let first = userTopics.first {
+            para1 += first + "."
+        } else {
+            para1 = "Recent conversation covered several topics."
+        }
+
+        // Add outcomes from assistant
+        if !assistantOutcomes.isEmpty {
+            let outcomeText = assistantOutcomes.prefix(2).joined(separator: "; ")
+            para1 += " " + outcomeText + "."
+        }
+
+        // Compose paragraph 2 — Next steps (if we have space and user topics)
+        var para2 = ""
+        if userTopics.count > 2 {
+            let remaining = userTopics.dropFirst(2).prefix(2)
+            para2 = "Next: " + remaining.joined(separator: ", ") + "."
+        }
+
+        var summary = para1
+        if !para2.isEmpty {
+            summary += "\n" + para2
+        }
+
+        // Hard limits
+        if summary.count > 400 {
+            summary = String(summary.prefix(397)) + "..."
+        }
+
+        // Quality gate: if summary reads as incoherent (too many code blocks, mixed fragments), fall back
+        let codeBlockCount = summary.components(separatedBy: "```").count - 1
+        if codeBlockCount > 0 || summary.contains("[tool_use:") {
+            return "Previous session reset. Brief conversation history available if needed."
+        }
+
+        return summary
     }
 
     public func pollSessionUsage(sessionKey: String) async throws {

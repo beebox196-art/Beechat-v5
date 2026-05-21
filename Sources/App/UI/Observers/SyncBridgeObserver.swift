@@ -271,6 +271,8 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     var manualResetting: Bool = false
     /// Set to true briefly when an auto-reset completes (for toast).
     var showAutoResetToast: Bool = false
+    /// Set to true briefly when summary injection fails after a reset (for failure toast).
+    var showSummaryInjectionFailedToast: Bool = false
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didStartManualReset sessionKey: String) {
         Task { @MainActor in
@@ -281,6 +283,15 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     nonisolated func syncBridge(_ bridge: SyncBridge, didStopManualReset sessionKey: String) {
         Task { @MainActor in
             self.manualResetting = false
+        }
+    }
+
+    nonisolated func syncBridge(_ bridge: SyncBridge, didFailSummaryInjection sessionKey: String) {
+        Task { @MainActor in
+            self.showSummaryInjectionFailedToast = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+                self.showSummaryInjectionFailedToast = false
+            }
         }
     }
 

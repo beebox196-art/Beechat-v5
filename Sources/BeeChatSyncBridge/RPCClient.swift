@@ -10,6 +10,7 @@ public protocol RPCClientProtocol {
     func chatHistory(sessionKey: String, limit: Int?) async throws -> [ChatMessagePayload]
     func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String?, attachments: [ChatAttachment]?) async throws -> String
     func chatAbort(sessionKey: String) async throws -> Bool
+    func chatInject(sessionKey: String, message: String, label: String?) async throws -> Bool
 }
 
 public struct ChatAttachment: Codable, Sendable {
@@ -145,6 +146,18 @@ public struct RPCClient: RPCClientProtocol {
     public func chatAbort(sessionKey: String) async throws -> Bool {
         let params: [String: AnyCodable] = ["sessionKey": AnyCodable(sessionKey)]
         let response = try await gateway.call(method: "chat.abort", params: params)
+        return response["ok"]?.value as? Bool ?? false
+    }
+    
+    public func chatInject(sessionKey: String, message: String, label: String? = nil) async throws -> Bool {
+        var params: [String: AnyCodable] = [
+            "sessionKey": AnyCodable(sessionKey),
+            "message": AnyCodable(message)
+        ]
+        if let label {
+            params["label"] = AnyCodable(label)
+        }
+        let response = try await gateway.call(method: "chat.inject", params: params)
         return response["ok"]?.value as? Bool ?? false
     }
 }
