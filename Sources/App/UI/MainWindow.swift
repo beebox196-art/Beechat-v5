@@ -25,6 +25,8 @@ struct MainWindow: View {
     @State private var showFolderPicker = false
     @State private var showAgentActivity = false
     @State private var showBeeBoard = false
+    @State private var showEditTopicSheet = false
+    @State private var editTopicTargetId: String? = nil
     @FocusState private var isNewTopicFieldFocused: Bool
 
     private var sidebarSelection: Binding<String?> {
@@ -264,6 +266,10 @@ struct MainWindow: View {
             BeeBoardSheet()
                 .environment(themeManager)
         }
+        .sheet(isPresented: $showEditTopicSheet) {
+            EditTopicSheetWrapper(topicId: editTopicTargetId, onSave: saveTopicEdits)
+                .environment(themeManager)
+        }
 
     }
 
@@ -432,6 +438,24 @@ struct MainWindow: View {
         }
     }
 
+    private func saveTopicEdits(_ updatedTopic: Topic) {
+        Task { @MainActor in
+            do {
+                let topicRepo = TopicRepository()
+                // Save the topic (name change + metadataJSON update)
+                try topicRepo.save(updatedTopic)
+                // Update the project path separately via metadataJSON merge
+                try topicRepo.updateProjectPath(topicId: updatedTopic.id, path: updatedTopic.projectPath)
+                // Force a refresh of the topics list so the sidebar updates
+                startLocalTopicObservation()
+            } catch {
+                print("🔴 Save topic edits failed: \(error)")
+                deleteErrorMsg = error.localizedDescription
+                showDeleteAlert = true
+            }
+        }
+    }
+
     // MARK: - Sidebar List
 
     @ViewBuilder
@@ -454,6 +478,11 @@ struct MainWindow: View {
                 )
                     .tag(topic.id as String?)
                     .contextMenu {
+                        Button("Edit Topic") {
+                            editTopicTargetId = topic.id
+                            showEditTopicSheet = true
+                        }
+
                         Button("Reset Session") {
                             resetTargetSessionKey = topic.sessionKey
                             showResetAlert = true
@@ -535,6 +564,50 @@ struct MainWindow: View {
 extension Notification.Name {
     static let deleteSelectedTopic = Notification.Name("deleteSelectedTopic")
     static let newTopic = Notification.Name("newTopic")
+}
+
+// MARK: - Edit Topic Sheet Wrapper
+
+/// Fetches the actual Topic from the database before presenting the edit sheet.
+struct EditTopicSheetWrapper: View {
+    let topicId: String?
+    let onSave: (Topic) -> Void
+    @Environment(ThemeManager.self) var themeManager
+    @State private var topic: Topic? = nil
+    @State private var isLoading = true
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        Group {
+            if let topic = topic {
+                EditTopicSheet(topic: topic, onSave: onSave)
+            } else {
+                VStack(spacing: 16) {
+                    ProgressView()
+                    Text("Loading topic...")
+                        .font(themeManager.font(.body))
+                        .foregroundColor(themeManager.color(.textSecondary))
+                }
+                .frame(minWidth: 400, minHeight: 300)
+            }
+        }
+        .onAppear {
+            loadTopic()
+        }
+    }
+
+    private func loadTopic() {
+        guard let id = topicId else { return }
+        Task {
+            do {
+                let repo = TopicRepository()
+                topic = try repo.fetchById(id)
+            } catch {
+                print("[EditTopicSheetWrapper] Failed to load topic \(id): \(error)")
+            }
+            isLoading = false
+        }
+    }
 }
 
 // MARK: - Reset Session Alert Modifier
