@@ -226,7 +226,8 @@ public actor SyncBridge {
                         }
 
                         let recentMessages = try fetchLocalHistory(sessionKey: resetKey, limit: 30)
-                        let summary = formatSessionSummary(recentMessages)
+                        let projectPath = try? self.projectPathForSession(resetKey)
+                        let summary = formatSessionSummary(recentMessages, projectPath: projectPath)
                         let ok = try await resetSession(sessionKey: resetKey)
 
                         if ok {
@@ -365,7 +366,8 @@ public actor SyncBridge {
 
         do {
             let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
-            let summary = formatSessionSummary(recentMessages)
+            let projectPath = try? self.projectPathForSession(sessionKey)
+            let summary = formatSessionSummary(recentMessages, projectPath: projectPath)
             let ok = try await resetSession(sessionKey: sessionKey)
 
             if ok {
@@ -435,7 +437,14 @@ public actor SyncBridge {
 
     /// Build a context header that tells the agent which topic the user is in.
     func buildContextHeader(topic: Topic) -> String {
-        return "[TOPIC-CONTEXT]\nTopic: \(topic.name)"
+        var header = "[TOPIC-CONTEXT]\nTopic: \(topic.name)"
+        if let projectPath = topic.projectPath {
+            header += "\n[PROJECT-CONTEXT]\nProject: \(projectPath)"
+            header += "\nRead \(projectPath)STATUS.md for project context."
+            header += "\nRead \(projectPath)decisions.md and \(projectPath)corrections.md if they exist."
+            header += "\nWhen this session ends or significant progress is made, append a dated entry to \(projectPath)ACTIVITY.md using the format: ### YYYY-MM-DD — One-line summary."
+        }
+        return header
     }
 
     // MARK: - Auto-reset helpers
@@ -473,9 +482,18 @@ public actor SyncBridge {
         }
     }
 
+    /// Look up the project path for a session key by resolving the topic.
+    private func projectPathForSession(_ sessionKey: String) throws -> String? {
+        let topicRepo = TopicRepository()
+        guard let topicId = try topicRepo.resolveTopicId(for: sessionKey) else { return nil }
+        let topic = try topicRepo.fetchById(topicId)
+        return topic?.projectPath
+    }
+
     /// Compose a concise 1–2 paragraph summary from recent messages.
     /// Target 200–400 characters. Falls back to a minimal string on low content or poor quality.
-    func formatSessionSummary(_ recentMessages: [Message]) -> String {
+    /// Appends `[PROJECT-CONTEXT]` lines if a projectPath is provided.
+    func formatSessionSummary(_ recentMessages: [Message], projectPath: String? = nil) -> String {
         // Filter and extract meaningful content
         var userTopics: [String] = []
         var assistantOutcomes: [String] = []
@@ -544,6 +562,12 @@ public actor SyncBridge {
         let codeBlockCount = summary.components(separatedBy: "```").count - 1
         if codeBlockCount > 0 || summary.contains("[tool_use:") {
             return "Previous session reset. Brief conversation history available if needed."
+        }
+
+        // Append project context for reset
+        if let projectPath = projectPath {
+            summary += "\n[PROJECT-CONTEXT]\nProject: \(projectPath)"
+            summary += "\nRead \(projectPath)STATUS.md and recent entries in \(projectPath)ACTIVITY.md for project context."
         }
 
         return summary
