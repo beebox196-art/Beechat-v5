@@ -442,16 +442,12 @@ struct MainWindow: View {
         Task { @MainActor in
             do {
                 let topicRepo = TopicRepository()
-                // Save the topic (name change + metadataJSON update)
+                // Save the topic (name + metadataJSON with projectPath already set via setProjectPath)
                 try topicRepo.save(updatedTopic)
-                // Update the project path separately via metadataJSON merge
-                try topicRepo.updateProjectPath(topicId: updatedTopic.id, path: updatedTopic.projectPath)
                 // Force a refresh of the topics list so the sidebar updates
                 startLocalTopicObservation()
             } catch {
                 print("🔴 Save topic edits failed: \(error)")
-                deleteErrorMsg = error.localizedDescription
-                showDeleteAlert = true
             }
         }
     }
@@ -575,12 +571,32 @@ struct EditTopicSheetWrapper: View {
     @Environment(ThemeManager.self) var themeManager
     @State private var topic: Topic? = nil
     @State private var isLoading = true
+    @State private var loadError: String? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Group {
             if let topic = topic {
                 EditTopicSheet(topic: topic, onSave: onSave)
+            } else if let error = loadError {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.title)
+                        .foregroundColor(themeManager.color(.error))
+                    Text("Could not load topic")
+                        .font(themeManager.font(.heading))
+                        .foregroundColor(themeManager.color(.textPrimary))
+                    Text(error)
+                        .font(themeManager.font(.caption))
+                        .foregroundColor(themeManager.color(.textSecondary))
+                    Button("Dismiss") {
+                        dismiss()
+                    }
+                    .font(themeManager.font(.body))
+                    .foregroundColor(themeManager.color(.accentPrimary))
+                }
+                .padding(24)
+                .frame(minWidth: 400, minHeight: 300)
             } else {
                 VStack(spacing: 16) {
                     ProgressView()
@@ -597,13 +613,21 @@ struct EditTopicSheetWrapper: View {
     }
 
     private func loadTopic() {
-        guard let id = topicId else { return }
-        Task {
+        guard let id = topicId else {
+            loadError = "No topic selected."
+            isLoading = false
+            return
+        }
+        Task { @MainActor in
             do {
                 let repo = TopicRepository()
                 topic = try repo.fetchById(id)
+                if topic == nil {
+                    loadError = "Topic not found."
+                }
             } catch {
                 print("[EditTopicSheetWrapper] Failed to load topic \(id): \(error)")
+                loadError = error.localizedDescription
             }
             isLoading = false
         }
