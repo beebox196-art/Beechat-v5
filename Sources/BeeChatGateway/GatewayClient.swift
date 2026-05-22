@@ -46,6 +46,16 @@ public actor GatewayClient {
     private var _maxPayload: Int = 1048576
     private var currentDeviceToken: String?
     private var challengeNonce: String?
+    /// Stores the decoded hello-ok response for scope verification.
+    private var _helloResponse: HelloOk?
+    
+    /// Accessor for the hello-ok handshake response (scopes, deviceToken, etc.)
+    public var helloResponse: HelloOk? { _helloResponse }
+    
+    /// Returns the scopes granted in the handshake response.
+    public func grantedScopes() async -> [String] {
+        _helloResponse?.auth?.scopes ?? []
+    }
     
     private var eventContinuation: AsyncStream<(event: String, payload: [String: AnyCodable]?)>.Continuation?
     
@@ -300,6 +310,7 @@ public actor GatewayClient {
         }
         
         if let helloOk = helloOk {
+            self._helloResponse = helloOk
             self._maxPayload = helloOk.policy.maxPayload
             
             if let deviceToken = helloOk.auth?.deviceToken {

@@ -53,6 +53,148 @@ public actor SyncBridge {
     private var resetCooldownCount: [String: Int] = [:]
     private static let resetCooldownMessages = 5
 
+    // MARK: - Topic Publishing
+
+    /// Serialises publishing per topic to prevent stale overwrites on rapid CRUD.
+    private let publishQueue = TopicPublishQueue()
+
+    /// Simple helper to extract `projectPath` from `topic.metadataJSON`.
+    /// Returns nil if the JSON is missing, empty, or doesn't contain projectPath.
+    private func extractProjectPath(from metadataJSON: String) throws -> String? {
+        guard let data = metadataJSON.data(using: .utf8) else { return nil }
+        let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return dict?["projectPath"] as? String
+    }
+
+    /// Publishes a topic's state (label + metadata) to the gateway.
+    ///
+    /// The operation is enqueued to `publishQueue` for serial execution per topic.
+    /// Metadata is published first — if that fails, the label is not published
+    /// (avoids creating a "ghost" session on the gateway).
+    public func publishTopicState(topic: Topic, sessionKey: String) {
+        // Runtime guard: verify topicId matches session key suffix
+        let keySuffix = sessionKey.split(separator: ":").last.map(String.init)?.lowercased()
+        if topic.id.lowercased() != keySuffix {
+            print("[SyncBridge] topicId \(topic.id) does not match session key suffix \(keySuffix ?? "nil") — skipping publish")
+            return
+        }
+
+        // Build metadata
+        let projectPath: String?
+        if let json = topic.metadataJSON {
+            projectPath = (try? extractProjectPath(from: json)) ?? nil
+        } else {
+            projectPath = nil
+        }
+        let metadata = BeeChatTopicMetadata(
+            topicId: topic.id,
+            isArchived: topic.isArchived,
+            projectPath: projectPath,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+
+        // Enqueue for serial execution per topic
+        Task {
+            await publishQueue.enqueue(sessionKey: sessionKey) { [weak self] in
+            guard let self = self else { return }
+            Task {
+                do {
+                    // Metadata FIRST — if this fails, don't publish label
+                    let metaOk = try await self.rpcClient.sessionsPluginPatch(
+                        key: sessionKey,
+                        pluginId: "beechat",
+                        namespace: "metadata",
+                        value: metadata,
+                        unset: false
+                    )
+                    guard metaOk else {
+                        print("[SyncBridge] pluginPatch failed for topic \(topic.id)")
+                        return  // Skip label — no ghost topic
+                    }
+
+                    // Label SECOND
+                    let labelOk = try await self.rpcClient.sessionsPatch(
+                        key: sessionKey,
+                        label: topic.name
+                    )
+                    if !labelOk {
+                        print("[SyncBridge] sessionsPatch failed for topic \(topic.id) — metadata published but label not set")
+                    }
+                } catch {
+                    print("[SyncBridge] publishTopicState failed for \(topic.id): \(error)")
+                    // Don't throw — fire-and-forget. reconcileAllTopicState handles retry on reconnect.
+                }
+            }
+        }
+        }  // closes outer Task
+    }
+
+    /// Clears the BeeChat metadata for a gateway session (used on topic deletion).
+    /// Retries up to 2 attempts with 1s delay between failures.
+    public func clearTopicState(sessionKey: String) async {
+        for attempt in 1...2 {
+            do {
+                let ok = try await rpcClient.sessionsPluginPatch(
+                    key: sessionKey,
+                    pluginId: "beechat",
+                    namespace: "metadata",
+                    value: nil as BeeChatTopicMetadata?,
+                    unset: true
+                )
+                if ok { return }  // Success
+                print("[SyncBridge] clearTopicState attempt \(attempt): pluginPatch(unset) returned false for \(sessionKey)")
+            } catch {
+                print("[SyncBridge] clearTopicState attempt \(attempt) failed: \(error)")
+            }
+            if attempt < 2 {
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+        print("[SyncBridge] clearTopicState: all retries exhausted for \(sessionKey) — ghost metadata may persist")
+    }
+
+    /// Republishes all non-archived, non-deleted topics to the gateway.
+    /// Called on initial start (after fetchSessions) and after reconnection.
+    /// Wrapped in `Task.detached` to avoid blocking the actor.
+    /// Concurrency limited to 5 via `TaskGroup`.
+    public func reconcileAllTopicState() {
+        Task.detached { [weak self] in
+            guard let self = self else { return }
+            // Use TopicRepository directly — delegate doesn't expose allTopics
+            let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+            guard let topics = try? topicRepo.fetchAllActive() else { return }
+
+            await withTaskGroup(of: Void.self) { group in
+                var active = 0
+                for topic in topics {
+                    guard let sessionKey = topic.sessionKey else { continue }
+                    group.addTask {
+                        await self.publishTopicState(topic: topic, sessionKey: sessionKey)
+                    }
+                    active += 1
+                    if active >= 5 {
+                        await group.next()  // Wait for one to finish before adding more
+                        active -= 1
+                    }
+                }
+            }
+        }
+    }
+
+    /// Verifies that the client has `operator.admin` scope on startup.
+    /// Logs a warning if the scope is missing — does not prevent the app from functioning.
+    func verifyAdminScope() async {
+        let scopes = await config.gatewayClient.grantedScopes()
+        if scopes.isEmpty {
+            print("[SyncBridge] Cannot verify operator.admin scope — handshake auth.scopes unavailable")
+            return
+        }
+        if !scopes.contains("operator.admin") {
+            print("[SyncBridge] operator.admin scope MISSING — topic publishing will fail. Scopes granted: \(scopes)")
+            // Don't throw — allow app to function without topic sync.
+        }
+    }
+
     public init(config: SyncBridgeConfiguration) {
         self.config = config
         let gateway = config.gatewayClient
@@ -77,6 +219,12 @@ public actor SyncBridge {
         try await rpcClient.sessionsSubscribe()
         _ = try await fetchSessions()
 
+        // Verify operator.admin scope before any topic publishing
+        await verifyAdminScope()
+
+        // Reconcile existing topics on initial connect
+        reconcileAllTopicState()
+
         eventProcessingTask = Task {
             let stream = await config.gatewayClient.eventStream()
             for await event in stream {
@@ -96,6 +244,8 @@ public actor SyncBridge {
                     } catch {
                         print("[SyncBridge] Reconciliation error: \(error)")
                     }
+                    // Reconcile topic state after reconnection
+                    reconcileAllTopicState()
                 }
             }
         }

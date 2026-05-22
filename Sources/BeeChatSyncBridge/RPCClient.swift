@@ -10,6 +10,8 @@ public protocol RPCClientProtocol {
     func chatHistory(sessionKey: String, limit: Int?) async throws -> [ChatMessagePayload]
     func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String?, attachments: [ChatAttachment]?) async throws -> String
     func chatAbort(sessionKey: String) async throws -> Bool
+    func sessionsPatch(key: String, label: String) async throws -> Bool
+    func sessionsPluginPatch(key: String, pluginId: String, namespace: String, value: Encodable?, unset: Bool) async throws -> Bool
 }
 
 public struct ChatAttachment: Codable, Sendable {
@@ -146,5 +148,39 @@ public struct RPCClient: RPCClientProtocol {
         let params: [String: AnyCodable] = ["sessionKey": AnyCodable(sessionKey)]
         let response = try await gateway.call(method: "chat.abort", params: params)
         return response["ok"]?.value as? Bool ?? false
+    }
+
+    // MARK: - Topic Publishing RPC Wrappers
+
+    /// Sets the label (topic name) on a gateway session via `sessions.patch`.
+    /// Requires `operator.write` scope.
+    public func sessionsPatch(key: String, label: String) async throws -> Bool {
+        let params: [String: AnyCodable] = [
+            "key": AnyCodable(key),
+            "label": AnyCodable(label)
+        ]
+        let result = try await gateway.call(method: "sessions.patch", params: params)
+        return result["result"]?.value as? Bool ?? false
+    }
+
+    /// Stores or clears plugin-specific metadata on a gateway session via `sessions.pluginPatch`.
+    /// Requires `operator.admin` scope.
+    ///
+    /// Uses an explicit `JSONEncoder` → `JSONDecoder(AnyCodable.self)` round-trip for the
+    /// `value` parameter so that `Codable` structs can be fitted into `AnyCodable` params.
+    public func sessionsPluginPatch(key: String, pluginId: String, namespace: String, value: Encodable?, unset: Bool) async throws -> Bool {
+        var params: [String: AnyCodable] = [
+            "key": AnyCodable(key),
+            "pluginId": AnyCodable(pluginId),
+            "namespace": AnyCodable(namespace),
+            "unset": AnyCodable(unset)
+        ]
+        if let value = value, !unset {
+            // Round-trip: Codable → JSON → AnyCodable
+            let data = try JSONEncoder().encode(value)
+            params["value"] = try JSONDecoder().decode(AnyCodable.self, from: data)
+        }
+        let result = try await gateway.call(method: "sessions.pluginPatch", params: params)
+        return result["result"]?.value as? Bool ?? false
     }
 }

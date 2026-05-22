@@ -11,6 +11,8 @@ final class MockRPCClient: RPCClientProtocol {
     var chatHistoryHandler: ((String) -> [ChatMessagePayload])?
     var sessionsUsageHandler: ((String) -> Double)?
     var sessionsResetHandler: ((String, String) -> Bool)?
+    var sessionsPatchHandler: ((String, String) -> Bool)?
+    var sessionsPluginPatchHandler: ((String, String, String, Encodable?, Bool) -> Bool)?
     
     func sessionsList() async throws -> [SessionInfo] {
         return try sessionsListHandler?() ?? []
@@ -32,6 +34,10 @@ final class MockRPCClient: RPCClientProtocol {
     
     func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String { return "run-id" }
     func chatAbort(sessionKey: String) async throws -> Bool { return true }
+    func sessionsPatch(key: String, label: String) async throws -> Bool { return sessionsPatchHandler?(key, label) ?? false }
+    func sessionsPluginPatch(key: String, pluginId: String, namespace: String, value: Encodable?, unset: Bool) async throws -> Bool {
+        return sessionsPluginPatchHandler?(key, pluginId, namespace, value, unset) ?? false
+    }
 }
 
 

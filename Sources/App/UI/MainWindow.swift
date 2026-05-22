@@ -391,6 +391,11 @@ struct MainWindow: View {
                 try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
                 print("[MainWindow] Created topic: \(title) (id=\(topicId), gatewayKey=\(gatewayKey))")
 
+                // Publish topic state to gateway (Phase 1: Mac-side publishing)
+                if let bridge = appState.syncBridge {
+                    await bridge.publishTopicState(topic: newTopic, sessionKey: gatewayKey)
+                }
+
                 if let bridge = appState.syncBridge {
                     do {
                         let runId = try await bridge.sendMessage(
@@ -416,8 +421,15 @@ struct MainWindow: View {
         Task { @MainActor in
             do {
                 let topicRepo = TopicRepository()
+                // Resolve session key BEFORE deleting (needed for gateway cleanup)
+                let sessionKey = try topicRepo.resolveSessionKey(topicId: id)
                 try topicRepo.deleteCascading(id)
                 messageViewModel.removeTopic(id: id)
+
+                // Clear topic state from gateway (Phase 1: Mac-side publishing)
+                if let sessionKey = sessionKey, let bridge = appState.syncBridge {
+                    await bridge.clearTopicState(sessionKey: sessionKey)
+                }
             } catch {
                 print("🔴 Delete topic failed: \(error)")
                 deleteErrorMsg = error.localizedDescription
