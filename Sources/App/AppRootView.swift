@@ -169,8 +169,8 @@ final class AppState {
         return GatewayClient.Configuration(
             url: wsURL,
             token: token,
-            clientMode: "webchat",
-            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "webchat")
+            clientMode: "ui",
+            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "ui")
         )
     }
 }
