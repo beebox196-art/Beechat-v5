@@ -97,8 +97,7 @@ public actor SyncBridge {
         Task {
             await publishQueue.enqueue(sessionKey: sessionKey) { [weak self] in
             guard let self = self else { return }
-            Task {
-                do {
+            do {
                     // Metadata FIRST — if this fails, don't publish label
                     let metaOk = try await self.rpcClient.sessionsPluginPatch(
                         key: sessionKey,
@@ -126,7 +125,6 @@ public actor SyncBridge {
                 }
             }
         }
-        }  // closes outer Task
     }
 
     /// Clears the BeeChat metadata for a gateway session (used on topic deletion).
