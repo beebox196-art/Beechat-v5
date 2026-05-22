@@ -1,6 +1,6 @@
 import XCTest
 @testable import BeeChatSyncBridge
-@testable import BeeChatGateway
+import BeeChatGateway
 
 final class SessionInfoPluginExtensionsTests: XCTestCase {
 
@@ -235,6 +235,150 @@ final class SessionInfoPluginExtensionsTests: XCTestCase {
 
         XCTAssertEqual(meta1, meta2)
         XCTAssertNotEqual(meta1, meta3)
+    }
+
+    // MARK: - B2: Malformed / type-mismatched metadata
+
+    func testMalformedMetadataTopicIdIsIntNotString() throws {
+        // topicId is an integer instead of a string → beechatMetadata returns nil
+        let json = """
+        {
+            "key": "agent:main:abc123",
+            "label": "Test",
+            "pluginExtensions": {
+                "beechat": {
+                    "metadata": {
+                        "topicId": 42,
+                        "isArchived": false,
+                        "updatedAt": "2026-05-22T10:00:00Z"
+                    }
+                }
+            }
+        }
+        """.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(SessionInfo.self, from: json)
+        XCTAssertNotNil(session.pluginExtensions?["beechat"]?["metadata"],
+                        "Metadata key should still be present in pluginExtensions")
+        XCTAssertNil(session.beechatMetadata,
+                     "topicId as Int should cause beechatMetadata to return nil")
+    }
+
+    func testMalformedMetadataIsArchivedIsStringNotBool() throws {
+        // isArchived is the string "true" instead of boolean true → beechatMetadata returns nil
+        let json = """
+        {
+            "key": "agent:main:abc123",
+            "label": "Test",
+            "pluginExtensions": {
+                "beechat": {
+                    "metadata": {
+                        "topicId": "abc123",
+                        "isArchived": "true",
+                        "updatedAt": "2026-05-22T10:00:00Z"
+                    }
+                }
+            }
+        }
+        """.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(SessionInfo.self, from: json)
+        XCTAssertNotNil(session.pluginExtensions?["beechat"]?["metadata"],
+                        "Metadata key should still be present in pluginExtensions")
+        XCTAssertNil(session.beechatMetadata,
+                     "isArchived as String should cause beechatMetadata to return nil")
+    }
+
+    func testMalformedMetadataMissingRequiredField() throws {
+        // Required field topicId is missing → beechatMetadata returns nil
+        let json = """
+        {
+            "key": "agent:main:abc123",
+            "label": "Test",
+            "pluginExtensions": {
+                "beechat": {
+                    "metadata": {
+                        "isArchived": false,
+                        "updatedAt": "2026-05-22T10:00:00Z"
+                    }
+                }
+            }
+        }
+        """.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(SessionInfo.self, from: json)
+        XCTAssertNotNil(session.pluginExtensions?["beechat"]?["metadata"],
+                        "Metadata key should still be present in pluginExtensions")
+        XCTAssertNil(session.beechatMetadata,
+                     "Missing topicId should cause beechatMetadata to return nil")
+    }
+
+    func testMalformedMetadataMissingUpdatedAt() throws {
+        // Required field updatedAt is missing → beechatMetadata returns nil
+        let json = """
+        {
+            "key": "agent:main:abc123",
+            "label": "Test",
+            "pluginExtensions": {
+                "beechat": {
+                    "metadata": {
+                        "topicId": "abc123",
+                        "isArchived": false
+                    }
+                }
+            }
+        }
+        """.data(using: .utf8)!
+
+        let session = try JSONDecoder().decode(SessionInfo.self, from: json)
+        XCTAssertNil(session.beechatMetadata,
+                     "Missing updatedAt should cause beechatMetadata to return nil")
+    }
+
+    // MARK: - W2: SessionInfo encode→decode round-trip
+
+    func testSessionInfoEncodeDecodeRoundTrip() throws {
+        let original = SessionInfo(
+            key: "agent:main:roundtrip",
+            label: "Round Trip Test",
+            channel: "webchat",
+            model: "gpt-4",
+            totalTokens: 999,
+            lastMessageAt: "2026-05-22T10:00:00Z",
+            agentId: "main",
+            spawnedBy: "user",
+            pluginExtensions: [
+                "beechat": [
+                    "metadata": AnyCodable([
+                        "topicId": "roundtrip",
+                        "isArchived": false,
+                        "projectPath": "/test/path",
+                        "updatedAt": "2026-05-22T10:00:00Z"
+                    ] as [String: Any])
+                ]
+            ]
+        )
+
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(SessionInfo.self, from: encoded)
+
+        XCTAssertEqual(decoded.key, original.key)
+        XCTAssertEqual(decoded.label, original.label)
+        XCTAssertEqual(decoded.channel, original.channel)
+        XCTAssertEqual(decoded.model, original.model)
+        XCTAssertEqual(decoded.totalTokens, original.totalTokens)
+        XCTAssertEqual(decoded.lastMessageAt, original.lastMessageAt)
+        XCTAssertEqual(decoded.agentId, original.agentId)
+        XCTAssertEqual(decoded.spawnedBy, original.spawnedBy)
+        XCTAssertNotNil(decoded.pluginExtensions)
+
+        // Verify beechatMetadata survives the round-trip
+        let meta = decoded.beechatMetadata
+        XCTAssertNotNil(meta)
+        XCTAssertEqual(meta?.topicId, "roundtrip")
+        XCTAssertEqual(meta?.isArchived, false)
+        XCTAssertEqual(meta?.projectPath, "/test/path")
+        XCTAssertEqual(meta?.updatedAt, "2026-05-22T10:00:00Z")
     }
 
     // MARK: - sessions.list response with pluginExtensions
