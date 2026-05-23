@@ -1,9 +1,10 @@
 # Gate 2F Phase 2 — iPhone Topic Sync (Mac → iPhone)
 
-**Status:** SPEC v3 — review complete, ALL blockers resolved, ready for implementation
+**Status:** SPEC v4 — final validation complete, ALL blockers resolved, ready for implementation
 **Author:** Bee
 **Date:** 2026-05-23
-**Reviews:** Q (CONDITIONAL PASS → resolved), Kieran (CONDITIONAL PASS → resolved), Mel (CONDITIONAL PASS → resolved)
+**Reviews Round 1:** Q (CONDITIONAL PASS), Kieran (CONDITIONAL PASS), Mel (CONDITIONAL PASS)
+**Reviews Round 2 (Final):** Q (PASS), Kieran (PASS), Mel (CONDITIONAL PASS — UX implementation notes)
 **Predecessors:** Phase 0 (Shared Models ✅), Phase 1 (Mac Publishing ✅)
 
 ---
@@ -49,16 +50,24 @@ Mac (master) ──sessions.patch/pluginPatch──► Gateway ──sessions.li
 
 ## Review Consolidation — Blockers Resolved
 
+### Round 1 Blockers (initial review)
 | # | Reviewer | Issue | Resolution |
 |---|----------|-------|------------|
 | B1 | Kieran/Q | Upsert SQL uses wrong column (`sessionKey` vs `openclawSessionKey`) | All code uses `openclawSessionKey` — the actual bridge table column |
-| B2 | Kieran/Q | Upsert ignores `resolveTopicIdBySuffix` 5-step cascade, creating duplicates | `upsertTopicsFromGateway` delegates to `resolveTopicIdBySuffix` |
+| B2 | Kieran/Q | Upsert ignores `resolveTopicIdBySuffix` 5-step cascade, creating duplicates | `upsertTopicsFromGateway` uses cascade |
 | B3 | Kieran | No debounce on `sessions.changed` → event storm | 10-second debounce in delegate callback on ViewModel |
 | B4 | Kieran | `operator.admin` scope deferred but code assumes it exists | Hard gate at connect; UI shows "sync unavailable"; publish calls guarded |
 | B5 | Mel | Offline topic creation UX unresolved | Keep existing `pendingGatewaySync` flow; inline warning when disconnected |
-| B6 | Mel | First-run onboarding missing | Step 11: connection-state-aware empty state variants |
+| B6 | Mel | First-run onboarding missing | Step 14: connection-state-aware empty state variants |
 | B7 | Q | 7+ TopicRepository methods called by ViewModel don't exist | Noted as pre-existing — builder implements as prerequisite |
-| B8 | **Q** | **Second `eventStream()` consumer kills EventRouter (single continuation)** | **REMOVED.** Extended `EventRouter.handleSessionsChanged()` to fire delegate callback. No second consumer. |
+| B8 | Q | Second `eventStream()` consumer kills EventRouter (single continuation) | REMOVED. Extended `EventRouter.handleSessionsChanged()` to fire delegate callback |
+
+### Round 2 Blockers (final validation)
+| # | Reviewer | Issue | Resolution |
+|---|----------|-------|------------|
+| B9 | Q | `syncBridgeSessionsChanged` required protocol method → Mac build breaks | Protocol extension with default no-op — Mac compiles without changes |
+| W4 | Q | Nested `read` inside `writer.write` → GRDB deadlock risk | SQL inlined inside write transaction — no nested read |
+| W5 (Mel) | Mel | Sync footer collides with archive undo toast | Toast wins; footer hidden during transient undo |
 
 ---
 
@@ -116,8 +125,20 @@ Add to protocol:
 ```swift
 /// Called when the gateway fires a sessions.changed event.
 /// Delegate should call fetchSessionInfos() + upsertTopicsFromGateway() to refresh.
+/// Default: no-op. Only iPhone ViewModel overrides this.
 func syncBridgeSessionsChanged(_ bridge: SyncBridge)
 ```
+
+**CRITICAL — Add protocol extension with default no-op (Q B9 fix):**
+Immediately after the protocol definition, add:
+```swift
+extension SyncBridgeDelegate {
+    func syncBridgeSessionsChanged(_ bridge: SyncBridge) {
+        // Default: no-op. Mac's SyncBridgeObserver doesn't need this.
+    }
+}
+```
+This prevents the Mac build from breaking — `SyncBridgeObserver` conforms to `SyncBridgeDelegate` but only needs the existing streaming/error callbacks. The default no-op lets it compile without changes.
 
 ### Step 4: Extend EventRouter
 
@@ -142,17 +163,42 @@ private func handleSessionsChanged() async throws {
 
 ```swift
 /// Upserts local topics from gateway SessionInfo + BeeChatTopicMetadata.
-/// - Matches via resolveTopicIdBySuffix (5-step cascade) — Kieran B1 fix
+/// - Matches via 5-step cascade (inlined to avoid nested read-in-write deadlock) — Q W4 fix
 /// - If found: updates name, isArchived, projectPath, updatedAt
 /// - If not found: creates new topic with metadata.topicId as primary key
 public func upsertTopicsFromGateway(_ entries: [(SessionInfo, BeeChatTopicMetadata)]) throws {
     try writer.write { db in
         for (info, metadata) in entries {
             let strippedKey = SessionKeyNormalizer.stripPrefix(info.key)
-            let existingTopicId = try resolveTopicIdBySuffix(
-                gatewayKey: info.key,
-                stripped: strippedKey.lowercased()
-            )
+            let strippedLower = strippedKey.lowercased()
+
+            // Inlined resolveTopicIdBySuffix (5-step cascade) using the active `db`
+            // This avoids calling resolveTopicIdBySuffix which opens its own read transaction
+            // — nesting a read inside a write causes GRDB deadlock with DatabasePool.
+            let existingTopicId: String?
+            // Step 1: exact match on gateway key
+            if let id = try String.fetchOne(db, sql: "SELECT id FROM topics WHERE sessionKey = ?", arguments: [info.key]) {
+                existingTopicId = id
+            }
+            // Step 2: exact match on stripped key
+            else if let id = try String.fetchOne(db, sql: "SELECT id FROM topics WHERE sessionKey = ?", arguments: [strippedKey]) {
+                existingTopicId = id
+            }
+            // Step 3: case-insensitive suffix match on topic UUID
+            else if let id = try String.fetchOne(db, sql: "SELECT id FROM topics WHERE UPPER(id) = ?", arguments: [strippedLower.uppercased()]) {
+                existingTopicId = id
+            }
+            // Step 4: bridge table match on gateway key
+            else if let id = try String.fetchOne(db, sql: "SELECT topicId FROM topic_session_bridge WHERE openclawSessionKey = ?", arguments: [info.key]) {
+                existingTopicId = id
+            }
+            // Step 5: bridge table match on stripped key
+            else if let id = try String.fetchOne(db, sql: "SELECT topicId FROM topic_session_bridge WHERE openclawSessionKey = ?", arguments: [strippedKey]) {
+                existingTopicId = id
+            }
+            else {
+                existingTopicId = nil
+            }
 
             if let topicId = existingTopicId {
                 var topic = try Topic.fetchOne(db, key: topicId)!
@@ -366,6 +412,34 @@ Add to existing `disconnect()`:
 syncState = .disconnected
 ```
 
+### Step 12a: ViewModel — refreshTopicsFromGateway (light sync)
+
+**File:** `BeeChatMobile/Sources/BeeChatMobileKit/BeeChatMobileViewModel.swift`
+
+```swift
+/// Light refresh: fetch session infos, upsert topics, update sync state.
+/// Does NOT reconnect the gateway connection. Use for "Sync Now" button.
+public func refreshTopicsFromGateway() async {
+    guard connectionState == .connected, let bridge = syncBridge else { return }
+    do {
+        let sessionInfos = try await bridge.fetchSessionInfos()
+        let knownTopics = sessionInfos.compactMap { info -> (SessionInfo, BeeChatTopicMetadata)? in
+            guard let metadata = info.beechatMetadata else { return nil }
+            return (info, metadata)
+        }
+        try persistenceStore.upsertTopicsFromGateway(knownTopics)
+        self.topics = try persistenceStore.fetchAllActiveWithCounts()
+        if hasAdminScope {
+            self.syncState = .synced(lastSync: Date())
+        }
+    } catch {
+        // Refresh failed — fall back to full reconnect
+        print("[ViewModel] refreshTopicsFromGateway failed: \(error), attempting reconnect")
+        await reconnect()
+    }
+}
+```
+
 ### Step 13: SyncState + Sync Indicator UI
 
 **File:** `BeeChatMobile/Sources/BeeChatMobileKit/BeeChatMobileViewModel.swift`
@@ -395,9 +469,11 @@ public var syncState: SyncState = .disconnected
                 .foregroundStyle(.secondary)
             if syncState.isStale {
                 Button("Sync Now") {
-                    Task { await viewModel.reconnect() }
+                    Task { await viewModel.refreshTopicsFromGateway() }
                 }
                 .font(.caption)
+                .accessibilityLabel("Sync topics now")
+                .accessibilityHint("Refreshes topics from the gateway.")
             }
         }
         .padding(.horizontal)
@@ -445,6 +521,19 @@ extension SyncState {
     }
 }
 ```
+
+**Implementation notes (Mel UX requirements):**
+
+- **Footer vs toast collision:** When `showArchiveToast` is true, hide the synced footer (show only the toast). Toast wins for transient undo. Footer visible only for actionable states: syncing, stale, sync unavailable.
+- **Footer vs offline banner:** When `OfflineBannerView` is visible (disconnected/error), hide the sync footer. The banner owns disconnected state. Footer returns when banner is dismissed.
+- **"Sync Now" action:** Prefer `refreshTopicsFromGateway()` (light fetch + upsert) over full `reconnect()`. Fall back to `reconnect()` only if refresh fails due to connection state.
+- **Empty state transitions:** If first-run onboarding hasn't been dismissed, keep it stable until dismissed. After dismissal, use `syncing, no cache` during active gateway fetch. Transition empty-state variants with opacity/crossfade (respect Reduce Motion). When first topic arrives, use standard list insertion animation.
+- **VoiceOver labels:**
+  - Empty states: one combined accessibility element (e.g. `"Welcome to BeeChat. Topics from your Mac will appear here automatically."`)
+  - Offline banner: include exact state and action (e.g. `"Cannot reach gateway. Showing cached topics. Reconnect available."`)
+  - Sync footer: accessibility should include exact sync time for stale/synced states
+  - `Sync Now`: label `"Sync topics now"`; hint `"Refreshes topics from the gateway."`
+  - Animated syncing icon: hidden from VoiceOver, stop animation under Reduce Motion
 
 ### Step 14: First-Run Onboarding + Empty State Variants
 
@@ -519,15 +608,17 @@ These methods are called by the existing iOS ViewModel but don't exist in `Topic
 - [ ] `SyncBridge.fetchSessionInfos()` implemented
 - [ ] `SyncBridge.hasAdminScope()` implemented
 - [ ] `SyncBridge.clearTopicStateWithResult()` implemented
-- [ ] `SyncBridgeDelegate.syncBridgeSessionsChanged()` added to protocol
+- [ ] `SyncBridgeDelegate.syncBridgeSessionsChanged()` added to protocol + default no-op extension
 - [ ] `EventRouter.handleSessionsChanged()` fires delegate callback
-- [ ] `TopicRepository.upsertTopicsFromGateway()` (uses `resolveTopicIdBySuffix`, `openclawSessionKey`)
+- [ ] `TopicRepository.upsertTopicsFromGateway()` (inlined SQL, no nested read, `openclawSessionKey`)
 - [ ] ViewModel `connect()` consumes `beechatMetadata` from gateway
 - [ ] Delegate callback with 10-second debounce implemented
+- [ ] `refreshTopicsFromGateway()` implemented (light sync, fallback to reconnect)
 - [ ] Topic CRUD publishes to gateway (when admin scope available)
 - [ ] Sync indicator (SF Symbols, semantic colors, safeAreaInset)
+- [ ] Footer ↔ toast ↔ offline banner visibility rules implemented
 - [ ] First-run onboarding shown once
-- [ ] Empty state variants implemented
+- [ ] Empty state variants with transitions + VoiceOver labels
 - [ ] iPhone builds and deploys to real device via Xcode USB
 - [ ] All Mac topic changes reflect on iPhone within 15 seconds
 - [ ] Reconnect recovery works
@@ -543,6 +634,16 @@ These methods are called by the existing iOS ViewModel but don't exist in `Topic
 - Reconciliation & conflict resolution
 - Message pagination ("load earlier") — parked
 
+### Phase 3 Debt (tracked for awareness)
+
+| Phase 2 choice | Debt level | Phase 3 mitigation |
+|--------|-----------|------------|
+| `hasAdminScope` cached at connect | LOW | Per-publish async re-check or periodic refresh |
+| Mac-is-master overwrite model | MEDIUM | Add per-topic ownership flag + event origin tracking to prevent echo loops |
+| 10-second time-based debounce | LOW | Replace with per-event dedup when bidirectional |
+| `compactMap` filters out no-metadata sessions | LOW | Handle sessions without metadata (iPhone-direct topics) |
+| Delegate callback pattern | NONE | Scales — add methods for conflict/orphan detection |
+
 ---
 
-*Spec v3 — all team blockers resolved. No second event consumer. Ready for Q to implement.*
+*Spec v4 — all team blockers resolved. No second event consumer. Mac build safe. GRDB deadlock-free. Ready for Q to implement.*
