@@ -45,6 +45,24 @@ public struct AnyCodable: Codable, Sendable {
 
 extension AnyCodable: Equatable {
     public static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
-        return NSDictionary(object: lhs.value as Any, forKey: "v" as NSString).isEqual(to: NSDictionary(object: rhs.value as Any, forKey: "v" as NSString))
+        func deepEqual(_ a: Any, _ b: Any) -> Bool {
+            switch (a, b) {
+            case (let a as Bool, let b as Bool): return a == b
+            case (let a as Int, let b as Int): return a == b
+            case (let a as Double, let b as Double): return a == b
+            case (let a as String, let b as String): return a == b
+            case (is NSNull, is NSNull): return true
+            case (let a as [Any], let b as [Any]):
+                return a.count == b.count && zip(a, b).allSatisfy(deepEqual)
+            case (let a as [String: Any], let b as [String: Any]):
+                guard a.count == b.count else { return false }
+                return a.allSatisfy { key, val in
+                    guard let bVal = b[key] else { return false }
+                    return deepEqual(val, bVal)
+                }
+            default: return false
+            }
+        }
+        return deepEqual(lhs.value, rhs.value)
     }
 }
