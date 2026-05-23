@@ -1,8 +1,8 @@
 import Foundation
 
 public struct ConnectParams: Codable, Sendable {
-    public let minProtocol: Int = 3
-    public let maxProtocol: Int = 3
+    public let minProtocol: Int = 4
+    public let maxProtocol: Int = 4
     public let client: ClientInfo
     public let role: String
     public let scopes: [String]
