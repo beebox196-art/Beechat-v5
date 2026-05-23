@@ -5,7 +5,6 @@ import Foundation
 public actor SessionResetManager {
     public struct Config {
         public var redDotThreshold: Double = 0.50
-        public var summaryTimeout: TimeInterval = 45
         public var showConfirmation: Bool = false
         public init() {}
     }

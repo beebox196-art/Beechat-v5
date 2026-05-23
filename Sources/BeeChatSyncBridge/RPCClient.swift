@@ -12,6 +12,7 @@ public protocol RPCClientProtocol {
     func chatAbort(sessionKey: String) async throws -> Bool
     func sessionsPatch(key: String, label: String) async throws -> Bool
     func sessionsPluginPatch(key: String, pluginId: String, namespace: String, value: Encodable?, unset: Bool) async throws -> Bool
+    func chatInject(sessionKey: String, message: String, label: String?) async throws -> String
 }
 
 public struct ChatAttachment: Codable, Sendable {
@@ -182,5 +183,30 @@ public struct RPCClient: RPCClientProtocol {
         }
         let result = try await gateway.call(method: "sessions.pluginPatch", params: params)
         return result["result"]?.value as? Bool ?? false
+    }
+
+    /// Injects a message into a gateway session via `chat.inject` RPC.
+    /// Used by the session reset summary injection flow to carry forward
+    /// context after a reset without raw message dumps.
+    /// Returns the runId of the injected message.
+    public func chatInject(sessionKey: String, message: String, label: String? = nil) async throws -> String {
+        var params: [String: AnyCodable] = [
+            "sessionKey": AnyCodable(sessionKey),
+            "message": AnyCodable(message)
+        ]
+        if let label = label {
+            params["label"] = AnyCodable(label)
+        }
+        let response = try await gateway.call(method: "chat.inject", params: params)
+
+        guard let payloadData = try? JSONEncoder().encode(response),
+              let sendResponse = try? JSONDecoder().decode(ChatSendResponse.self, from: payloadData) else {
+            // chat.inject may return { ok: true } without runId
+            if response["ok"]?.value as? Bool == true {
+                return "injected"
+            }
+            throw NSError(domain: "RPCClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "chat.inject did not return runId"])
+        }
+        return sendResponse.runId
     }
 }

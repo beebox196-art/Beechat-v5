@@ -12,11 +12,17 @@ public protocol SyncBridgeDelegate: AnyObject {
     /// Delegate should call fetchSessionInfos() + upsertTopicsFromGateway() to refresh.
     /// Default: no-op. Only iPhone ViewModel overrides this.
     func syncBridgeSessionsChanged(_ bridge: SyncBridge)
+    /// Called when the session reset summary injection fails after retry.
+    /// Allows UI to show a toast notifying the user that context was not carried forward.
+    func syncBridgeDidFailSummaryInjection(_ bridge: SyncBridge)
 }
 
 // MARK: - Default no-op extensions (B9 fix — Mac compiles without changes)
 extension SyncBridgeDelegate {
     nonisolated func syncBridgeSessionsChanged(_ bridge: SyncBridge) {
         // Default: no-op. Mac's SyncBridgeObserver doesn't need this.
+    }
+    nonisolated func syncBridgeDidFailSummaryInjection(_ bridge: SyncBridge) {
+        // Default: no-op. Observers override to show toast.
     }
 }

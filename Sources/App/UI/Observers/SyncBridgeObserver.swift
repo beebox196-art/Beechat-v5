@@ -141,6 +141,15 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     // B9: Explicit stub — @MainActor class cannot use the nonisolated default extension
     nonisolated func syncBridgeSessionsChanged(_ bridge: SyncBridge) {}
 
+    nonisolated func syncBridgeDidFailSummaryInjection(_ bridge: SyncBridge) {
+        Task { @MainActor in
+            self.showSummaryInjectionFailedToast = true
+            // Auto-dismiss after 4 seconds
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            self.showSummaryInjectionFailedToast = false
+        }
+    }
+
     /// Reset all streaming state back to idle
     private func resetStreamingState() {
         isStreaming = false
@@ -234,6 +243,9 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     /// Set to true while an auto-reset is in progress (for UI binding).
     var autoResetting: Bool = false
+
+    /// Shows a toast when the session reset summary injection fails.
+    var showSummaryInjectionFailedToast: Bool = false
 
     // MARK: - Agent Activity Tracking (C2)
 

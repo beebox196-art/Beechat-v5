@@ -55,6 +55,19 @@ struct MainWindow: View {
                                 Button("Delete Topic", role: .destructive) {
                                     deleteTopic(topic.id)
                                 }
+                                Button("Reset Session") {
+                                    if let sessionKey = topic.sessionKey {
+                                        Task {
+                                            if let bridge = appState.syncBridge {
+                                                do {
+                                                    try await bridge.manualReset(sessionKey: sessionKey)
+                                                } catch {
+                                                    print("[MainWindow] Manual reset failed for \(topic.id): \(error)")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                     }
                 }
@@ -165,7 +178,7 @@ struct MainWindow: View {
                         HStack(spacing: 6) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Refreshing context...")
+                            Text("Summarising context...")
                                 .font(.caption)
                                 .foregroundColor(themeManager.color(.textSecondary))
                         }
