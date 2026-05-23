@@ -1,3 +1,4 @@
+import BeeChatPersistence
 import Foundation
 
 // MARK: - Gateway RPC response types

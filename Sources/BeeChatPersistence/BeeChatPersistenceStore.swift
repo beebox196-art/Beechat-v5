@@ -52,7 +52,7 @@ public class BeeChatPersistenceStore {
     }
     
     
-    private let topicRepo = TopicRepository()
+    public let topicRepo = TopicRepository()
     
     public func saveTopic(_ topic: Topic) throws {
         try topicRepo.save(topic)
@@ -110,6 +110,24 @@ public class BeeChatPersistenceStore {
     
     public func fetchAttachments(messageId: String) throws -> [Attachment] {
         try attachmentRepo.fetchByMessage(messageId: messageId)
+    }
+
+    // MARK: - Phase 2 Convenience Wrappers
+
+    public func upsertTopicsFromGateway(_ entries: [(GatewaySessionInfo, BeeChatTopicMetadata)]) throws {
+        try topicRepo.upsertTopicsFromGateway(entries)
+    }
+    public func fetchAllActiveWithCounts() throws -> [Topic] {
+        try topicRepo.fetchAllActiveWithCounts()
+    }
+    public func fetchTopicById(_ id: String) throws -> Topic? {
+        try topicRepo.fetchById(id)
+    }
+    public func archiveTopic(topicId: String) throws {
+        try topicRepo.archive(topicId: topicId)
+    }
+    public func deleteTopicCascading(_ id: String) throws {
+        try topicRepo.deleteCascading(id)
     }
     
 

@@ -130,7 +130,13 @@ public struct EventRouter {
     }
 
     private func handleSessionsChanged() async throws {
+        // Existing: refresh internal session state
         _ = try await syncBridge.fetchSessions()
+        // New: notify delegate so iPhone can refresh topic metadata
+        let delegate = await syncBridge.delegate
+        await MainActor.run {
+            delegate?.syncBridgeSessionsChanged(syncBridge)
+        }
     }
 
     private func handleTick() async {

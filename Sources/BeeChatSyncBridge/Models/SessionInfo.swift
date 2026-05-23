@@ -1,5 +1,6 @@
 import Foundation
 import BeeChatGateway
+import BeeChatPersistence
 
 public struct SessionInfo: Codable, Sendable {
     public let key: String
@@ -50,11 +51,7 @@ public struct SessionInfo: Codable, Sendable {
     }
     
     /// Convenience accessor: extracts `pluginExtensions["beechat"]["metadata"]`
-    /// into the typed `BeeChatTopicMetadata` struct. Returns nil when no
-    /// beechat metadata exists on this session, or when the metadata is malformed
-    /// (e.g. wrong types, missing required fields). Unlike an encode-decode round-trip,
-    /// this makes type mismatches visible — a `nil` return means the metadata was
-    /// absent or structurally invalid, not merely missing.
+    /// into the typed `BeeChatTopicMetadata` struct.
     public var beechatMetadata: BeeChatTopicMetadata? {
         guard let ext = pluginExtensions?["beechat"]?["metadata"]?.value as? [String: Any],
               let topicId = ext["topicId"] as? String,
@@ -66,6 +63,20 @@ public struct SessionInfo: Codable, Sendable {
             isArchived: isArchived,
             projectPath: ext["projectPath"] as? String,
             updatedAt: updatedAt
+        )
+    }
+    
+    /// Converts to a lightweight `GatewaySessionInfo` for persistence layer.
+    public var asGatewaySessionInfo: GatewaySessionInfo {
+        GatewaySessionInfo(
+            key: key,
+            label: label,
+            channel: channel,
+            model: model,
+            totalTokens: totalTokens,
+            lastMessageAt: lastMessageAt,
+            agentId: agentId,
+            spawnedBy: spawnedBy
         )
     }
     

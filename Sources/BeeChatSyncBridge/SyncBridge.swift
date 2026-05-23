@@ -130,6 +130,12 @@ public actor SyncBridge {
     /// Clears the BeeChat metadata for a gateway session (used on topic deletion).
     /// Retries up to 2 attempts with 1s delay between failures.
     public func clearTopicState(sessionKey: String) async {
+        _ = await clearTopicStateWithResult(sessionKey: sessionKey)
+    }
+
+    /// Clears the BeeChat metadata for a gateway session.
+    /// Returns true if cleared successfully, false if all retries exhausted.
+    public func clearTopicStateWithResult(sessionKey: String) async -> Bool {
         for attempt in 1...2 {
             do {
                 let ok = try await rpcClient.sessionsPluginPatch(
@@ -139,16 +145,13 @@ public actor SyncBridge {
                     value: nil as BeeChatTopicMetadata?,
                     unset: true
                 )
-                if ok { return }  // Success
-                print("[SyncBridge] clearTopicState attempt \(attempt): pluginPatch(unset) returned false for \(sessionKey)")
+                if ok { return true }
             } catch {
-                print("[SyncBridge] clearTopicState attempt \(attempt) failed: \(error)")
+                print("[SyncBridge] clearTopicStateWithResult attempt \(attempt): \(error)")
             }
-            if attempt < 2 {
-                try? await Task.sleep(for: .seconds(1))
-            }
+            if attempt < 2 { try? await Task.sleep(for: .seconds(1)) }
         }
-        print("[SyncBridge] clearTopicState: all retries exhausted for \(sessionKey) — ghost metadata may persist")
+        return false
     }
 
     /// Republishes all non-archived, non-deleted topics to the gateway.
@@ -191,6 +194,17 @@ public actor SyncBridge {
             print("[SyncBridge] operator.admin scope MISSING — topic publishing will fail. Scopes granted: \(scopes)")
             // Don't throw — allow app to function without topic sync.
         }
+    }
+
+    /// Checks if operator.admin scope is available for topic publishing.
+    public func hasAdminScope() async -> Bool {
+        let scopes = await config.gatewayClient.grantedScopes()
+        return scopes.contains("operator.admin")
+    }
+
+    /// Returns raw SessionInfo list including pluginExtensions.
+    public func fetchSessionInfos() async throws -> [SessionInfo] {
+        return try await rpcClient.sessionsList()
     }
 
     public init(config: SyncBridgeConfiguration) {

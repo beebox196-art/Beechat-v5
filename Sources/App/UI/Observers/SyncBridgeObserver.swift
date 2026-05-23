@@ -1,5 +1,6 @@
 import SwiftUI
 import BeeChatSyncBridge
+import BeeChatPersistence
 import BeeChatGateway
 
 @MainActor
@@ -136,6 +137,9 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
             self.autoResetting = false
         }
     }
+
+    // B9: Explicit stub — @MainActor class cannot use the nonisolated default extension
+    nonisolated func syncBridgeSessionsChanged(_ bridge: SyncBridge) {}
 
     /// Reset all streaming state back to idle
     private func resetStreamingState() {
