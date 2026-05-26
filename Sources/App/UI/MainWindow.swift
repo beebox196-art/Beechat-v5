@@ -417,12 +417,12 @@ struct MainWindow: View {
                             topic: newTopicForContext
                         )
                         print("[MainWindow] Gateway session created for topic \(topicId), runId: \(runId)")
-                        // Publish new topic metadata to gateway for cross-device sync
-                        await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
+                        // TODO: Gate 2F — publishTopicState disabled pending gateway plugin registration
+                        // await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
                     } catch {
                         print("[MainWindow] Gateway session creation failed (topic still local): \(error)")
-                        // Still try to publish metadata even if session creation failed
-                        await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
+                        // TODO: Gate 2F — publishTopicState disabled pending gateway plugin registration
+                        // try? await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
                     }
                 }
             } catch {
@@ -442,7 +442,9 @@ struct MainWindow: View {
                 if let topic = try topicRepo.fetchById(id),
                    let sessionKey = topic.sessionKey,
                    let bridge = appState.syncBridge {
-                    await bridge.clearTopicState(sessionKey: sessionKey)
+                    // TODO: Gate 2F — clearTopicState disabled pending gateway plugin registration
+                    // await bridge.clearTopicState(sessionKey: sessionKey)
+                    _ = bridge // silence unused warning
                 }
                 try topicRepo.deleteCascading(id)
                 messageViewModel.removeTopic(id: id)
@@ -471,10 +473,10 @@ struct MainWindow: View {
                     await bridge.requeueContextInjection(sessionKey: sessionKey)
                 }
 
-                // Publish updated topic metadata to gateway for cross-device sync
-                if let sessionKey = updatedTopic.sessionKey, let bridge = appState.syncBridge {
-                    await bridge.publishTopicState(topic: updatedTopic, sessionKey: sessionKey)
-                }
+                // TODO: Gate 2F — publishTopicState disabled pending gateway plugin registration
+                // if let sessionKey = updatedTopic.sessionKey, let bridge = appState.syncBridge {
+                //     await bridge.publishTopicState(topic: updatedTopic, sessionKey: sessionKey)
+                // }
 
                 // Force a refresh of the topics list so the sidebar updates
                 startLocalTopicObservation()

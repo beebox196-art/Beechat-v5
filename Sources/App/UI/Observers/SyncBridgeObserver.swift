@@ -285,13 +285,13 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     }
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didReceiveSessionChange sessionKeys: [String]) {
-        Task { @MainActor in
-            // Use fetchActiveSessionKeys() (unfiltered sessions.list) rather than the
-            // delegate's sessionKeys, which are pre-filtered by sessionShouldAppearByDefault()
-            // and exclude zero-token sessions that may still be valid on the gateway.
-            let activeKeys = await bridge.fetchActiveSessionKeys()
-            await bridge.reconcileAllTopicState(filteringTo: activeKeys)
-        }
+        // TODO: Gate 2F sessions.changed handler disabled — same pluginPatch issue.
+        // Re-publishing topic metadata fails because the beechat plugin extension
+        // is not registered on most gateway sessions.
+        // Task { @MainActor in
+        //     let activeKeys = await bridge.fetchActiveSessionKeys()
+        //     await bridge.reconcileAllTopicState(filteringTo: activeKeys)
+        // }
     }
 
     // MARK: - Agent Activity Tracking (C2)

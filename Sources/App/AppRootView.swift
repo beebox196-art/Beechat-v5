@@ -94,11 +94,14 @@ final class AppState {
                             self.connectionState = .connected
                             self.isStartupComplete = true
 
-                            // Safe startup reconcile: only publish topics whose sessions exist on gateway
-                            Task {
-                                let activeKeys = await bridge.fetchActiveSessionKeys()
-                                await bridge.reconcileAllTopicState(filteringTo: activeKeys)
-                            }
+                            // TODO: Gate 2F startup reconcile disabled — pluginPatch
+                            // fails with "unknown plugin session extension: beechat/metadata"
+                            // for sessions that don't have the beechat plugin registered.
+                            // Needs gateway-side plugin registration before this can be re-enabled.
+                            // Task {
+                            //     let activeKeys = await bridge.fetchActiveSessionKeys()
+                            //     await bridge.reconcileAllTopicState(filteringTo: activeKeys)
+                            // }
 
                             Task {
                                 let stream = await bridge.connectionStateStream()
