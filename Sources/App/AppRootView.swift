@@ -94,9 +94,10 @@ final class AppState {
                             self.connectionState = .connected
                             self.isStartupComplete = true
 
-                            // Publish all existing topic metadata to gateway for cross-device sync
+                            // Safe startup reconcile: only publish topics whose sessions exist on gateway
                             Task {
-                                await bridge.reconcileAllTopicState()
+                                let activeKeys = await bridge.fetchActiveSessionKeys()
+                                await bridge.reconcileAllTopicState(filteringTo: activeKeys)
                             }
 
                             Task {

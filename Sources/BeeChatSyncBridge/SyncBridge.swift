@@ -773,6 +773,7 @@ public actor SyncBridge {
     /// Metadata is published first — if that fails, the label is not published
     /// (avoids creating a "ghost" session on the gateway).
     public func publishTopicState(topic: Topic, sessionKey: String) {
+        print("[SyncBridge] publishTopicState called for \(topic.name) (\(sessionKey))")
         // Runtime guard: verify topicId matches session key suffix
         let keySuffix = sessionKey.split(separator: ":").last.map(String.init)?.lowercased()
         if topic.id.lowercased() != keySuffix {
@@ -788,13 +789,16 @@ public actor SyncBridge {
             projectPath: projectPath,
             updatedAt: ISO8601DateFormatter().string(from: Date())
         )
+        print("[SyncBridge] publishTopicState: enqueuing for \(topic.name)")
 
         // Enqueue for serial execution per topic
         Task {
             await publishQueue.enqueue(sessionKey: sessionKey) { [weak self] in
                 guard let self = self else { return }
+                print("[SyncBridge] publishTopicState: executing for \(topic.name) (\(sessionKey))")
                 do {
                     // Metadata FIRST — if this fails, don't publish label
+                    print("[SyncBridge] publishTopicState: calling sessionsPluginPatch for \(topic.name)")
                     let metaOk = try await self.rpcClient.sessionsPluginPatch(
                         key: sessionKey,
                         pluginId: "beechat",
@@ -802,16 +806,19 @@ public actor SyncBridge {
                         value: metadata,
                         unset: false
                     )
+                    print("[SyncBridge] publishTopicState: sessionsPluginPatch returned \(metaOk) for \(topic.name)")
                     guard metaOk else {
                         print("[SyncBridge] pluginPatch failed for topic \(topic.id)")
                         return  // Skip label — no ghost topic
                     }
 
                     // Label SECOND
+                    print("[SyncBridge] publishTopicState: calling sessionsPatch for \(topic.name)")
                     let labelOk = try await self.rpcClient.sessionsPatch(
                         key: sessionKey,
                         label: topic.name
                     )
+                    print("[SyncBridge] publishTopicState: sessionsPatch returned \(labelOk) for \(topic.name)")
                     if !labelOk {
                         print("[SyncBridge] sessionsPatch failed for topic \(topic.id) — metadata published but label not set")
                     }
@@ -851,19 +858,56 @@ public actor SyncBridge {
 
     /// Republishes all non-archived, non-deleted topics to the gateway.
     /// Called on initial start (after fetchSessions) and after reconnection.
-    public func reconcileAllTopicState() {
-        Task.detached { [weak self] in
-            guard let self = self else { return }
-            let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
-            guard let topics = try? topicRepo.fetchAllActive() else { return }
+    /// Fetches the set of currently active session keys from the gateway.
+    /// Returns an empty set on failure (safe default: don't publish if we can't verify).
+    public func fetchActiveSessionKeys() async -> Set<String> {
+        do {
+            let sessions = try await rpcClient.sessionsList()
+            let keys = Set(sessions.map { $0.key })
+            print("[SyncBridge] fetchActiveSessionKeys: found \(keys.count) active sessions")
+            return keys
+        } catch {
+            print("[SyncBridge] fetchActiveSessionKeys failed: \(error) — skipping reconcile")
+            return []
+        }
+    }
 
+    public func reconcileAllTopicState(filteringTo activeKeys: Set<String>? = nil) {
+        print("[SyncBridge] reconcileAllTopicState() called (filter: \(activeKeys?.count.description ?? "none"))")
+        Task.detached { [weak self] in
+            guard let self = self else {
+                print("[SyncBridge] reconcileAllTopicState: self is nil, returning")
+                return
+            }
+            let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+            guard let topics = try? topicRepo.fetchAllActive() else {
+                print("[SyncBridge] reconcileAllTopicState: fetchAllActive failed")
+                return
+            }
+            print("[SyncBridge] reconcileAllTopicState: found \(topics.count) topics")
+
+            var published = 0
+            var skipped = 0
             await withTaskGroup(of: Void.self) { group in
                 var active = 0
                 for topic in topics {
-                    guard let sessionKey = topic.sessionKey else { continue }
+                    guard let sessionKey = topic.sessionKey else {
+                        print("[SyncBridge] reconcileAllTopicState: topic \(topic.id) has no sessionKey, skipping")
+                        continue
+                    }
+
+                    // If we have a filter set, skip topics whose session no longer exists
+                    if let keys = activeKeys, !keys.contains(sessionKey) {
+                        print("[SyncBridge] reconcileAllTopicState: skipping \(topic.name) — session \(sessionKey) not active")
+                        skipped += 1
+                        continue
+                    }
+
+                    print("[SyncBridge] reconcileAllTopicState: publishing topic \(topic.name) (\(sessionKey))")
                     group.addTask {
                         await self.publishTopicState(topic: topic, sessionKey: sessionKey)
                     }
+                    published += 1
                     active += 1
                     if active >= 5 {
                         await group.next()  // Wait for one to finish before adding more
@@ -871,6 +915,7 @@ public actor SyncBridge {
                     }
                 }
             }
+            print("[SyncBridge] reconcileAllTopicState: completed — published \(published), skipped \(skipped)")
         }
     }
 

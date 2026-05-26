@@ -286,9 +286,11 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didReceiveSessionChange sessionKeys: [String]) {
         Task { @MainActor in
-            // When sessions change on the gateway, re-publish all topic metadata
-            // to keep the gateway in sync with our local state
-            await bridge.reconcileAllTopicState()
+            // Use fetchActiveSessionKeys() (unfiltered sessions.list) rather than the
+            // delegate's sessionKeys, which are pre-filtered by sessionShouldAppearByDefault()
+            // and exclude zero-token sessions that may still be valid on the gateway.
+            let activeKeys = await bridge.fetchActiveSessionKeys()
+            await bridge.reconcileAllTopicState(filteringTo: activeKeys)
         }
     }
 
