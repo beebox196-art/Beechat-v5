@@ -45,29 +45,24 @@ public struct AnyCodable: Codable, Sendable {
 
 extension AnyCodable: Equatable {
     public static func == (lhs: AnyCodable, rhs: AnyCodable) -> Bool {
-        switch (lhs.value, rhs.value) {
-        case let (a as Bool, b as Bool): return a == b
-        case let (a as Int, b as Int): return a == b
-        case let (a as Int64, b as Int64): return a == b
-        case let (a as Double, b as Double): return a == b
-        case let (a as String, b as String): return a == b
-        case let (a as [Any], b as [Any]): return compareAnyArrays(a, b)
-        case let (a as [String: Any], b as [String: Any]):
-            guard a.count == b.count else { return false }
-            for (key, val) in a {
-                guard let bVal = b[key] else { return false }
-                if AnyCodable(val) != AnyCodable(bVal) { return false }
+        func deepEqual(_ a: Any, _ b: Any) -> Bool {
+            switch (a, b) {
+            case (let a as Bool, let b as Bool): return a == b
+            case (let a as Int, let b as Int): return a == b
+            case (let a as Double, let b as Double): return a == b
+            case (let a as String, let b as String): return a == b
+            case (is NSNull, is NSNull): return true
+            case (let a as [Any], let b as [Any]):
+                return a.count == b.count && zip(a, b).allSatisfy(deepEqual)
+            case (let a as [String: Any], let b as [String: Any]):
+                guard a.count == b.count else { return false }
+                return a.allSatisfy { key, val in
+                    guard let bVal = b[key] else { return false }
+                    return deepEqual(val, bVal)
+                }
+            default: return false
             }
-            return true
-        case (is NSNull, is NSNull): return true
-        default: return false
         }
-    }
-    private static func compareAnyArrays(_ lhs: [Any], _ rhs: [Any]) -> Bool {
-        guard lhs.count == rhs.count else { return false }
-        for (a, b) in zip(lhs, rhs) {
-            if AnyCodable(a) != AnyCodable(b) { return false }
-        }
-        return true
+        return deepEqual(lhs.value, rhs.value)
     }
 }
