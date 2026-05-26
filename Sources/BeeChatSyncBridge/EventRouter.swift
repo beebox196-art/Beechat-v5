@@ -138,7 +138,9 @@ public struct EventRouter {
     }
 
     private func handleSessionsChanged() async throws {
-        _ = try await syncBridge.fetchSessions()
+        let sessions = try await syncBridge.fetchSessions()
+        let sessionKeys = sessions.map { $0.id }
+        await syncBridge.delegate?.syncBridge(syncBridge, didReceiveSessionChange: sessionKeys)
     }
 
     private func handleTick() async {
