@@ -284,6 +284,14 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         }
     }
 
+    nonisolated func syncBridge(_ bridge: SyncBridge, didReceiveSessionChange sessionKeys: [String]) {
+        Task { @MainActor in
+            // When sessions change on the gateway, re-publish all topic metadata
+            // to keep the gateway in sync with our local state
+            await bridge.reconcileAllTopicState()
+        }
+    }
+
     // MARK: - Agent Activity Tracking (C2)
 
     @MainActor

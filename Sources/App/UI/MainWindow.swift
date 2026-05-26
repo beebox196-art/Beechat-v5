@@ -417,8 +417,12 @@ struct MainWindow: View {
                             topic: newTopicForContext
                         )
                         print("[MainWindow] Gateway session created for topic \(topicId), runId: \(runId)")
+                        // Publish new topic metadata to gateway for cross-device sync
+                        await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
                     } catch {
                         print("[MainWindow] Gateway session creation failed (topic still local): \(error)")
+                        // Still try to publish metadata even if session creation failed
+                        await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
                     }
                 }
             } catch {
@@ -434,6 +438,12 @@ struct MainWindow: View {
         Task { @MainActor in
             do {
                 let topicRepo = TopicRepository()
+                // Clear gateway metadata before local delete
+                if let topic = try topicRepo.fetchById(id),
+                   let sessionKey = topic.sessionKey,
+                   let bridge = appState.syncBridge {
+                    await bridge.clearTopicState(sessionKey: sessionKey)
+                }
                 try topicRepo.deleteCascading(id)
                 messageViewModel.removeTopic(id: id)
             } catch {
@@ -459,6 +469,11 @@ struct MainWindow: View {
                 // If project binding changed, requeue context injection so next message gets [PROJECT-CONTEXT]
                 if oldProjectPath != newProjectPath, let sessionKey = updatedTopic.sessionKey, let bridge = appState.syncBridge {
                     await bridge.requeueContextInjection(sessionKey: sessionKey)
+                }
+
+                // Publish updated topic metadata to gateway for cross-device sync
+                if let sessionKey = updatedTopic.sessionKey, let bridge = appState.syncBridge {
+                    await bridge.publishTopicState(topic: updatedTopic, sessionKey: sessionKey)
                 }
 
                 // Force a refresh of the topics list so the sidebar updates

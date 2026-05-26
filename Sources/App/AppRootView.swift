@@ -94,6 +94,11 @@ final class AppState {
                             self.connectionState = .connected
                             self.isStartupComplete = true
 
+                            // Publish all existing topic metadata to gateway for cross-device sync
+                            Task {
+                                await bridge.reconcileAllTopicState()
+                            }
+
                             Task {
                                 let stream = await bridge.connectionStateStream()
                                 for await state in stream {
