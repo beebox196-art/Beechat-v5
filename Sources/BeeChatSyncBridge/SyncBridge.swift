@@ -370,7 +370,7 @@ public actor SyncBridge {
         }
     }
 
-    // MARK: - Topic Context Injection
+    // MARK: - Topic Context Injection (Gate 2F)
 
     /// Feature flag for topic context injection. Uses UserDefaults directly
     /// because @AppStorage doesn't compile in an actor context.
@@ -380,7 +380,96 @@ public actor SyncBridge {
 
     /// Build a context header that tells the agent which topic the user is in.
     func buildContextHeader(topic: Topic) -> String {
-        return "[TOPIC-CONTEXT]\nTopic: \(topic.name)"
+        var header = "[TOPIC-CONTEXT]\nTopic: \(topic.name)"
+        if let projectPath = topic.projectPath {
+            header += "\n[PROJECT-CONTEXT]\nProject: \(projectPath)"
+            header += "\nRead \(projectPath)STATUS.md for project context."
+            header += "\nRead \(projectPath)decisions.md and \(projectPath)corrections.md if they exist."
+            header += "\nWhen this session ends or significant progress is made, append a dated entry to \(projectPath)ACTIVITY.md using the format: ### YYYY-MM-DD — One-line summary."
+        }
+        return header
+    }
+
+    /// Clear context injection state for a session so the next message re-injects the full header.
+    /// Called when a topic's project binding changes, so [PROJECT-CONTEXT] appears without a full reset.
+    public func requeueContextInjection(sessionKey: String) {
+        contextInjectedKeys.remove(sessionKey)
+    }
+
+    /// Look up the project path for a session key by resolving the topic.
+    private func projectPathForSession(_ sessionKey: String) throws -> String? {
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+        guard let topicId = try topicRepo.resolveTopicId(for: sessionKey) else { return nil }
+        let topic = try topicRepo.fetchById(topicId)
+        return topic?.projectPath
+    }
+
+    /// Compose a concise 1–2 paragraph summary from recent messages.
+    /// Target 200–400 characters. Falls back to a minimal string on low content or poor quality.
+    /// Appends `[PROJECT-CONTEXT]` lines if a projectPath is provided.
+    func formatSessionSummary(_ recentMessages: [Message], projectPath: String? = nil) -> String {
+        // Filter and extract meaningful content
+        var userTopics: [String] = []
+        var assistantOutcomes: [String] = []
+
+        for msg in recentMessages {
+            let content = msg.content ?? ""
+            if msg.role == "user" {
+                if !content.isEmpty {
+                    let firstLine = content.split(separator: "\n").first.flatMap { String($0) } ?? ""
+                    if !firstLine.isEmpty { userTopics.append(firstLine) }
+                }
+            } else if msg.role == "assistant" {
+                if !content.isEmpty {
+                    let firstLine = content.split(separator: "\n").first.flatMap { String($0) } ?? ""
+                    if !firstLine.isEmpty { assistantOutcomes.append(firstLine) }
+                }
+            }
+        }
+
+        // Quality gate: need some signal
+        let totalSignal = userTopics.joined() + assistantOutcomes.joined()
+        if recentMessages.count < 3 || totalSignal.count < 50 {
+            return "Previous session reset. Brief conversation history available if needed."
+        }
+
+        // Compose paragraph 1 — Topics + Progress
+        var para1 = "We were discussing "
+        if userTopics.count >= 2 {
+            para1 += userTopics.prefix(2).joined(separator: " and ") + "."
+        } else if let first = userTopics.first {
+            para1 += first + "."
+        } else {
+            para1 = "Recent conversation covered several topics."
+        }
+
+        // Add outcomes from assistant
+        if !assistantOutcomes.isEmpty {
+            let outcomeText = assistantOutcomes.prefix(2).joined(separator: "; ")
+            para1 += " " + outcomeText + "."
+        }
+
+        // Compose paragraph 2 — Next steps
+        var para2 = ""
+        if userTopics.count > 2 {
+            let remaining = userTopics.dropFirst(2).prefix(2)
+            para2 = "Next: " + remaining.joined(separator: ", ") + "."
+        }
+
+        var summary = para1
+        if !para2.isEmpty {
+            summary += "\n\n" + para2
+        }
+
+        // Append project context if available
+        if let projectPath = projectPath {
+            summary += "\n\n[PROJECT-CONTEXT]\nProject: \(projectPath)"
+            summary += "\nRead \(projectPath)STATUS.md for project context."
+            summary += "\nRead \(projectPath)decisions.md and \(projectPath)corrections.md if they exist."
+            summary += "\nWhen this session ends or significant progress is made, append a dated entry to \(projectPath)ACTIVITY.md using the format: ### YYYY-MM-DD — One-line summary."
+        }
+
+        return summary
     }
 
     // MARK: - Auto-reset helpers

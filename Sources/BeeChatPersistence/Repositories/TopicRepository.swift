@@ -220,6 +220,32 @@ public class TopicRepository {
             return try String.fetchOne(db, sql: "SELECT topicId FROM topic_session_bridge WHERE openclawSessionKey = ?", arguments: [sessionKey])
         }
     }
+
+    /// Update the project path in the topic's metadataJSON.
+    /// Preserves existing metadata fields and only changes projectPath.
+    public func updateProjectPath(topicId: String, path: String?) throws {
+        try dbManager.write { db in
+            // Fetch existing metadataJSON
+            let existingJSON: String? = try String.fetchOne(
+                db, sql: "SELECT metadataJSON FROM topics WHERE id = ?", arguments: [topicId]
+            )
+
+            var meta = TopicMetadata()
+            if let json = existingJSON,
+               let data = json.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(TopicMetadata.self, from: data) {
+                meta = decoded
+            }
+            meta.projectPath = path
+
+            let newJSON: String? = try? String(data: JSONEncoder().encode(meta), encoding: .utf8)
+
+            try db.execute(
+                sql: "UPDATE topics SET metadataJSON = ?, updatedAt = ? WHERE id = ?",
+                arguments: [newJSON ?? "", Date(), topicId]
+            )
+        }
+    }
     
     /// Resolve the topic ID for a gateway session key using suffix matching.
     /// Strips the "agent:main:" prefix from the gateway key, then does a

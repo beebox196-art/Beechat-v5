@@ -26,6 +26,7 @@ actor TopicPublishQueue {
             queues[sessionKey]?.removeFirst()
             await op()
         }
+        queues.removeValue(forKey: sessionKey)
         running[sessionKey] = false
     }
 }

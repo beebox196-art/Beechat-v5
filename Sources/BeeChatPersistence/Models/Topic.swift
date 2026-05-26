@@ -1,6 +1,29 @@
 import Foundation
 import GRDB
 
+// MARK: - Topic Metadata (stored in metadataJSON column)
+
+public struct TopicMetadata: Codable {
+    public var projectPath: String?
+
+    public init(projectPath: String? = nil) {
+        self.projectPath = projectPath
+    }
+}
+
+// MARK: - Topic Error
+
+public enum TopicError: LocalizedError {
+    case invalidProjectPath(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidProjectPath(let msg):
+            return msg
+        }
+    }
+}
+
 /// A user-facing topic in the BeeChat sidebar.
 public struct Topic: Codable, UpsertableRecord {
     public static let databaseTableName = "topics"
@@ -53,6 +76,59 @@ public struct Topic: Codable, UpsertableRecord {
         Column("updatedAt"), Column("metadataJSON"),
         Column("pendingGatewaySync")
     ]
+
+    // MARK: - Project Path (via metadataJSON)
+
+    /// The project path bound to this topic, stored in metadataJSON.
+    /// Returns nil if no project is bound or if metadataJSON is malformed.
+    public var projectPath: String? {
+        guard let json = metadataJSON,
+              let data = json.data(using: .utf8),
+              let meta = try? JSONDecoder().decode(TopicMetadata.self, from: data) else { return nil }
+        return meta.projectPath
+    }
+
+    /// Set or clear the project path for this topic.
+    /// Validates that the path starts with `/Users/openclaw/Projects/` and that
+    /// the directory exists. Resolves symlinks before validating prefix.
+    /// - Parameters:
+    ///   - path: The project directory path, or nil to clear the binding.
+    /// - Throws: `TopicError.invalidProjectPath` if validation fails.
+    public mutating func setProjectPath(_ path: String?) throws {
+        if let path = path {
+            // Resolve symlinks before prefix check
+            let resolved: String
+            do {
+                let symlinkDest = try FileManager.default.destinationOfSymbolicLink(atPath: path)
+                resolved = symlinkDest
+            } catch {
+                // Not a symlink or resolution failed; use original path
+                resolved = path
+            }
+
+            guard resolved.hasPrefix("/Users/openclaw/Projects/") else {
+                throw TopicError.invalidProjectPath("Path must be within /Users/openclaw/Projects/")
+            }
+            guard FileManager.default.fileExists(atPath: resolved) else {
+                throw TopicError.invalidProjectPath("Directory does not exist: \(resolved)")
+            }
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: resolved, isDirectory: &isDir), isDir.boolValue else {
+                throw TopicError.invalidProjectPath("Path is not a directory: \(resolved)")
+            }
+        }
+
+        var meta = TopicMetadata()
+        if let json = metadataJSON,
+           let data = json.data(using: .utf8),
+           let decoded = try? JSONDecoder().decode(TopicMetadata.self, from: data) {
+            meta = decoded
+        }
+        meta.projectPath = path
+        if let data = try? JSONEncoder().encode(meta) {
+            metadataJSON = String(data: data, encoding: .utf8)
+        }
+    }
 }
 
 public struct TopicSessionBridge: Codable, UpsertableRecord {
