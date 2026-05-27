@@ -58,12 +58,20 @@ public class MessageRepository {
     ///
     /// Guards: user-role only, ≥20 chars content, 10s window, 1:1 matching.
     /// Single SQL DELETE — no Swift memory loading.
+    ///
+    /// Note: LIMIT 1 is intentional as a safety net — only one local message
+    /// is deleted per call, even if multiple matches exist. This prevents
+    /// accidental bulk deletion from false-positive matches.
+    ///
+    /// Note: Both `?` positional parameters bind to `sessionKey` — the first
+    /// for the outer DELETE WHERE clause, the second for the subquery WHERE.
+    /// If refactoring the SQL, ensure parameter order stays consistent.
     public func dedupLocalMessages(sessionKey: String) throws {
         try dbManager.write { db in
             try db.execute(sql: """
                 DELETE FROM messages
                 WHERE role = 'user'
-                  AND sessionId = ?
+                  AND sessionId = ?          -- outer param 1: sessionKey
                   AND LENGTH(TRIM(COALESCE(content, ''))) >= 20
                   AND id IN (
                     SELECT local.id FROM messages local
@@ -71,10 +79,10 @@ public class MessageRepository {
                       AND gateway.role = 'user'
                       AND TRIM(COALESCE(local.content, '')) = TRIM(COALESCE(gateway.content, ''))
                       AND ABS(local.timestamp - gateway.timestamp) < 10.0
-                      AND local.id != gateway.id
-                    WHERE local.sessionId = ?
+                      AND local.id != gateway.id   -- prevent self-match
+                    WHERE local.sessionId = ?    -- inner param 2: sessionKey
                       AND local.role = 'user'
-                    LIMIT 1
+                    LIMIT 1   -- safety net: delete at most one local message per call
                   )
                 """, arguments: [sessionKey, sessionKey])
         }
