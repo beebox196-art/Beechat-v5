@@ -658,6 +658,7 @@ public actor SyncBridge {
         Task {
             do {
                 _ = try await fetchHistory(sessionKey: sessionKey)
+                try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
             } catch {
                 print("[SyncBridge] fetchHistory failed in processChatFinal: \(error)")
             }
@@ -673,6 +674,7 @@ public actor SyncBridge {
         Task {
             do {
                 _ = try await fetchHistory(sessionKey: sessionKey)
+                try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
             } catch {
                 print("[SyncBridge] fetchHistory failed in processChatError: \(error)")
             }
@@ -723,6 +725,7 @@ public actor SyncBridge {
             streamingBuffer.removeValue(forKey: sessionKey)
             streamingSessionKeys.remove(sessionKey)
             try await fetchHistory(sessionKey: sessionKey)
+            try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
         case "error":
             cancelStallTimer(for: sessionKey)
@@ -730,6 +733,7 @@ public actor SyncBridge {
             streamingSessionKeys.remove(sessionKey)
             // Fetch history before notifying the delegate
             try await fetchHistory(sessionKey: sessionKey)
+            try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
         default:
             break

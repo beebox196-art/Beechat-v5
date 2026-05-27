@@ -101,6 +101,12 @@ public class BeeChatPersistenceStore {
     public func upsertMessages(_ messages: [Message]) throws {
         try messageRepo.upsert(messages)
     }
+
+    /// Deduplicate local user messages that have a gateway counterpart.
+    /// Passthrough to MessageRepository.dedupLocalMessages(sessionKey:)
+    public func dedupLocalMessages(sessionKey: String) throws {
+        try messageRepo.dedupLocalMessages(sessionKey: sessionKey)
+    }
     
     
     public func saveAttachment(_ attachment: Attachment) throws {

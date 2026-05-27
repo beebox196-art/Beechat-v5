@@ -11,6 +11,7 @@ public class TopicRepository {
     /// Create a new topic with an upfront gateway-format session key.
     /// The key is generated as "agent:main:<topicId>" (lowercase) to match
     /// gateway conventions. No nil sessionKey window.
+    /// Sets origin = "local" to mark this topic as created on the current device.
     public func create(name: String, pendingGatewaySync: Bool = false) throws -> Topic {
         let topicId = UUID().uuidString
         let gatewayKey = "agent:main:\(topicId.lowercased())"
@@ -19,7 +20,8 @@ public class TopicRepository {
             id: topicId,
             name: name,
             sessionKey: gatewayKey,
-            pendingGatewaySync: pendingGatewaySync
+            pendingGatewaySync: pendingGatewaySync,
+            origin: "local"
         )
 
         try save(topic)

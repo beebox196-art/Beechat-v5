@@ -541,6 +541,17 @@ public class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("Migration013_AddTopicOrigin") { db in
+            guard try db.tableExists("topics") else { return }
+
+            let columns = try db.columns(in: "topics").map { $0.name }
+            if !columns.contains("origin") {
+                try db.alter(table: "topics") { t in
+                    t.add(column: "origin", .text)
+                }
+            }
+        }
+
         try migrator.migrate(dbPool!)
     }
 }

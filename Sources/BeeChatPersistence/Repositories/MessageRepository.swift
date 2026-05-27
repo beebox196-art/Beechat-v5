@@ -51,4 +51,32 @@ public class MessageRepository {
             try db.execute(sql: "UPDATE messages SET isRead = 1 WHERE id IN (\(ids.map { _ in "?" }.joined(separator: ",")))", arguments: StatementArguments(ids))
         }
     }
+
+    /// Deduplicate local user messages that have a gateway counterpart.
+    /// Removes the local-UUID copy when a gateway message with matching content
+    /// and close timestamp exists for the same session.
+    ///
+    /// Guards: user-role only, ≥20 chars content, 10s window, 1:1 matching.
+    /// Single SQL DELETE — no Swift memory loading.
+    public func dedupLocalMessages(sessionKey: String) throws {
+        try dbManager.write { db in
+            try db.execute(sql: """
+                DELETE FROM messages
+                WHERE role = 'user'
+                  AND sessionId = ?
+                  AND LENGTH(TRIM(COALESCE(content, ''))) >= 20
+                  AND id IN (
+                    SELECT local.id FROM messages local
+                    INNER JOIN messages gateway ON local.sessionId = gateway.sessionId
+                      AND gateway.role = 'user'
+                      AND TRIM(COALESCE(local.content, '')) = TRIM(COALESCE(gateway.content, ''))
+                      AND ABS(local.timestamp - gateway.timestamp) < 10.0
+                      AND local.id != gateway.id
+                    WHERE local.sessionId = ?
+                      AND local.role = 'user'
+                    LIMIT 1
+                  )
+                """, arguments: [sessionKey, sessionKey])
+        }
+    }
 }

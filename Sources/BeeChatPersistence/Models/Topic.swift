@@ -40,6 +40,7 @@ public struct Topic: Codable, UpsertableRecord {
     public var updatedAt: Date
     public var metadataJSON: String?
     public var messageCount: Int = 0
+    public var origin: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -53,7 +54,8 @@ public struct Topic: Codable, UpsertableRecord {
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
         metadataJSON: String? = nil,
-        messageCount: Int = 0
+        messageCount: Int = 0,
+        origin: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -67,6 +69,7 @@ public struct Topic: Codable, UpsertableRecord {
         self.updatedAt = updatedAt
         self.metadataJSON = metadataJSON
         self.messageCount = messageCount
+        self.origin = origin
     }
 
     // messageCount excluded from upsertColumns — maintained by DB trigger, not Swift code
@@ -74,7 +77,7 @@ public struct Topic: Codable, UpsertableRecord {
         Column("name"), Column("lastMessagePreview"), Column("lastActivityAt"),
         Column("unreadCount"), Column("sessionKey"), Column("isArchived"),
         Column("updatedAt"), Column("metadataJSON"),
-        Column("pendingGatewaySync")
+        Column("pendingGatewaySync"), Column("origin")
     ]
 
     // MARK: - Project Path (via metadataJSON)
