@@ -417,12 +417,12 @@ struct MainWindow: View {
                             topic: newTopicForContext
                         )
                         print("[MainWindow] Gateway session created for topic \(topicId), runId: \(runId)")
-                        // TODO: Gate 2F — publishTopicState disabled pending gateway plugin registration
-                        // await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
+                        // Gate 2F: publish updated topic list so iPhone discovers the new topic
+                        await bridge.publishTopicList()
                     } catch {
                         print("[MainWindow] Gateway session creation failed (topic still local): \(error)")
-                        // TODO: Gate 2F — publishTopicState disabled pending gateway plugin registration
-                        // try? await bridge.publishTopicState(topic: newTopicForContext, sessionKey: gatewayKey)
+                        // Gate 2F: still publish local topic list even if gateway session creation failed
+                        await bridge.publishTopicList()
                     }
                 }
             } catch {
@@ -448,6 +448,10 @@ struct MainWindow: View {
                 }
                 try topicRepo.deleteCascading(id)
                 messageViewModel.removeTopic(id: id)
+                // Gate 2F: publish updated topic list so iPhone sees the deletion
+                if let bridge = appState.syncBridge {
+                    await bridge.publishTopicList()
+                }
             } catch {
                 print("🔴 Delete topic failed: \(error)")
                 deleteErrorMsg = error.localizedDescription
@@ -471,6 +475,11 @@ struct MainWindow: View {
                 // If project binding changed, requeue context injection so next message gets [PROJECT-CONTEXT]
                 if oldProjectPath != newProjectPath, let sessionKey = updatedTopic.sessionKey, let bridge = appState.syncBridge {
                     await bridge.requeueContextInjection(sessionKey: sessionKey)
+                }
+
+                // Gate 2F: publish updated topic list so iPhone sees the rename/edit
+                if let bridge = appState.syncBridge {
+                    await bridge.publishTopicList()
                 }
 
                 // TODO: Gate 2F — publishTopicState disabled pending gateway plugin registration
