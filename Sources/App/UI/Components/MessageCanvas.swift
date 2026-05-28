@@ -34,7 +34,6 @@ struct MessageCanvas: View {
     }
 
     @State private var isAtBottom: Bool = true
-    @State private var scrollProxy: ScrollViewProxy?
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String? = nil
     /// Tracks the maximum height the streaming bubble has reached.
@@ -134,7 +133,8 @@ struct MessageCanvas: View {
                 .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
                     measuredWidth = newWidth
                 }
-                // Only manual scroll: load-earlier anchor (user tapped Load Earlier)
+
+                // Manual scrolls: load-earlier anchor, topic switch, and appear
                 .onChange(of: anchorMessageId) { _, newId in
                     if let anchorId = newId {
                         withAnimation(.easeInOut(duration: 0.15)) {
@@ -143,32 +143,51 @@ struct MessageCanvas: View {
                         anchorMessageId = nil
                     }
                 }
+                .onChange(of: topicId) { _, newId in
+                    if newId != nil {
+                        // Topic switch: scroll to bottom after SwiftUI renders new content.
+                        // defaultScrollAnchor(.bottom) handles the initial position,
+                        // but if messages arrive incrementally, we need a manual nudge.
+                        isAtBottom = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
-                    jumpToLatestButton
+                    jumpToLatestButton(proxy: proxy)
                 }
             }
             .environment(\.canvasWidth, measuredWidth)
         }
         .frame(maxHeight: .infinity)
-        // Reset streaming min-height when streaming ends so it doesn't
-        // leave a tall gap for the next shorter message
+        // Reset streaming min-height only when streaming is truly done
+        // (not just a momentary flicker). Checks both flags to avoid
+        // resetting during brief isStreaming=false races between poll cycles.
         .onChange(of: isStreaming) { _, isNowStreaming in
-            if !isNowStreaming {
+            if !isNowStreaming && streamingContent.isEmpty {
+                streamingMinHeight = 0
+            }
+        }
+        .onChange(of: streamingContent) { _, newContent in
+            // Belt-and-braces: if streaming ended but minHeight hasn't reset
+            // (e.g., streamingContent was cleared before isStreaming went false)
+            if !isStreaming && newContent.isEmpty {
                 streamingMinHeight = 0
             }
         }
     }
 
     /// Jump-to-Latest button — fixed-size overlay, opacity-only transitions.
-    private var jumpToLatestButton: some View {
+    /// Takes the ScrollViewProxy directly so it works even though the button
+    /// lives outside the ScrollViewReader closure.
+    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
         Color.clear
             .frame(width: 48, height: 48)
             .overlay {
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        if let proxy = scrollProxy {
-                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                        }
+                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
                     }
                     isAtBottom = true
                 }) {
