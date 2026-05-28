@@ -57,6 +57,11 @@ public actor SyncBridge {
     /// Written by manualReset(), consumed and cleared by sendMessage()
     private var pendingResetContext: [String: String] = [:]
 
+    // MARK: - Gate 2F: Topic Publishing (chat.inject)
+
+    /// Trailing-edge debounce task for topic list publishing.
+    private var publishTask: Task<Void, Never>?
+
     public init(config: SyncBridgeConfiguration) {
         self.config = config
         let gateway = config.gatewayClient
@@ -625,6 +630,23 @@ public actor SyncBridge {
         try config.persistenceStore.saveMessage(message)
     }
 
+    /// Single topic item in the published topic list payload.
+    struct TopicSyncItem: Codable {
+        let id: String
+        let name: String
+        let sessionKey: String
+        let isArchived: Bool
+        let lastActivityAt: Date?
+        let lastMessagePreview: String?
+    }
+
+    /// Top-level payload published to the sync session.
+    struct TopicListPayload: Codable {
+        let v: Int
+        let timestamp: String
+        let topics: [TopicSyncItem]
+    }
+
     // MARK: - Chat event handlers (client-friendly format from gateway)
 
     /// Handle "chat" delta event - v4 sends incremental text with replace semantics.
@@ -942,9 +964,123 @@ public actor SyncBridge {
         return scopes.contains("operator.admin")
     }
 
+    /// Fetch the content of the latest message from a sync session.
+    /// Used by topic sync to read the Mac's topic list payload.
+    /// Returns nil if the session doesn't exist or has no messages.
+    public func fetchSyncPayload(sessionKey: String) async throws -> String? {
+        let messages = try await rpcClient.chatHistory(sessionKey: sessionKey, limit: 1)
+        return messages.last?.content
+    }
+
     /// Returns raw SessionInfo list including pluginExtensions.
     public func fetchSessionInfos() async throws -> [SessionInfo] {
         return try await rpcClient.sessionsList()
+    }
+
+    // MARK: - Gate 2F: Topic Publishing (chat.inject)
+
+    /// Publishes the Mac's complete topic list to the sync session so the iPhone can discover them.
+    /// Uses `chat.inject` — no plugin registration needed.
+    /// Trailing-edge debounced to avoid rapid-fire publishes during bulk topic changes.
+    public func publishTopicList() {
+        // Cancel any pending publish and reschedule
+        publishTask?.cancel()
+        publishTask = Task { [weak self] in
+            guard let self = self else { return }
+            try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s trailing debounce
+            guard !Task.isCancelled else { return }
+            await self.performPublish()
+        }
+    }
+
+    /// Actual publish logic — separated from debounce for clarity.
+    private func performPublish() async {
+        // 1. Fetch active topics from local GRDB (limit: 50 — only publish what iPhone will see)
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+        guard let allTopics = try? topicRepo.fetchAllActive(limit: 50) else {
+            print("[SyncBridge] performPublish: fetchAllActive failed")
+            return
+        }
+
+        // 2. Filter: only topics with a gateway session key (local-only topics can't be synced)
+        //    Archived topics are already excluded by fetchAllActive's filter
+        let syncableTopics = allTopics.filter { $0.sessionKey != nil }
+        guard !syncableTopics.isEmpty else {
+            print("[SyncBridge] performPublish: no syncable topics — not publishing (safety: don't empty iPhone topic list)")
+            return
+        }
+
+        // 3. Build payload items
+        let items: [TopicSyncItem] = syncableTopics.map { topic in
+            return TopicSyncItem(
+                id: topic.id,
+                name: topic.name,
+                sessionKey: topic.sessionKey!,
+                isArchived: false,
+                lastActivityAt: topic.lastActivityAt,
+                lastMessagePreview: topic.lastMessagePreview
+            )
+        }
+
+        // 4. Serialise payload (ISO 8601 dates — must match iPhone's TopicSyncPayload decoder)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let payload = TopicListPayload(
+            v: 1,
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            topics: items
+        )
+
+        guard let jsonData = try? encoder.encode(payload),
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            print("[SyncBridge] performPublish: serialisation failed")
+            return
+        }
+
+        // 5. Ensure sync session exists (chat.inject requires it)
+        do {
+            _ = try await ensureSyncSessionExists()
+        } catch {
+            print("[SyncBridge] performPublish: failed to bootstrap sync session: \(error)")
+            return
+        }
+
+        // 6. Inject into sync session
+        do {
+            _ = try await rpcClient.chatInject(
+                sessionKey: "agent:main:beechat-sync",
+                message: jsonString,
+                label: "beechat-topic-sync"
+            )
+            print("[SyncBridge] performPublish: published \(items.count) topics to sync session")
+        } catch {
+            print("[SyncBridge] performPublish: chatInject failed: \(error)")
+        }
+    }
+
+    /// Ensures the sync session exists before injecting.
+    /// chat.inject requires the session to already exist; chat.send auto-creates.
+    /// Returns true if the session exists or was successfully created.
+    /// NOTE: The bootstrap message `[beechat-sync-bootstrap]` will trigger an agent run —
+    /// this is an expected one-time cost on first launch.
+    private func ensureSyncSessionExists() async throws -> Bool {
+        // 1. Check if the session already exists
+        let sessions = try await rpcClient.sessionsList()
+        if sessions.contains(where: { $0.key == "agent:main:beechat-sync" }) {
+            return true // Session exists, proceed with chat.inject
+        }
+
+        // 2. Bootstrap: send a message to create the session
+        // chat.send auto-creates sessions; chat.inject does not
+        _ = try await rpcClient.chatSend(
+            sessionKey: "agent:main:beechat-sync",
+            message: "[beechat-sync-bootstrap]",
+            idempotencyKey: UUID().uuidString,
+            thinking: nil,
+            attachments: nil
+        )
+        print("[SyncBridge] Bootstrapped sync session via chat.send")
+        return true
     }
 
     // MARK: - Stream stall detection (A1)
