@@ -2,7 +2,11 @@ import SwiftUI
 import BeeChatPersistence
 
 /// Scrollable message canvas — displays messages and typing indicator.
-/// Auto-scrolls to bottom on new messages. Measures canvas width for bubble sizing
+///
+/// Scroll philosophy (v2, 2026-05-28): `defaultScrollAnchor(.bottom)` handles
+/// auto-scroll natively. We do NOT manually scrollToBottom on new messages or
+/// during streaming — that fights SwiftUI's layout engine and causes bounce.
+/// The only manual scroll is the "Jump to Latest" button (user-initiated).
 struct MessageCanvas: View {
     @Environment(ThemeManager.self) var themeManager
 
@@ -28,10 +32,7 @@ struct MessageCanvas: View {
     @State private var isAtBottom: Bool = true
     @State private var scrollProxy: ScrollViewProxy?
     @State private var measuredWidth: CGFloat = 1200
-    @State private var anchorMessageId: String?
-
-    @State private var pendingTopicScroll: Bool = false
-    @State private var lastScrollTime: Date = .distantPast
+    @State private var anchorMessageId: String? = nil
 
     var body: some View {
         ZStack {
@@ -78,33 +79,29 @@ struct MessageCanvas: View {
                                 .id("streaming-bubble")
                         }
 
+                        // 4px anchor — enough for LazyVStack to render reliably,
+                        // invisible to the user. 8px was visibly too tall (white space).
                         Color.clear
-                            .frame(height: 8)
+                            .frame(height: 4)
                             .id("bottom-anchor")
                     }
                 }
                 .scrollContentBackground(.hidden)
                 .defaultScrollAnchor(.bottom)
                 .scrollBounceBehaviorCompat(axes: .vertical)
-                .onScrollGeometryChangeCompat({ geo in
-                    // Guard against invalid geometry (empty content, zero-size container)
-                    guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
-                        return true // stay at bottom when geometry is invalid
+                .onScrollGeometryChangeCompat(
+                    transform: { geo in
+                        guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
+                            return true
+                        }
+                        // Simple threshold: within 80px of bottom = at bottom
+                        let distanceFromBottom = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
+                        return distanceFromBottom < 80
+                    },
+                    action: { _, newValue in
+                        isAtBottom = newValue
                     }
-                    // Hysteresis: enter threshold (become "at bottom") is generous,
-                    // leave threshold (become "scrolled up") is tighter.
-                    // This prevents the button flickering during layout shifts.
-                    let enterThreshold: CGFloat = 50
-                    let leaveThreshold: CGFloat = 120
-                    let distanceFromBottom = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
-                    if isAtBottom {
-                        // Currently at bottom — only leave if scrolled far up
-                        return distanceFromBottom < leaveThreshold
-                    } else {
-                        // Currently scrolled up — only enter if close to bottom
-                        return distanceFromBottom < enterThreshold
-                    }
-                }, binding: $isAtBottom)
+                )
                 .background(
                     WidthReader { width in
                         Color.clear
@@ -114,101 +111,52 @@ struct MessageCanvas: View {
                 .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
                     measuredWidth = newWidth
                 }
-                .onChange(of: messages.count) { _, _ in
-                    if let anchorId = anchorMessageId {
+                // Only manual scroll: load-earlier anchor (user tapped Load Earlier)
+                .onChange(of: anchorMessageId) { _, newId in
+                    if let anchorId = newId {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             proxy.scrollTo(anchorId, anchor: .top)
                         }
                         anchorMessageId = nil
-                    } else if pendingTopicScroll {
-                        pendingTopicScroll = false
-                        scrollToBottom(proxy: proxy, animated: true)
-                    } else if isAtBottom {
-                        // Only auto-scroll when already at the bottom.
-                        // Do NOT force scroll on user message — defaultScrollAnchor(.bottom)
-                        // handles staying pinned. Explicit scrollToBottom on user send
-                        // causes white-space overshoot because the scroll targets a position
-                        // that becomes stale when the streaming bubble starts growing.
-                        scrollToBottom(proxy: proxy, animated: false)
-                    }
-                    // else: user is scrolled up reading — don't force scroll.
-                }
-                .onChange(of: thinkingState) { oldState, newState in
-                    BeeChatLogger.log("[ThinkingBee] MessageCanvas: thinkingState changed \(oldState) → \(newState)")
-                    // Safety net: when thinking starts, ensure we're scrolled to bottom.
-                    // This covers the gap between user message appearing and streaming content
-                    // starting, where isAtBottom might briefly flicker false due to layout shifts.
-                    if newState == .thinking && isAtBottom {
-                        scrollToBottom(proxy: proxy, animated: false)
                     }
                 }
-                .onChange(of: topicId) { _, newId in
-                    if newId != nil {
-                        isAtBottom = true
-                        if messages.isEmpty {
-                            pendingTopicScroll = true
-                        } else {
-                            scrollToBottom(proxy: proxy, animated: true)
-                        }
-                    }
-                }
-                .onAppear {
-                    scrollProxy = proxy
-                    scrollToBottom(proxy: proxy, animated: true)
+                .overlay(alignment: .bottomTrailing) {
+                    jumpToLatestButton
                 }
             }
             .environment(\.canvasWidth, measuredWidth)
-
-            // Jump to Latest button — always present but fades in/out.
-            // Using opacity instead of conditional rendering prevents layout feedback loops
-            // where isAtBottom toggles → button appears/disappears → geometry changes → isAtBottom toggles
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if let proxy = scrollProxy {
-                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                    }
-                }
-                isAtBottom = true
-            }) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 36, height: 36)
-                    .background(.ultraThinMaterial)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Jump to latest message")
-            .accessibilityHint("Scrolls to the most recent message")
-            .opacity(isAtBottom ? 0 : 1)
-            .allowsHitTesting(!isAtBottom)
-            .accessibilityHidden(isAtBottom)
-            .padding(.bottom, 12)
-            .padding(.trailing, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
         .frame(maxHeight: .infinity)
     }
 
-
-
-    /// Scroll to bottom. No animation during streaming — animation fights with
-    /// SwiftUI's layout engine as content grows, causing visible bounce.
-    /// Animated scroll only for user-initiated actions (topic switch, onAppear).
-    /// Debounced: overlapping calls within 150 ms are coalesced to prevent
-    /// layout feedback loops from rapid state updates (streaming polls at 50ms).
-    private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
-        let now = Date()
-        if now.timeIntervalSince(lastScrollTime) < 0.15 {
-            return
-        }
-        lastScrollTime = now
-        if animated {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                proxy.scrollTo("bottom-anchor", anchor: .bottom)
+    /// Jump-to-Latest button — fixed-size overlay, opacity-only transitions.
+    private var jumpToLatestButton: some View {
+        Color.clear
+            .frame(width: 48, height: 48)
+            .overlay {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        if let proxy = scrollProxy {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
+                    }
+                    isAtBottom = true
+                }) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Jump to latest message")
+                .accessibilityHint("Scrolls to the most recent message")
+                .opacity(isAtBottom ? 0 : 1)
+                .allowsHitTesting(!isAtBottom)
+                .accessibilityHidden(isAtBottom)
             }
-        } else {
-            proxy.scrollTo("bottom-anchor", anchor: .bottom)
-        }
+            .padding(.bottom, 12)
+            .padding(.trailing, 12)
     }
 }
 
@@ -236,9 +184,6 @@ private struct WidthPreferenceKey: PreferenceKey {
 /// Compatibility wrapper for `onScrollGeometryChange` which requires macOS 15+.
 /// On macOS 14, `isAtBottom` stays true (Jump button hidden, auto-scroll still works
 /// via `defaultScrollAnchor(.bottom)`).
-///
-/// The handler receives a `ScrollGeometry` struct with contentSize, containerSize,
-/// and contentOffset — mirroring the native API but available on all platforms.
 struct ScrollGeometry {
     var contentSize: CGSize
     var containerSize: CGSize
@@ -246,16 +191,12 @@ struct ScrollGeometry {
 }
 
 extension View {
-    /// On macOS 15+/iOS 18+: uses native `onScrollGeometryChange`.
-    /// On older platforms: leaves `isAtBottom` true (auto-scroll via `defaultScrollAnchor(.bottom)` still works).
-    /// - Parameter handler: Tracking closure — computes whether the scroll is "at bottom".
-    ///   Should be pure; receives ScrollGeometry and returns Bool.
-    /// - Parameter binding: Binding to the isAtBottom state. Updated in the action closure
-    ///   (macOS 15+) so SwiftUI processes the state change correctly.
+    /// On macOS 15+/iOS 18+: uses native `onScrollGeometryChange` with two-closure pattern.
+    /// On older platforms: leaves state unchanged (auto-scroll via `defaultScrollAnchor(.bottom)` still works).
     @ViewBuilder
     func onScrollGeometryChangeCompat(
-        _ handler: @escaping (ScrollGeometry) -> Bool,
-        binding: Binding<Bool>
+        transform: @escaping (ScrollGeometry) -> Bool,
+        action: @escaping (_ oldValue: Bool, _ newValue: Bool) -> Void
     ) -> some View {
         if #available(macOS 15.0, iOS 18.0, *) {
             self.onScrollGeometryChange(for: Bool.self) { geo in
@@ -264,13 +205,14 @@ extension View {
                     containerSize: geo.containerSize,
                     contentOffset: geo.contentOffset
                 )
-                return handler(sg)
-            } action: { _, newValue in
-                binding.wrappedValue = newValue
+                return transform(sg)
+            } action: { oldValue, newValue in
+                action(oldValue, newValue)
             }
         } else {
-            // macOS 14 fallback: isAtBottom stays true, Jump button hidden.
-            // defaultScrollAnchor(.bottom) handles auto-scrolling.
+            // macOS 14 fallback: no onScrollGeometryChange available.
+            // defaultScrollAnchor(.bottom) handles auto-scroll.
+            // isAtBottom stays true (Jump button hidden).
             self
         }
     }
