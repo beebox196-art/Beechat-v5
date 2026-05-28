@@ -85,6 +85,7 @@ struct MessageCanvas: View {
                 }
                 .scrollContentBackground(.hidden)
                 .defaultScrollAnchor(.bottom)
+                .scrollBounceBehaviorCompat(axes: .vertical)
                 .onScrollGeometryChangeCompat({ geo in
                     // Guard against invalid geometry (empty content, zero-size container)
                     guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
@@ -181,8 +182,6 @@ struct MessageCanvas: View {
             .opacity(isAtBottom ? 0 : 1)
             .allowsHitTesting(!isAtBottom)
             .accessibilityHidden(isAtBottom)
-            .offset(y: isAtBottom ? 8 : 0)
-            .animation(.easeInOut(duration: 0.2), value: isAtBottom)
             .padding(.bottom, 12)
             .padding(.trailing, 12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -272,6 +271,15 @@ extension View {
         } else {
             // macOS 14 fallback: isAtBottom stays true, Jump button hidden.
             // defaultScrollAnchor(.bottom) handles auto-scrolling.
+            self
+        }
+    }
+
+    @ViewBuilder
+    func scrollBounceBehaviorCompat(axes: Axis.Set) -> some View {
+        if #available(macOS 15.0, iOS 18.0, *) {
+            self.scrollBounceBehavior(.basedOnSize, axes: axes)
+        } else {
             self
         }
     }
