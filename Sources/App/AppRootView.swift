@@ -94,6 +94,9 @@ final class AppState {
                             self.connectionState = .connected
                             self.isStartupComplete = true
 
+                            // Gate 2F: Publish topic list so iPhone can discover Mac topics
+                            await bridge.publishTopicList()
+
                             // TODO: Gate 2F startup reconcile disabled — pluginPatch
                             // fails with "unknown plugin session extension: beechat/metadata"
                             // for sessions that don't have the beechat plugin registered.
