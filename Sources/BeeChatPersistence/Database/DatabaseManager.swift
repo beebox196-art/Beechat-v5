@@ -552,6 +552,24 @@ public class DatabaseManager {
             }
         }
 
+        migrator.registerMigration("Migration014_SeedClaudeOversightBookmark") { db in
+            guard try db.tableExists("bookmarks") else { return }
+
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO bookmarks
+                    (id, name, path, iconName, sortOrder, createdAt)
+                VALUES
+                    (?, ?, ?, ?, ?, ?)
+            """, arguments: [
+                UUID().uuidString,
+                "Claude Oversight Reports",
+                "/Users/openclaw/Desktop/Claude Oversight Reports",
+                "folder.badge.checkmark",
+                4,
+                Date()
+            ])
+        }
+
         try migrator.migrate(dbPool!)
     }
 }
