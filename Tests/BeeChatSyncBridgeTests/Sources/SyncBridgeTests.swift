@@ -32,11 +32,6 @@ final class MockRPCClient: RPCClientProtocol {
     
     func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String { return "run-id" }
     func chatAbort(sessionKey: String) async throws -> Bool { return true }
-
-    // Gate 2F: Topic sync RPC methods
-    func sessionsPatch(key: String, label: String) async throws -> Bool { return true }
-    func sessionsPluginPatch(key: String, pluginId: String, namespace: String, value: Encodable?, unset: Bool) async throws -> Bool { return true }
-    func chatInject(sessionKey: String, message: String, label: String? = nil) async throws -> String { return "injected" }
 }
 
 

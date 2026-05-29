@@ -370,7 +370,7 @@ public actor SyncBridge {
         }
     }
 
-    // MARK: - Topic Context Injection (Gate 2F)
+    // MARK: - Topic Context Injection
 
     /// Feature flag for topic context injection. Uses UserDefaults directly
     /// because @AppStorage doesn't compile in an actor context.
