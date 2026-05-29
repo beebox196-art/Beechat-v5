@@ -285,10 +285,8 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     }
 
     nonisolated func syncBridge(_ bridge: SyncBridge, didReceiveSessionChange sessionKeys: [String]) {
-        // Gate 2F: re-publish topic list when gateway sessions change
-        Task { @MainActor in
-            await bridge.publishTopicList()
-        }
+        // sessions.changed events are handled by the iPhone via REST re-fetch.
+        // No action needed on the Mac side — TopicServer serves current data on demand.
     }
 
     // MARK: - Agent Activity Tracking (C2)

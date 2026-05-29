@@ -50,22 +50,6 @@ public struct SessionInfo: Codable, Sendable {
         pluginExtensions = try container.decodeIfPresent([String: [String: AnyCodable]].self, forKey: .pluginExtensions)
     }
 
-    /// Convenience accessor: extracts `pluginExtensions["beechat"]["metadata"]`
-    /// into the typed `BeeChatTopicMetadata` struct.
-    public var beechatMetadata: BeeChatTopicMetadata? {
-        guard let ext = pluginExtensions?["beechat"]?["metadata"]?.value as? [String: Any],
-              let topicId = ext["topicId"] as? String,
-              let isArchived = ext["isArchived"] as? Bool,
-              let updatedAt = ext["updatedAt"] as? String
-        else { return nil }
-        return BeeChatTopicMetadata(
-            topicId: topicId,
-            isArchived: isArchived,
-            projectPath: ext["projectPath"] as? String,
-            updatedAt: updatedAt
-        )
-    }
-
     /// Converts to a lightweight `GatewaySessionInfo` for persistence layer.
     public var asGatewaySessionInfo: GatewaySessionInfo {
         GatewaySessionInfo(
