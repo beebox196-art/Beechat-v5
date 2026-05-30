@@ -1,5 +1,6 @@
 import SwiftUI
 import BeeChatPersistence
+import BeeChatSyncBridge
 
 /// Sheet for editing a topic's name and project binding.
 struct EditTopicSheet: View {
@@ -90,6 +91,9 @@ struct EditTopicSheet: View {
                             .padding(themeManager.spacing(.sm))
                             .background(themeManager.color(.bgElevated))
                             .cornerRadius(themeManager.radius(.sm))
+
+                            // Context files status (Mel Warning-4)
+                            contextFilesSection(projectPath: currentPath)
                         } else {
                             Text("No project bound")
                                 .font(themeManager.font(.caption))
@@ -197,6 +201,80 @@ struct EditTopicSheet: View {
         } catch {
             errorMessage = "Failed to create project: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Context files section (Mel Warning-4)
+
+    @ViewBuilder
+    private func contextFilesSection(projectPath: String) -> some View {
+        let statuses = ProjectContextReader.getFileStatuses(projectPath: projectPath)
+        let hasStatusMd = statuses.contains { $0.filename == "STATUS.md" && $0.status != .missing }
+
+        VStack(alignment: .leading, spacing: themeManager.spacing(.xs)) {
+            Text("Context files")
+                .font(themeManager.font(.caption))
+                .foregroundColor(themeManager.color(.textSecondary))
+
+            if !hasStatusMd {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                    Text("STATUS.md not found — agent will have limited project context")
+                        .font(themeManager.font(.caption))
+                        .foregroundColor(.orange)
+                }
+                .accessibilityLabel("Warning: STATUS.md not found")
+            }
+
+            ForEach(statuses, id: \.filename) { file in
+                HStack(spacing: themeManager.spacing(.sm)) {
+                    Image(systemName: statusIcon(for: file.status))
+                        .font(.system(size: 9))
+                        .foregroundColor(statusColor(for: file.status))
+                    Text(file.filename)
+                        .font(themeManager.font(.caption))
+                        .foregroundColor(themeManager.color(.textPrimary))
+                    Spacer()
+                    Text(formatFileSize(file.bytes))
+                        .font(themeManager.font(.caption))
+                        .foregroundColor(themeManager.color(.textSecondary))
+                    if file.status == .truncated {
+                        Text("(truncated)")
+                            .font(themeManager.font(.caption))
+                            .foregroundColor(themeManager.color(.textSecondary))
+                    }
+                }
+                .accessibilityLabel("\(file.filename), \(file.status.rawValue), \(formatFileSize(file.bytes))")
+                .accessibilityValue(file.status == .truncated ? "truncated" : "")
+            }
+        }
+        .padding(themeManager.spacing(.sm))
+        .background(themeManager.color(.bgElevated))
+        .cornerRadius(themeManager.radius(.sm))
+    }
+
+    private func statusIcon(for status: ProjectContextReadResult.ProjectContextFileStatus.FileStatus) -> String {
+        switch status {
+        case .found: return "checkmark.circle.fill"
+        case .missing: return "xmark.circle.fill"
+        case .truncated: return "exclamationmark.circle.fill"
+        }
+    }
+
+    private func statusColor(for status: ProjectContextReadResult.ProjectContextFileStatus.FileStatus) -> Color {
+        switch status {
+        case .found: return .green
+        case .missing: return .red.opacity(0.7)
+        case .truncated: return .orange
+        }
+    }
+
+    private func formatFileSize(_ bytes: Int) -> String {
+        if bytes >= 1024 {
+            return String(format: "%.1fKB", Double(bytes) / 1024.0)
+        }
+        return "\(bytes)B"
     }
 
     private func saveTopic() {

@@ -12,6 +12,7 @@ struct TopicViewModel: Identifiable, Hashable {
     var lastActivityAt: Date?
     var unreadCount: Int
     var messageCount: Int
+    var projectPath: String?  // NEW — sourced from Topic.metadataJSON (Phase 1)
 
     init(from topic: Topic, icon: String? = nil) {
         self.id = topic.id
@@ -21,6 +22,18 @@ struct TopicViewModel: Identifiable, Hashable {
         self.lastActivityAt = topic.lastActivityAt
         self.unreadCount = topic.unreadCount
         self.messageCount = topic.messageCount
+        self.projectPath = topic.projectPath  // NEW
+    }
+
+    // Explicit Hashable: identity-only (Kieran Critical-3)
+    // Adding projectPath would silently change synthesized equality/hash,
+    // breaking any Set/Dict usage keyed by TopicViewModel.
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: TopicViewModel, rhs: TopicViewModel) -> Bool {
+        lhs.id == rhs.id
     }
 
     /// Sorted list of TopicViewModels — alphabetical by title, case-insensitive.

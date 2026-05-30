@@ -346,6 +346,138 @@ final class SyncBridgeTests: XCTestCase {
         }
     }
 
+    // MARK: - Project Context Reader Tests (Kieran M1)
+
+    // Test 1: validatePath — rejects paths outside allowed prefix, accepts valid paths, rejects symlink-escape
+    func testValidatePathRejectsOutsideAllowedPrefix() {
+        // Paths outside /Users/openclaw/Projects/ must be rejected
+        XCTAssertFalse(ProjectContextReader.validatePath("/etc/passwd"))
+        XCTAssertFalse(ProjectContextReader.validatePath("/tmp"))
+        XCTAssertFalse(ProjectContextReader.validatePath("/Users/openclaw/.openclaw"))
+        XCTAssertFalse(ProjectContextReader.validatePath("/Users/openclaw/Projects")) // missing trailing slash
+    }
+
+    func testValidatePathAcceptsRealProjectDirectory() {
+        // Use canonical path (capital P) — symlink resolves to this
+        let realPath = "/Users/openclaw/Projects/BeeChat-v5"
+        XCTAssertTrue(FileManager.default.fileExists(atPath: realPath))
+        XCTAssertTrue(ProjectContextReader.validatePath(realPath))
+    }
+
+    func testValidatePathRejectsNonExistentDirectory() {
+        XCTAssertFalse(ProjectContextReader.validatePath("/Users/openclaw/Projects/nonexistent-project"))
+    }
+
+    func testValidatePathRejectsSymlinkEscape() {
+        // Create a symlink outside the allowed prefix pointing to a directory inside it
+        let targetDir = "/Users/openclaw/Projects/BeeChat-v5"
+        let symlinkPath = "/tmp/beechat_symlink_escape_\(UUID().uuidString)"
+
+        do {
+            try FileManager.default.createSymbolicLink(atPath: symlinkPath, withDestinationPath: targetDir)
+            // resolveSymlinksInPath follows the symlink → canonical path → still inside prefix → passes
+            // But the key test: a symlink whose TARGET is outside the prefix should fail
+            let outsideTarget = "/tmp/outside_projects_\(UUID().uuidString)"
+            let symlinkOutside = "/Users/openclaw/Projects/.fake_symlink_\(UUID().uuidString)"
+            try FileManager.default.createDirectory(atPath: outsideTarget, withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(atPath: symlinkOutside, withDestinationPath: outsideTarget)
+
+            // This should be rejected because the resolved target is /tmp/... (outside prefix)
+            XCTAssertFalse(ProjectContextReader.validatePath(symlinkOutside))
+
+            // Cleanup
+            try? FileManager.default.removeItem(atPath: symlinkOutside)
+        } catch {
+            XCTFail("Failed to set up symlink test: \(error)")
+        }
+
+        // Cleanup symlink in /tmp
+        try? FileManager.default.removeItem(atPath: symlinkPath)
+    }
+
+    // Test 2: byte truncation with multi-byte characters
+    func testReadByteTruncationWithMultiByteCharacters() {
+        // Create a temp directory inside allowed prefix with a test STATUS.md containing emoji and CJK
+        let tempDir = "/Users/openclaw/Projects/.beechat_test_pcr_\(UUID().uuidString)"
+        let statusPath = "\(tempDir)/STATUS.md"
+
+        do {
+            try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+            // Each emoji is 4 bytes; CJK chars are 3 bytes each
+            let emojiContent = String(repeating: "🐝", count: 100) // 400 bytes
+            let cjkContent = String(repeating: "测试", count: 100) // 600 bytes
+            let content = "\(emojiContent)\n\(cjkContent)"
+            try content.write(toFile: statusPath, atomically: true, encoding: .utf8)
+
+            // Validate path is accepted
+            XCTAssertTrue(ProjectContextReader.validatePath(tempDir), "Temp project dir should validate")
+
+            // Read with a tight byte budget — should truncate cleanly, not crash
+            let result = ProjectContextReader.read(projectPath: tempDir, maxTotalBytes: 200)
+            XCTAssertFalse(result.isEmpty, "Should have read some content within budget")
+            XCTAssertTrue(result.utf8.count <= 500, "Result should not exceed budget + overhead")
+        } catch {
+            XCTFail("Failed to set up test: \(error)")
+        }
+
+        // Cleanup
+        try? FileManager.default.removeItem(atPath: tempDir)
+    }
+
+    // Test 3: Topic Hashable — identity-only equality (tested in BeeChatAppTests via TopicViewModel)
+    // This validates the persistence layer Topic.setProjectPath round-trips correctly.
+    func testTopicSetProjectPathRoundTrips() {
+        // Use canonical path (capital P) — matches Topic.setProjectPath allowedPrefix
+        let realPath = "/Users/openclaw/Projects/BeeChat-v5"
+        var topic = Topic(id: "same-id", name: "Test Project", sessionKey: "agent:main:test")
+        XCTAssertNil(topic.projectPath)
+
+        XCTAssertNoThrow(try topic.setProjectPath(realPath))
+        XCTAssertEqual(topic.projectPath, realPath)
+
+        // Clear
+        XCTAssertNoThrow(try topic.setProjectPath(nil))
+        XCTAssertNil(topic.projectPath)
+    }
+
+    // Test 4: buildContextHeader — with projectPath includes file content, without returns topic-only
+    func testBuildContextHeaderWithProjectPathIncludesContent() async {
+        // Create a temp project directory inside allowed prefix with STATUS.md
+        let tempDir = "/Users/openclaw/Projects/.beechat_test_bch_\(UUID().uuidString)"
+        let statusPath = "\(tempDir)/STATUS.md"
+
+        do {
+            try FileManager.default.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+            try "Status: Active\nCurrent: Testing".write(toFile: statusPath, atomically: true, encoding: .utf8)
+
+            var topic = Topic(id: "test-id", name: "TestProject", sessionKey: "agent:main:test")
+            try topic.setProjectPath(tempDir)
+
+            let header = await bridge().buildContextHeader(topic: topic)
+
+            // Should contain the topic name AND the project content
+            XCTAssertTrue(header.contains("[TOPIC-CONTEXT]"), "Header should contain topic context marker")
+            XCTAssertTrue(header.contains("Topic: TestProject"), "Header should contain topic name")
+            XCTAssertTrue(header.contains("[PROJECT-CONTEXT]"), "Header should contain project context marker")
+            XCTAssertTrue(header.contains("STATUS.md"), "Header should reference STATUS.md")
+        } catch {
+            XCTFail("Failed to set up test: \(error)")
+        }
+
+        // Cleanup
+        try? FileManager.default.removeItem(atPath: tempDir)
+    }
+
+    func testBuildContextHeaderWithoutProjectPathReturnsTopicOnly() async {
+        let topic = Topic(id: "test-id", name: "NoProject", sessionKey: "agent:main:test")
+        let header = await bridge().buildContextHeader(topic: topic)
+
+        // Should only contain topic context, no project section
+        XCTAssertTrue(header.contains("[TOPIC-CONTEXT]"))
+        XCTAssertTrue(header.contains("Topic: NoProject"))
+        XCTAssertFalse(header.contains("[PROJECT-CONTEXT]"))
+    }
+
     // MARK: - Helper
 
     private func bridge() -> SyncBridge {

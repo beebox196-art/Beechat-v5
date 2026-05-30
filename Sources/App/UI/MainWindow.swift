@@ -489,6 +489,11 @@ struct MainWindow: View {
                 let normalizedKey = topic.sessionKey.map { SessionKeyNormalizer.stripPrefix($0).lowercased() } ?? ""
                 let unreadCount = syncBridgeObserver.unreadCounts[normalizedKey] ?? 0
                 let topicThinkingState: ThinkingState = syncBridgeObserver.isStreamingSession(topic.sessionKey) ? syncBridgeObserver.thinkingState : .idle
+                let projectState: SessionRow.ProjectContextState = {
+                    guard let path = topic.projectPath else { return .none }
+                    let name = URL(fileURLWithPath: path).lastPathComponent
+                    return .linked(projectName: name)
+                }()
                 SessionRow(
                     topic: topic,
                     thinkingState: topicThinkingState,
@@ -497,7 +502,8 @@ struct MainWindow: View {
                     onReset: {
                         resetTargetSessionKey = topic.sessionKey
                         showResetAlert = true
-                    }
+                    },
+                    projectContextState: projectState
                 )
                     .tag(topic.id as String?)
                     .contextMenu {

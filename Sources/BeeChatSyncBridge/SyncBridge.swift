@@ -57,8 +57,15 @@ public actor SyncBridge {
     /// Written by manualReset(), consumed and cleared by sendMessage()
     private var pendingResetContext: [String: String] = [:]
 
-    public init(config: SyncBridgeConfiguration) {
+    /// File provider for reading project context files.
+    /// macOS: LocalProjectFileProvider reads from filesystem.
+    /// iOS: StubProjectFileProvider returns degraded result.
+    /// Default: nil — falls back to LocalProjectFileProvider on macOS.
+    private let fileProvider: ProjectFileProvider
+
+    public init(config: SyncBridgeConfiguration, fileProvider: ProjectFileProvider? = nil) {
         self.config = config
+        self.fileProvider = fileProvider ?? LocalProjectFileProvider()
         let gateway = config.gatewayClient
         let rpc = RPCClient(gateway: gateway)
         self.rpcClient = rpc
@@ -268,8 +275,24 @@ public actor SyncBridge {
         // Topic context injection
         if isTopicContextEnabled, let topic, !contextInjectedKeys.contains(sessionKey) {
             if !didAutoReset {
-                let header = buildContextHeader(topic: topic)
-                effectiveText = "\(header)\n\n\(effectiveText)"
+                let topicContextHeader = buildContextHeader(topic: topic)
+
+                // Kieran Warning-3: combined 50KB cap for auto-reset + topic context
+                // (auto-reset alone can produce up to ~100KB, but it's already gated;
+                // this guard catches any logic error that would let both fire together)
+                let autoResetBytes = effectiveText.utf8.count
+                if autoResetBytes + topicContextHeader.utf8.count > 50_000 {
+                    let remaining = 50_000 - autoResetBytes
+                    if remaining > 0 {
+                        let prefixBytes = topicContextHeader.utf8.prefix(remaining)
+                        let trimmed = String(data: Data(prefixBytes), encoding: .utf8) ?? ""
+                            + "\n... [context truncated]"
+                        effectiveText = "\(trimmed)\n\n\(effectiveText)"
+                    }
+                    // else: auto-reset alone exceeds budget; skip topic context
+                } else {
+                    effectiveText = "\(topicContextHeader)\n\n\(effectiveText)"
+                }
             }
             contextInjectedKeys.insert(sessionKey)
         }
@@ -379,14 +402,35 @@ public actor SyncBridge {
     }
 
     /// Build a context header that tells the agent which topic the user is in.
+    /// Reads actual project files via the injected ProjectFileProvider and injects
+    /// their content — no longer just instructions to read files.
     func buildContextHeader(topic: Topic) -> String {
         var header = "[TOPIC-CONTEXT]\nTopic: \(topic.name)"
-        if let projectPath = topic.projectPath {
-            header += "\n[PROJECT-CONTEXT]\nProject: \(projectPath)"
-            header += "\nRead \(projectPath)STATUS.md for project context."
-            header += "\nRead \(projectPath)decisions.md and \(projectPath)corrections.md if they exist."
-            header += "\nWhen this session ends or significant progress is made, append a dated entry to \(projectPath)ACTIVITY.md using the format: ### YYYY-MM-DD — One-line summary."
+
+        guard let projectPath = topic.projectPath else { return header }
+
+        header += "\n[PROJECT-CONTEXT]\nProject: \(URL(fileURLWithPath: projectPath).lastPathComponent)"
+        header += "\nProject path: \(projectPath)"
+        header += "\n---"
+
+        // Read and inject actual file content via the provider
+        let result = fileProvider.readContextFiles(projectPath: projectPath)
+        if !result.text.isEmpty {
+            header += "\n\(result.text)"
+        } else {
+            header += "\n(no project files found)"
         }
+
+        header += "\n---"
+        // Kieran Warning-5: use file modification time, not Date.now
+        let statusPath = (projectPath as NSString).appendingPathComponent("STATUS.md")
+        if let modDate = try? FileManager.default.attributesOfItem(atPath: statusPath)[.modificationDate] as? Date {
+            header += "\nProject context read at \(modDate.formatted(date: .abbreviated, time: .shortened))."
+        } else {
+            header += "\nProject context read at \(Date.now.formatted(date: .abbreviated, time: .shortened))."
+        }
+        header += "\nUse the project files above as your working context. Reference STATUS.md for current state before making changes."
+
         return header
     }
 

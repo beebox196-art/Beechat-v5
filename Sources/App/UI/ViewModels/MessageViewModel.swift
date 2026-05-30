@@ -138,7 +138,15 @@ final class MessageViewModel {
             BeeChatLogger.log("[ThinkingBee] sendMessage ABORTED — no syncBridge")
             return
         }
-        let topic: Topic? = topics.first(where: { $0.id == topicId }).map { Topic(id: $0.id, name: $0.title, sessionKey: $0.sessionKey) }
+        // Fix: pass projectPath through Topic reconstruction so SyncBridge
+        // can inject project context. Previously metadataJSON was dropped here.
+        let topic: Topic? = topics.first(where: { $0.id == topicId }).map { vm in
+            var t = Topic(id: vm.id, name: vm.title, sessionKey: vm.sessionKey, metadataJSON: nil)
+            if let path = vm.projectPath {
+                try? t.setProjectPath(path)
+            }
+            return t
+        }
 
         do {
             BeeChatLogger.log("[ThinkingBee] sendMessage — calling bridge.sendMessage for sessionKey=\(sessionKey)")

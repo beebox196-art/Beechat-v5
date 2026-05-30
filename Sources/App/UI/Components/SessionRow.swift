@@ -8,6 +8,15 @@ struct SessionRow: View {
     var unreadCount: Int = 0  // In-memory unread count from SyncBridgeObserver
     var onReset: (() -> Void)? = nil
     var onSelect: (() -> Void)?
+    var projectContextState: ProjectContextState = .none
+
+    /// UI state for project context injection in the sidebar (Mel Warning-3).
+    enum ProjectContextState: Equatable {
+        case none
+        case linked(projectName: String)
+        case injected(projectName: String)
+        case unavailable(projectName: String, reason: String)
+    }
 
     var healthColor: Color {
         if topic.messageCount < 50 {
@@ -70,6 +79,28 @@ struct SessionRow: View {
                 .buttonStyle(.plain)
                 .help("Session at \(Int((sessionUsage ?? 0) * 100))% — tap to reset")
                 .accessibilityLabel("Session at \(Int((sessionUsage ?? 0) * 100))% — tap to reset")
+            }
+
+            // Project context indicator (Mel Warning-3)
+            if case .linked(let name) = projectContextState {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
+                    .help("Project context linked: \(name)")
+                    .accessibilityLabel("Project bound to \(name)")
+            } else if case .injected(let name) = projectContextState {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
+                    .help("Project context linked: \(name)")
+                    .accessibilityLabel("Project bound to \(name)")
+            } else if case .unavailable(let name, let reason) = projectContextState {
+                Image(systemName: "folder.badge.exclamationmark")
+                    .font(.system(size: 10))
+                    .foregroundColor(.orange)
+                    .help("Project context unavailable for \(name): \(reason)")
+                    .accessibilityLabel("Project context unavailable for \(name)")
+                    .accessibilityValue(reason)
             }
         }
         .accessibilityElement(children: .combine)
