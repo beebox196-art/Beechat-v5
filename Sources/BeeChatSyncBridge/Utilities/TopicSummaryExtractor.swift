@@ -37,14 +37,12 @@ Output ONLY the JSON object, no markdown formatting, no explanation.
 /// Parses the agent's response into a `TopicSummaryExtracted` struct.
 /// Handles common formatting issues (markdown code fences, trailing text).
 private func parseExtractionResponse(_ text: String) -> TopicSummaryExtracted? {
-    var cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    var cleaned = text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
 
     // Strip markdown code fences if present
     if cleaned.hasPrefix("```") {
-        // Find the closing ```
         if let closingRange = cleaned.range(of: "```", options: .backwards),
            closingRange.lowerBound > cleaned.index(cleaned.startIndex, offsetBy: 3) {
-            // Strip language tag if present (```json)
             let openingEnd = cleaned.index(cleaned.startIndex, offsetBy: 3)
             var inner = String(cleaned[openingEnd...cleaned.index(before: closingRange.lowerBound)])
             inner = inner.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
@@ -64,7 +62,6 @@ private func parseExtractionResponse(_ text: String) -> TopicSummaryExtracted? {
     guard let data = cleaned.data(using: .utf8) else { return nil }
 
     do {
-        // The JSON uses snake_case keys from the prompt
         let decoder = JSONDecoder()
         let raw = try decoder.decode(RawExtractionResponse.self, from: data)
         return TopicSummaryExtracted(
@@ -75,7 +72,6 @@ private func parseExtractionResponse(_ text: String) -> TopicSummaryExtracted? {
         )
     } catch {
         print("[TopicSummaryExtractor] JSON parse failed: \(error)")
-        // Try again with more lenient parsing
         return nil
     }
 }
@@ -92,36 +88,40 @@ private struct RawExtractionResponse: Codable {
 
 // MARK: - Extractor
 
-/// Extracts durable items from a topic's recent messages via a local chat.send call.
+/// Extracts durable items from a topic's recent messages via a chat.send call.
 ///
-/// Flow (spec §4.2):
-/// 1. Reads last 50 messages from the topic's local SQLite (or since last save timestamp)
-/// 2. Sends extraction prompt via `bridge.chatSend()`
-/// 3. Waits for the agent's response via the bridge's streaming mechanism
-/// 4. Parses the JSON response into `TopicSummaryExtracted`
-/// 5. Returns nil if response is empty or unparseable
+/// Uses a dedicated extraction session key (not the topic's own session) to avoid
+/// race conditions with live conversations that have stale streaming content.
 ///
-/// Note: Uses existing `chat.send` RPC — no new gateway methods, no subagent spawning.
+/// - Parameters:
+///   - topicId: The topic's unique identifier.
+///   - topicName: The topic's display name.
+///   - projectPath: The project's root path, or nil for unbound topics.
+///   - bridge: The SyncBridge instance for chat.send.
+/// - Returns: The extraction result, or nil if the call failed or nothing durable was found.
 public enum TopicSummaryExtractor {
 
     /// Extraction timeout — if the agent doesn't respond within this time, return nil.
     private static let extractionTimeout: TimeInterval = 120
 
     /// Extracts durable items from a topic's recent messages.
-    ///
-    /// - Parameters:
-    ///   - topicId: The topic's unique identifier.
-    ///   - topicName: The topic's display name.
-    ///   - projectPath: The project's root path, or nil for unbound topics.
-    ///   - bridge: The SyncBridge instance for chat.send.
-    /// - Returns: The extraction result, or nil if the call failed or nothing durable was found.
     public static func extract(
         topicId: String,
         topicName: String,
         projectPath: String?,
         bridge: SyncBridge
     ) async -> TopicSummaryExtracted? {
-        guard let sessionKey = await sessionKeyForTopic(topicId: topicId) else {
+        // Look up the topic to get its session key (for project name resolution)
+        let topicSessionKey: String?
+        do {
+            let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+            topicSessionKey = try topicRepo.fetchById(topicId)?.sessionKey
+        } catch {
+            topicSessionKey = nil
+            print("[TopicSummaryExtractor] Failed to look up topic: \(error)")
+        }
+
+        guard topicSessionKey != nil else {
             print("[TopicSummaryExtractor] No session key found for topic \(topicId)")
             return nil
         }
@@ -132,9 +132,14 @@ public enum TopicSummaryExtractor {
         }
         let prompt = extractionPrompt(topicName: topicName, projectName: projectName)
 
-        // Send via chat.send and wait for response
+        // Use a dedicated extraction session key — not the topic's own session.
+        // This avoids race conditions where the topic's streaming buffer has stale
+        // content from recent live conversation.
+        let extractionSessionKey = "extract-\(topicId)-\(UUID().uuidString)"
+
+        // Send via chat.send and wait for response on the clean extraction session
         let response = await sendAndWaitForResponse(
-            sessionKey: sessionKey,
+            sessionKey: extractionSessionKey,
             prompt: prompt,
             bridge: bridge
         )
@@ -146,62 +151,45 @@ public enum TopicSummaryExtractor {
 
         // Parse the JSON response
         let parsed = parseExtractionResponse(response)
+        if parsed == nil {
+            print("[TopicSummaryExtractor] Failed to parse JSON from response:\n\(response.prefix(200))")
+        }
         return parsed
     }
 
     // MARK: - Internal helpers
 
-    /// Look up the session key for a topic ID from the local database.
-    private static func sessionKeyForTopic(topicId: String) async -> String? {
-        do {
-            let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
-            guard let topic = try topicRepo.fetchById(topicId) else { return nil }
-            return topic.sessionKey
-        } catch {
-            print("[TopicSummaryExtractor] Failed to look up topic: \(error)")
-            return nil
-        }
-    }
-
-    /// Sends the extraction prompt and waits for the streaming response.
-    ///
-    /// Uses the bridge's sendMessage + streaming buffer mechanism.
-    /// This is a simplified version that sends the prompt and reads the response
-    /// from the bridge's streaming buffer after completion.
+    /// Sends the extraction prompt and waits for the streaming response on a clean session key.
     private static func sendAndWaitForResponse(
         sessionKey: String,
         prompt: String,
         bridge: SyncBridge
     ) async -> String? {
-        // Use a continuation to wait for the streaming to complete
         let responseText = await withTaskGroup(of: String?.self) { group in
 
             // Task 1: Send the message
             group.addTask {
                 do {
-                    // Send the extraction prompt as a message
-                    // We use a special idempotency key so we can track it
                     let idempotencyKey = "topic-extract-\(UUID().uuidString)"
                     _ = try await bridge.sendExtractionMessage(
                         sessionKey: sessionKey,
                         message: prompt,
                         idempotencyKey: idempotencyKey
                     )
-                    return nil // send succeeded, response comes via Task 2
+                    return nil as String?
                 } catch {
                     print("[TopicSummaryExtractor] chat.send failed: \(error)")
-                    return nil
+                    return nil as String?
                 }
             }
 
-            // Task 2: Wait for streaming response
+            // Task 2: Wait for streaming response on the clean extraction session
             group.addTask {
-                // Poll the streaming buffer for this session key
                 let startTime = Date()
                 var seenStreaming = false
 
                 while Date().timeIntervalSince(startTime) < extractionTimeout {
-                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                     guard !Task.isCancelled else { return nil as String? }
 
                     let current = await bridge.streamingContent(for: sessionKey)
@@ -210,12 +198,12 @@ public enum TopicSummaryExtractor {
                         seenStreaming = true
                     }
 
-                    // Check if streaming has finished for this session
                     let isStreaming = await bridge.isSessionStreaming(sessionKey)
 
                     if seenStreaming && !isStreaming {
-                        // Response is complete
                         let final = await bridge.streamingContent(for: sessionKey)
+                        // Clean up the cached content after reading
+                        await bridge.clearCompletedContent(for: sessionKey)
                         return final.isEmpty ? nil : final
                     }
                 }
@@ -224,7 +212,6 @@ public enum TopicSummaryExtractor {
                 return nil
             }
 
-            // Wait for either task to complete; cancel the other
             var result: String? = nil
             for await value in group {
                 if let v = value {

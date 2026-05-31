@@ -33,6 +33,7 @@ public actor SyncBridge {
 
     private var lastSeenEventSeq: Int?
     private var streamingBuffer: [String: String] = [:]
+    private var completedContent: [String: String] = [:] // Final content after streaming ends (Phase 2)
     public private(set) var streamingSessionKeys: Set<String> = []
 
     /// Max time to wait after last delta before declaring a stream stalled
@@ -769,7 +770,15 @@ public actor SyncBridge {
     }
 
     public func streamingContent(for sessionKey: String) -> String {
-        return streamingBuffer[sessionKey] ?? ""
+        if let content = streamingBuffer[sessionKey], !content.isEmpty {
+            return content
+        }
+        return completedContent[sessionKey] ?? ""
+    }
+
+    /// Clear the cached completed content for a session key (Phase 2).
+    public func clearCompletedContent(for sessionKey: String) {
+        completedContent.removeValue(forKey: sessionKey)
     }
 
     // Internal helpers for EventRouter
@@ -812,6 +821,8 @@ public actor SyncBridge {
         // Idempotency guard — skip if already finalized
         guard streamingSessionKeys.remove(sessionKey) != nil else { return }
         cancelStallTimer(for: sessionKey)
+        // Capture final content BEFORE clearing the buffer (Phase 2 race fix)
+        completedContent[sessionKey] = streamingBuffer[sessionKey]
         streamingBuffer.removeValue(forKey: sessionKey)
 
         // Notify delegate FIRST so the UI transitions out of streaming immediately.
@@ -830,6 +841,7 @@ public actor SyncBridge {
 
     internal func processChatError(sessionKey: String, errorMessage: String) async {
         cancelStallTimer(for: sessionKey)
+        completedContent[sessionKey] = streamingBuffer[sessionKey]
         streamingBuffer.removeValue(forKey: sessionKey)
         streamingSessionKeys.remove(sessionKey)
 
@@ -885,6 +897,7 @@ public actor SyncBridge {
                 )
                 try saveGatewayMessage(message)
             }
+            completedContent[sessionKey] = streamingBuffer[sessionKey]
             streamingBuffer.removeValue(forKey: sessionKey)
             streamingSessionKeys.remove(sessionKey)
             try await fetchHistory(sessionKey: sessionKey)
@@ -892,6 +905,7 @@ public actor SyncBridge {
             delegate?.syncBridge(self, didStopStreaming: sessionKey)
         case "error":
             cancelStallTimer(for: sessionKey)
+            completedContent[sessionKey] = streamingBuffer[sessionKey]
             streamingBuffer.removeValue(forKey: sessionKey)
             streamingSessionKeys.remove(sessionKey)
             // Fetch history before notifying the delegate
