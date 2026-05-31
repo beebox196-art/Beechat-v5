@@ -106,4 +106,36 @@ public enum ProjectContextReader {
         }
         return content
     }
+
+    // MARK: - Topic Summary (Phase 2)
+
+    /// Reads a topic summary file when a topicId is provided.
+    /// This is a convenience wrapper around TopicSummaryWriter.read() for use
+    /// by code paths that already use ProjectContextReader.
+    ///
+    /// - Parameters:
+    ///   - projectPath: The project's root path, or nil for unbound topics.
+    ///   - workspacePath: The workspace root (used when projectPath is nil).
+    ///   - topicId: The topic's unique identifier.
+    ///   - maxBytes: Cap on summary size in UTF-8 bytes (default 8KB).
+    /// - Returns: The summary content, or nil if no summary file exists.
+    public static func readTopicSummary(
+        projectPath: String?,
+        workspacePath: String,
+        topicId: String,
+        maxBytes: Int = 8192
+    ) -> String? {
+        guard let content = TopicSummaryWriter.read(
+            topicId: topicId,
+            projectPath: projectPath,
+            workspacePath: workspacePath
+        ) else { return nil }
+
+        let bytes = content.utf8
+        if bytes.count > maxBytes {
+            let prefixBytes = bytes.prefix(maxBytes)
+            return String(data: Data(prefixBytes), encoding: .utf8) ?? content
+        }
+        return content
+    }
 }

@@ -1,14 +1,16 @@
 import SwiftUI
+import BeeChatSyncBridge
 
 struct SessionRow: View {
     @Environment(ThemeManager.self) var themeManager
-    let topic: TopicViewModel
+    @Bindable var topic: TopicViewModel
     var thinkingState: ThinkingState = .idle
     var sessionUsage: Double? = nil
     var unreadCount: Int = 0  // In-memory unread count from SyncBridgeObserver
     var onReset: (() -> Void)? = nil
     var onSelect: (() -> Void)?
     var projectContextState: ProjectContextState = .none
+    var bridge: SyncBridge? = nil  // Phase 2: needed for saveTopicSummary
 
     /// UI state for project context injection in the sidebar (Mel Warning-3).
     enum ProjectContextState: Equatable {
@@ -66,6 +68,9 @@ struct SessionRow: View {
                     .accessibilityLabel("Unread messages")
             }
 
+            // Phase 2: transient save status indicator
+            saveStatusIndicator
+
             // Session reset amber dot — appears at 50% usage, tap to reset
             if shouldShowResetDot {
                 Button(action: { onReset?() }) {
@@ -106,6 +111,92 @@ struct SessionRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Select conversation")
+        .contextMenu {
+            contextMenuItems
+        }
+    }
+
+    // MARK: - Phase 2: Topic Summary Context Menu
+
+    @ViewBuilder
+    private var contextMenuItems: some View {
+        // Edit Topic (existing)
+        Button {
+            onSelect?()
+        } label: {
+            Label("Edit Topic", systemImage: "pencil")
+        }
+
+        // Save Topic Summary (NEW — Phase 2)
+        Button {
+            Task {
+                guard let bridge = bridge else { return }
+                await topic.saveTopicSummary(bridge: bridge)
+            }
+        } label: {
+            if topic.isSaving {
+                Label("Saving topic...", systemImage: "arrow.triangle.2.circlepath")
+            } else {
+                Label("Save Topic Summary", systemImage: "doc.badge.plus")
+            }
+        }
+        .disabled(topic.isSaving)
+        .accessibilityHint(topic.isSaving ? "Save already in progress" : "Extract durable items from recent conversation and save to project summary file")
+
+        // Reset Session (existing)
+        Button {
+            onReset?()
+        } label: {
+            Label("Reset Session", systemImage: "arrow.clockwise")
+        }
+
+        Divider()
+
+        // Delete Topic (existing — would be added by parent if needed)
+    }
+
+    // MARK: - Phase 2: Transient Save Status Indicator
+
+    @ViewBuilder
+    private var saveStatusIndicator: some View {
+        switch topic.saveStatus {
+        case .idle:
+            EmptyView()
+
+        case .saving:
+            ProgressView()
+                .scaleEffect(0.7)
+                .accessibilityLabel("Saving topic summary")
+                .accessibilityValue("In progress")
+
+        case .success:
+            Text("Topic saved")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.green)
+                .accessibilityLabel("Topic summary saved")
+                .accessibilityValue("Success")
+
+        case .empty:
+            Text("No changes to save")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(themeManager.color(.textSecondary))
+                .accessibilityLabel("No durable topic changes found")
+                .accessibilityValue("No changes to save")
+
+        case .failed(let reason):
+            Label {
+                Text("Could not save")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.orange)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.orange)
+            }
+            .help(reason)
+            .accessibilityLabel("Topic summary could not be saved")
+            .accessibilityValue(reason)
+        }
     }
 
     private var accessibilityLabel: String {
@@ -115,6 +206,19 @@ struct SessionRow: View {
         }
         if shouldShowResetDot {
             parts.append("session at \(Int((sessionUsage ?? 0) * 100))% — reset available")
+        }
+        // Phase 2: announce save status
+        switch topic.saveStatus {
+        case .saving:
+            parts.append("saving topic summary")
+        case .success:
+            parts.append("topic summary saved")
+        case .empty:
+            parts.append("no durable changes found")
+        case .failed(let reason):
+            parts.append("topic summary save failed: \(reason)")
+        case .idle:
+            break
         }
         return parts.joined(separator: ", ")
     }

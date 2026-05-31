@@ -277,17 +277,43 @@ public actor SyncBridge {
             if !didAutoReset {
                 let topicContextHeader = buildContextHeader(topic: topic)
 
-                // Kieran Warning-3: combined 50KB cap for auto-reset + topic context
-                // (auto-reset alone can produce up to ~100KB, but it's already gated;
-                // this guard catches any logic error that would let both fire together)
+                // Phase 2: include [TOPIC-SUMMARY] size in the budget guard
+                let summarySize: Int = {
+                    let workspacePath = "/Users/openclaw/.openclaw/workspace/"
+                    guard let projectPath = topic.projectPath else { return 0 }
+                    return TopicSummaryWriter.read(
+                        topicId: topic.id,
+                        projectPath: projectPath,
+                        workspacePath: workspacePath
+                    )?.utf8.count ?? 0
+                }()
+
+                // Kieran Warning-3: combined 50KB cap for auto-reset + topic context + summary
                 let autoResetBytes = effectiveText.utf8.count
-                if autoResetBytes + topicContextHeader.utf8.count > 50_000 {
+                let topicContextBytes = topicContextHeader.utf8.count + summarySize
+                if autoResetBytes + topicContextBytes > 50_000 {
                     let remaining = 50_000 - autoResetBytes
                     if remaining > 0 {
-                        let prefixBytes = topicContextHeader.utf8.prefix(remaining)
-                        let trimmed = String(data: Data(prefixBytes), encoding: .utf8) ?? ""
-                            + "\n... [context truncated]"
-                        effectiveText = "\(trimmed)\n\n\(effectiveText)"
+                        // Trim summary first (most likely to be stale), then project context
+                        var adjusted = topicContextHeader
+                        if summarySize > 0 && summarySize < remaining {
+                            // Summary fits, trim project context
+                            let forProject = remaining - summarySize
+                            if forProject > 0 {
+                                let prefixBytes = topicContextHeader.utf8.prefix(forProject)
+                                adjusted = String(data: Data(prefixBytes), encoding: .utf8) ?? ""
+                                    + "\n... [context truncated]"
+                            } else {
+                                // Only room for summary
+                                adjusted = ""
+                            }
+                        } else {
+                            // Trim topic context
+                            let prefixBytes = topicContextHeader.utf8.prefix(remaining)
+                            adjusted = String(data: Data(prefixBytes), encoding: .utf8) ?? ""
+                                + "\n... [context truncated]"
+                        }
+                        effectiveText = "\(adjusted)\n\n\(effectiveText)"
                     }
                     // else: auto-reset alone exceeds budget; skip topic context
                 } else {
@@ -404,6 +430,8 @@ public actor SyncBridge {
     /// Build a context header that tells the agent which topic the user is in.
     /// Reads actual project files via the injected ProjectFileProvider and injects
     /// their content — no longer just instructions to read files.
+    ///
+    /// Phase 2 upgrade: also injects [TOPIC-SUMMARY] when a summary file exists.
     func buildContextHeader(topic: Topic) -> String {
         var header = "[TOPIC-CONTEXT]\nTopic: \(topic.name)"
 
@@ -431,6 +459,17 @@ public actor SyncBridge {
         }
         header += "\nUse the project files above as your working context. Reference STATUS.md for current state before making changes."
 
+        // Phase 2: inject topic summary if one exists
+        let workspacePath = "/Users/openclaw/.openclaw/workspace/"
+        if let summaryContent = TopicSummaryWriter.read(
+            topicId: topic.id,
+            projectPath: projectPath,
+            workspacePath: workspacePath
+        ) {
+            header += "\n\n[TOPIC-SUMMARY]"
+            header += "\n\(summaryContent)"
+        }
+
         return header
     }
 
@@ -438,6 +477,86 @@ public actor SyncBridge {
     /// Called when a topic's project binding changes, so [PROJECT-CONTEXT] appears without a full reset.
     public func requeueContextInjection(sessionKey: String) {
         contextInjectedKeys.remove(sessionKey)
+    }
+
+    // MARK: - Topic Summary Pipeline (Phase 2)
+
+    /// Sends a message for topic summary extraction and returns the runId.
+    /// Called by TopicSummaryExtractor — separate from sendMessage so it doesn't
+    /// trigger topic context injection or auto-reset logic.
+    internal func sendExtractionMessage(
+        sessionKey: String,
+        message: String,
+        idempotencyKey: String
+    ) async throws -> String {
+        // Don't gate on sendingSessionKeys — extraction is a low-priority background send
+        // that shouldn't block user messages. If a user message is in flight, the extraction
+        // will queue behind it naturally (gateway handles ordering).
+        let runId = try await rpcClient.chatSend(
+            sessionKey: sessionKey,
+            message: message,
+            idempotencyKey: idempotencyKey,
+            thinking: nil,
+            attachments: nil
+        )
+        return runId
+    }
+
+    /// Returns true if the given session is currently streaming (has an in-progress response).
+    public func isSessionStreaming(_ sessionKey: String) -> Bool {
+        streamingSessionKeys.contains(sessionKey)
+    }
+
+    /// Triggers the full topic summary extraction + write pipeline.
+    ///
+    /// Called from TopicViewModel.saveTopicSummary() when the user clicks
+    /// "Save Topic Summary" in the context menu.
+    ///
+    /// - Parameter topicId: The topic's unique identifier.
+    /// - Returns: The path to the written summary file, or nil if nothing was saved.
+    public func triggerTopicSummary(topicId: String) async -> String? {
+        // Look up the topic
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+        guard let topic = try? topicRepo.fetchById(topicId) else {
+            print("[SyncBridge] triggerTopicSummary: topic not found: \(topicId)")
+            return nil
+        }
+
+        guard let sessionKey = topic.sessionKey else {
+            print("[SyncBridge] triggerTopicSummary: topic has no session key: \(topicId)")
+            return nil
+        }
+
+        // Extract durable items from the conversation
+        let extracted = await TopicSummaryExtractor.extract(
+            topicId: topicId,
+            topicName: topic.name,
+            projectPath: topic.projectPath,
+            bridge: self
+        )
+
+        guard let extracted = extracted, !extracted.isEmpty else {
+            print("[SyncBridge] triggerTopicSummary: no durable items extracted for \(topicId)")
+            return nil
+        }
+
+        // Write/merge the summary
+        let workspacePath = "/Users/openclaw/.openclaw/workspace/"
+        let resultPath = TopicSummaryWriter.write(
+            topicId: topicId,
+            topicName: topic.name,
+            projectPath: topic.projectPath,
+            workspacePath: workspacePath,
+            extracted: extracted
+        )
+
+        if let resultPath = resultPath {
+            print("[SyncBridge] Topic summary written: \(resultPath)")
+        } else {
+            print("[SyncBridge] triggerTopicSummary: write failed for \(topicId)")
+        }
+
+        return resultPath
     }
 
     /// Look up the project path for a session key by resolving the topic.

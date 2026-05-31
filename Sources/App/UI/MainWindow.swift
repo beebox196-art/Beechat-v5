@@ -503,25 +503,13 @@ struct MainWindow: View {
                         resetTargetSessionKey = topic.sessionKey
                         showResetAlert = true
                     },
-                    projectContextState: projectState
+                    onSelect: {
+                        editTopicTarget = EditTopicTarget(id: topic.id)
+                    },
+                    projectContextState: projectState,
+                    bridge: appState.syncBridge
                 )
                     .tag(topic.id as String?)
-                    .contextMenu {
-                        Button("Edit Topic") {
-                            editTopicTarget = EditTopicTarget(id: topic.id)
-                        }
-
-                        Button("Reset Session") {
-                            resetTargetSessionKey = topic.sessionKey
-                            showResetAlert = true
-                        }
-
-                        Divider()
-
-                        Button("Delete Topic", role: .destructive) {
-                            deleteTopic(topic.id)
-                        }
-                    }
             }
         }
         .listStyle(.sidebar)
