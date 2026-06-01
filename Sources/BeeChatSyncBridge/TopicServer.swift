@@ -140,7 +140,10 @@ final class TopicServer {
                         name: topic.name,
                         sessionKey: topic.sessionKey ?? "",
                         isArchived: topic.isArchived,
-                        lastActivityAt: topic.lastActivityAt.map { Self.dateFormatter.string(from: $0) },
+                        // Use updatedAt instead of lastActivityAt — lastActivityAt is not reliably
+                        // refreshed when new messages arrive. updatedAt is refreshed by
+                        // syncMetadataFromSessions() so it reflects the true last activity time.
+                        lastActivityAt: Self.dateFormatter.string(from: topic.updatedAt),
                         lastMessagePreview: topic.lastMessagePreview
                     )
                 }

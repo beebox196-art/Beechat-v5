@@ -140,6 +140,12 @@ public struct EventRouter {
     private func handleSessionsChanged() async throws {
         let sessions = try await syncBridge.fetchSessions()
         let sessionKeys = sessions.map { $0.id }
+
+        // Subscribe to message events for any new sessions.
+        // Known sessions are already subscribed in SyncBridge.start(),
+        // but new sessions created after startup need subscribing here.
+        await syncBridge.subscribeNewSessions(sessionKeys: Set(sessionKeys))
+
         await syncBridge.delegate?.syncBridge(syncBridge, didReceiveSessionChange: sessionKeys)
     }
 

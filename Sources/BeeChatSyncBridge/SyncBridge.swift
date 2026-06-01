@@ -16,14 +16,14 @@ public enum SyncBridgeError: LocalizedError {
 
 public actor SyncBridge {
     let config: SyncBridgeConfiguration
-    private let rpcClient: RPCClientProtocol
+    let rpcClient: RPCClientProtocol
     private var eventRouter: EventRouter?
 
     private let reconciler: Reconciler
     private let ledgerRepo: DeliveryLedgerRepository
 
     /// Session keys known from the last fetchSessions() call
-    private var knownSessionKeys: Set<String> = []
+    package var knownSessionKeys: Set<String> = []
 
     public weak var delegate: SyncBridgeDelegate?
 
@@ -95,6 +95,14 @@ public actor SyncBridge {
         try await config.gatewayClient.connect()
         try await rpcClient.sessionsSubscribe()
         _ = try await fetchSessions()
+
+        // Subscribe to message events for all known sessions.
+        // Without this, the gateway only sends `sessions.changed` (metadata) events,
+        // not `session.message` (content) events. The Mac control UI calls this per-session
+        // when selecting a topic; the iPhone needs it upfront for all sessions.
+        for sessionKey in knownSessionKeys {
+            try? await rpcClient.sessionsMessagesSubscribe(sessionKey: sessionKey)
+        }
 
         eventProcessingTask = Task {
             let stream = await config.gatewayClient.eventStream()
@@ -217,6 +225,16 @@ public actor SyncBridge {
         }
         try config.persistenceStore.upsertMessages(messages)
         return messages
+    }
+
+    /// Subscribe to message events for new sessions that appeared after startup.
+    /// Called by EventRouter when sessions.changed delivers new session keys.
+    package func subscribeNewSessions(sessionKeys: Set<String>) async {
+        let newKeys = sessionKeys.subtracting(knownSessionKeys)
+        for key in newKeys {
+            try? await rpcClient.sessionsMessagesSubscribe(sessionKey: key)
+        }
+        knownSessionKeys = knownSessionKeys.union(newKeys)
     }
 
     public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil, topic: Topic? = nil) async throws -> String {

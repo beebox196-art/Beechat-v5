@@ -3,14 +3,11 @@ import BeeChatPersistence
 
 /// Scrollable message canvas — displays messages and typing indicator.
 ///
-/// Scroll philosophy (v3, 2026-05-28): `defaultScrollAnchor(.bottom)` handles
-/// auto-scroll natively. The only manual scroll is "Jump to Latest" (user-initiated).
+/// Scroll philosophy (v4, 2026-06-01): `defaultScrollAnchor(.bottom)` handles auto-scroll
+/// natively. The only manual scroll is "Jump to Latest" (user-initiated).
 ///
-/// During streaming, the StreamingBubble grows every 50ms as content arrives. This
-/// causes LazyVStack to recalculate layout, and defaultScrollAnchor(.bottom) chases
-/// the growing height, creating visible bounce. The fix: track the streaming bubble's
-/// height and give it a monotonically-increasing min-height so the ScrollView only
-/// sees downward expansion (never resize), which anchor(.bottom) handles smoothly.
+/// Streaming poll is throttled to ~5fps (200ms) to reduce SwiftUI layout recalculations.
+/// The StreamingBubble expands naturally in the VStack; no height feedback loop is used.
 struct MessageCanvas: View {
     @Environment(ThemeManager.self) var themeManager
 
@@ -36,10 +33,6 @@ struct MessageCanvas: View {
     @State private var isAtBottom: Bool = true
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String? = nil
-    /// Tracks the maximum height the streaming bubble has reached.
-    /// Only grows, never shrinks — reset when streaming ends.
-    /// This prevents LazyVStack layout bounce during streaming.
-    @State private var streamingMinHeight: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -84,21 +77,6 @@ struct MessageCanvas: View {
                         } else if showStreamingBubble {
                             StreamingBubble(content: streamingContent)
                                 .id("streaming-bubble")
-                                .frame(minHeight: streamingMinHeight, alignment: .top)
-                                .background(
-                                    GeometryReader { geo in
-                                        Color.clear.preference(
-                                            key: StreamingHeightKey.self,
-                                            value: geo.size.height
-                                        )
-                                    }
-                                )
-                                .onPreferenceChange(StreamingHeightKey.self) { newHeight in
-                                    // Only grow, never shrink — prevents bounce
-                                    if newHeight > streamingMinHeight {
-                                        streamingMinHeight = newHeight
-                                    }
-                                }
                         }
 
                         // 4px anchor — enough for LazyVStack to render reliably,
@@ -143,16 +121,9 @@ struct MessageCanvas: View {
                         anchorMessageId = nil
                     }
                 }
-                .onChange(of: topicId) { _, newId in
-                    if newId != nil {
-                        // Topic switch: scroll to bottom after SwiftUI renders new content.
-                        // defaultScrollAnchor(.bottom) handles the initial position,
-                        // but if messages arrive incrementally, we need a manual nudge.
-                        isAtBottom = true
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
-                        }
-                    }
+                .onChange(of: topicId) { _, _ in
+                    // defaultScrollAnchor(.bottom) handles initial positioning.
+                    // The asyncAfter nudge fights with it and can cause bounce — removed.
                 }
                 .overlay(alignment: .bottomTrailing) {
                     jumpToLatestButton(proxy: proxy)
@@ -161,21 +132,6 @@ struct MessageCanvas: View {
             .environment(\.canvasWidth, measuredWidth)
         }
         .frame(maxHeight: .infinity)
-        // Reset streaming min-height only when streaming is truly done
-        // (not just a momentary flicker). Checks both flags to avoid
-        // resetting during brief isStreaming=false races between poll cycles.
-        .onChange(of: isStreaming) { _, isNowStreaming in
-            if !isNowStreaming && streamingContent.isEmpty {
-                streamingMinHeight = 0
-            }
-        }
-        .onChange(of: streamingContent) { _, newContent in
-            // Belt-and-braces: if streaming ended but minHeight hasn't reset
-            // (e.g., streamingContent was cleared before isStreaming went false)
-            if !isStreaming && newContent.isEmpty {
-                streamingMinHeight = 0
-            }
-        }
     }
 
     /// Jump-to-Latest button — fixed-size overlay, opacity-only transitions.
@@ -208,15 +164,6 @@ struct MessageCanvas: View {
             .padding(.trailing, 12)
     }
 }
-
-/// Preference key for tracking streaming bubble height (monotonically increasing).
-private struct StreamingHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
 
 private struct WidthReader<Content: View>: View {
     var content: (CGFloat) -> Content

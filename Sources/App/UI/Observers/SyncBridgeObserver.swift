@@ -194,9 +194,11 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
                         self.streamingContent = content
                     }
                 }
-                // Yield to prevent CPU spin — 50ms gives ~20fps update rate for streaming content
+                // Yield to prevent CPU spin — 200ms gives ~5fps update rate for streaming text.
+                // Chat text arrives in bursts; 5fps is imperceptible as "live" while
+                // dramatically reducing SwiftUI layout recalculations (75% fewer vs 50ms).
                 do {
-                    try await Task.sleep(nanoseconds: 50_000_000)
+                    try await Task.sleep(nanoseconds: 200_000_000)
                 } catch {
                     return
                 }
