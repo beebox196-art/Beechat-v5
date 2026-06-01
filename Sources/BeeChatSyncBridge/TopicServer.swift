@@ -140,14 +140,14 @@ final class TopicServer {
                         name: topic.name,
                         sessionKey: topic.sessionKey ?? "",
                         isArchived: topic.isArchived,
-                        lastActivityAt: topic.lastActivityAt.map { ISO8601DateFormatter().string(from: $0) },
+                        lastActivityAt: topic.lastActivityAt.map { Self.dateFormatter.string(from: $0) },
                         lastMessagePreview: topic.lastMessagePreview
                     )
                 }
 
                 let payload = ServerTopicPayload(
                     v: 1,
-                    timestamp: ISO8601DateFormatter().string(from: Date()),
+                    timestamp: Self.dateFormatter.string(from: Date()),
                     topics: topicItems
                 )
 
@@ -211,4 +211,16 @@ private struct TopicPayloadItem: Codable {
     let isArchived: Bool
     let lastActivityAt: String?
     let lastMessagePreview: String?
+}
+
+// MARK: - Shared Formatters
+
+// ISO8601DateFormatter is not thread-safe, but TopicServer's queue is serial,
+// so a static shared instance is safe here.
+extension TopicServer {
+    private static let dateFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
 }
