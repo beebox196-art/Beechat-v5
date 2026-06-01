@@ -206,6 +206,8 @@ private struct TopicPayloadItem: Codable {
     let id: String
     let name: String
     let sessionKey: String
+    // Coupling note: iPhone's TopicPayloadItem decodes isArchived as Bool?
+    // Codable handles Bool→Bool? correctly. Changes to this type must update both.
     let isArchived: Bool
     let lastActivityAt: String?
     let lastMessagePreview: String?
