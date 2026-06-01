@@ -1,7 +1,7 @@
 # Gate 2F — REST-over-Tailscale Topic Sync
 
-> **Status:** v2 — Updated per Q + Kieran review  
-> **Date:** 2026-05-28  
+> **Status:** v3 — Updated per Kieran B1/B2 fix + Adam sync trigger simplification  
+> **Date:** 2026-06-01  
 > **Replaces:** Gateway-based topic sync (chat.inject / beechat-sync session approach)
 
 ---
@@ -103,6 +103,8 @@ This means:
 
 **Date encoding:** `JSONEncoder.dateEncodingStrategy = .iso8601` (critical — matches the iPhone's `TopicSyncPayload` decoder)
 
+**Kieran B2 — isArchived type coupling:** `isArchived` is `Bool` on the server (matching `Topic.isArchived: Bool = false`) and `Bool?` on the iPhone (defensive decoding). `Codable` handles non-optional→optional correctly. These are two separate types in two separate targets — future changes to either must update both. Moving to shared package is a future improvement, not MVP.
+
 **Topic cap:** 50 topics max (sanity limit)
 
 ### 4. Mac: Trigger Publishing
@@ -122,9 +124,11 @@ The server is always-on and always returns current data. No event-driven publish
 
 - `URLSession` GET to `https://<ts-domain>/topics/v1/topics`
 - URL derived from the existing gateway URL in AppSettings:
-  - Take the gateway URL (e.g., `https://openclaws-mac-mini-1.tail3f2df8.ts.net`)
-  - Append `/topics/v1/topics`
+  - The gateway URL is `wss://<host>/ws` (e.g., `wss://openclaws-mac-mini-1.tail3f2df8.ts.net/ws`)
+  - Use `URLComponents` to: (1) change scheme `wss` → `https`, (2) replace path `/ws` → `/topics/v1/topics`
+  - Result: `https://openclaws-mac-mini-1.tail3f2df8.ts.net/topics/v1/topics`
   - No separate IP:port configuration needed
+  - **Kieran B1:** Never naively append — the `/ws` path and `wss://` scheme must be stripped/replaced
 - Timeout: 10 seconds
 - Decodes JSON into `TopicSyncPayload` (existing type, reused)
 - Returns `TopicSyncPayload?` — nil means no server available (standalone mode)
@@ -132,21 +136,29 @@ The server is always-on and always returns current data. No event-driven publish
 
 **URL derivation logic:**
 ```swift
-// From gateway URL "https://openclaws-mac-mini-1.tail3f2df8.ts.net"
-// Topic URL = gatewayURL + "/topics/v1/topics"
+// Gateway URL is wss://host/ws (e.g., "wss://openclaws-mac-mini-1.tail3f2df8.ts.net/ws")
+// Must: (1) change scheme wss→https, (2) strip /ws path, (3) append /topics/v1/topics
+var components = URLComponents(string: gatewayURL)!
+components.scheme = "https"
+components.path = "/topics/v1/topics"
 // Result: "https://openclaws-mac-mini-1.tail3f2df8.ts.net/topics/v1/topics"
 ```
+
+**Kieran B1 fix:** The gateway URL is `wss://.../ws`, not `https://...`. Naive path appending produces `wss://host/ws/topics/v1/topics` which fails on both scheme (`wss://` rejected by URLSession) and path (`/ws/topics/...` instead of `/topics/...`). Must use `URLComponents` to strip the `/ws` path and swap the scheme.
 
 ### 6. iPhone: Integration Points
 
 **`BeeChatMobileViewModel.swift`:**
 - On `connect()` — after establishing gateway WebSocket, call `TopicClient.fetchTopics()` and `reconcileFromPayload()` if data is available
-- On `sessions.changed` — re-fetch from the topic server on every event, with a 5-second cooldown to avoid hammering. The iPhone can't distinguish "topic list changed" from "new message in existing topic" from the event alone, so re-fetching is the simplest correct approach. The cost is one HTTP GET to localhost per event, which is negligible.
+- On `connect()` — fetch topics once (already in the spec). ✅
+- On app foreground (`scenePhase` changes to `.active`) — fetch topics once. This is the primary real-world sync trigger: user picks up the iPhone after using the Mac.
+- On `sessions.changed` — fetch topics once, then mute for 60 seconds. Covers rare mid-session switches without hammering. Most `sessions.changed` events are just "new message arrived" — not "topic list changed" — so re-fetching on every event is wasteful.
+- **No polling. No 5-second cooldown. No recurring re-fetch.** The foreground observer handles the real use case.
 - Keep `reconcileFromPayload()` — it still works, just the data source changes from gateway session to REST endpoint
 - Keep `isReconciling` guard — still needed for race protection
 - Remove `readSyncPayload()` — replaced by `TopicClient.fetchTopics()`
 - Remove `syncSessionKey` and `lastSyncTimestampKey` constants — no longer needed
-- Remove `beechat-sync` filter from `didReceiveSessionChange` — re-fetch on any `sessions.changed`
+- Remove `beechat-sync` filter from `didReceiveSessionChange` — re-fetch on any `sessions.changed` (with 60s mute)
 
 **`SyncBridge.swift` (shared package):**
 - Remove `fetchSyncPayload()` — no longer needed
@@ -212,13 +224,16 @@ See the separate backout spec: `GATE-2F-BACKOUT.md`
 ### Task E: iPhone — Update ViewModel
 - Replace `readSyncPayload()` with `TopicClient.fetchTopics()`
 - Keep `reconcileFromPayload()` and `isReconciling`
-- Replace `beechat-sync` filter with re-fetch on any `sessions.changed` (with 5s cooldown)
+- **Sync triggers (v3, per Adam's decision):**
+  - On `connect()` — fetch topics once
+  - On app foreground (`scenePhase` → `.active`) — fetch topics once (primary real-world trigger)
+  - On `sessions.changed` — fetch topics once, mute for 60s (prevents hammering during active messaging)
+  - No polling, no 5-second cooldown, no recurring re-fetch
 - Remove `syncSessionKey`, `lastSyncTimestampKey`, `beechat_lastSyncTimestamp` UserDefaults cleanup
 
 ### Task F: iPhone — Refactor TopicSyncPayload.swift
-- Keep `TopicSyncPayload` and `TopicPayloadItem` type definitions (needed by `reconcileFromPayload()`)
-- Remove `extract(from:)` method and `maxPayloadSize` guard (gateway-parsing logic, no longer needed)
-- Rename file to `TopicTypes.swift` for clarity
+- Already done (backout commit `f1ae7d3`) — `TopicTypes.swift` exists
+- No further changes needed
 
 ### Task G: Build verification
 - Both targets compile clean
@@ -228,3 +243,31 @@ See the separate backout spec: `GATE-2F-BACKOUT.md`
 
 ### Task H: Kieran review
 - Review all changes before committing
+
+---
+
+## v3 Review Notes (Kieran, 2026-06-01)
+
+### Blockers (FIXED in v3)
+
+**B1 — URL Derivation:** Gateway URL is `wss://host/ws`, not `https://host`. Naive appending produces `wss://host/ws/topics/v1/topics` (wrong scheme + wrong path). Fixed: use `URLComponents` to swap scheme `wss→https` and replace path `/ws` → `/topics/v1/topics`.
+
+**B2 — isArchived Type Coupling:** Server sends `Bool` (non-optional, matching `Topic.isArchived`), iPhone decodes as `Bool?` (defensive). `Codable` handles this correctly. Coupling documented — future changes must update both types.
+
+### Warnings (Acknowledged)
+
+- **W1:** NWListener raw TCP HTTP parsing is fragile but acceptable for localhost single-GET use. If it needs to grow, rewrite with proper HTTP server.
+- **W2:** GRDB reads dispatch correctly via `DatabasePool.reader.read` — safe despite running on server queue. Worth a comment.
+- **W3:** 60s mute on `sessions.changed` is acceptable for single-device use. Foreground re-fetch covers the primary case. Documented known gap.
+- **W4:** `ISO8601DateFormatter` not thread-safe — safe because server queue is serial. Worth a comment.
+- **W5:** Tailscale Serve supports additive path-based routing — verified `tailscale serve --set-path /topics/ 8976` works alongside existing gateway route.
+- **W6:** No health check for topic server — graceful fallback to standalone mode is acceptable for MVP.
+
+### Sync Trigger Simplification (Adam, 2026-06-01)
+
+Adam confirmed single-device usage pattern. Changed from 5-second cooldown polling to event-driven sync:
+- Connect: one fetch
+- Foreground: one fetch
+- `sessions.changed`: one fetch + 60s mute
+
+No polling, no recurring re-fetch. Foreground observer is the primary trigger.

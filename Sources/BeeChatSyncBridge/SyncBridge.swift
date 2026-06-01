@@ -64,6 +64,13 @@ public actor SyncBridge {
     /// Default: nil — falls back to LocalProjectFileProvider on macOS.
     private let fileProvider: ProjectFileProvider
 
+    /// REST-over-Tailscale topic server for iPhone sync.
+    /// Listens on localhost:8976, proxied via Tailscale Serve.
+    /// Only active on macOS.
+    #if os(macOS)
+    private var topicServer: TopicServer?
+    #endif
+
     public init(config: SyncBridgeConfiguration, fileProvider: ProjectFileProvider? = nil) {
         self.config = config
         self.fileProvider = fileProvider ?? LocalProjectFileProvider()
@@ -128,6 +135,12 @@ public actor SyncBridge {
                 }
             }
         }
+
+        // Start the REST topic server for iPhone sync (macOS only)
+        #if os(macOS)
+        topicServer = TopicServer()
+        topicServer?.start()
+        #endif
     }
 
     public func stop() async {
@@ -147,6 +160,12 @@ public actor SyncBridge {
         streamingBuffer.removeAll()
         lastSeenEventSeq = nil
         streamingSessionKeys.removeAll()
+
+        // Stop the REST topic server
+        #if os(macOS)
+        topicServer?.stop()
+        topicServer = nil
+        #endif
     }
 
     // MARK: - Session filtering
