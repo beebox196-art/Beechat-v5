@@ -242,7 +242,7 @@ public enum TopicSummaryWriter {
             workspacePath: workspacePath
         )
         guard FileManager.default.fileExists(atPath: path) else { return nil }
-        guard validatePath((path as NSString).deletingLastPathComponent) else { return nil }
+        guard validatePath(path) else { return nil }
         return try? String(contentsOfFile: path, encoding: .utf8)
     }
 
@@ -365,16 +365,19 @@ public enum TopicSummaryWriter {
         return truncated + "\n\n... [summary trimmed to size cap]"
     }
 
-    /// Validate that a directory path is within allowed roots.
+    /// Validate that a file path is within allowed roots.
     /// Resolves symlinks to defeat symlink-escape attacks (spec §3.7).
+    /// Pure prefix check — does NOT probe filesystem (directory existence
+    /// is handled separately in the write flow).
     static func validatePath(_ path: String) -> Bool {
         let normalized = (path as NSString).standardizingPath
         let url = URL(fileURLWithPath: normalized).resolvingSymlinksInPath()
         let resolved = url.path
 
         for root in allowedRoots {
-            if resolved.hasPrefix(root) || resolved == root.dropLast() {
-                return FileManager.default.fileExists(atPath: resolved)
+            let rootPath = root.hasSuffix("/") ? String(root.dropLast()) : root
+            if resolved.hasPrefix(rootPath) {
+                return true
             }
         }
         return false
