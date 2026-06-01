@@ -111,18 +111,17 @@ public enum TopicSummaryExtractor {
         projectPath: String?,
         bridge: SyncBridge
     ) async -> TopicSummaryExtracted? {
-        // Look up the topic to get its session key (for project name resolution)
-        let topicSessionKey: String?
+        // Look up the topic to get its session key
+        let topicSessionKey: String
         do {
             let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
-            topicSessionKey = try topicRepo.fetchById(topicId)?.sessionKey
+            guard let key = try topicRepo.fetchById(topicId)?.sessionKey else {
+                print("[TopicSummaryExtractor] No session key found for topic \(topicId)")
+                return nil
+            }
+            topicSessionKey = key
         } catch {
-            topicSessionKey = nil
             print("[TopicSummaryExtractor] Failed to look up topic: \(error)")
-        }
-
-        guard topicSessionKey != nil else {
-            print("[TopicSummaryExtractor] No session key found for topic \(topicId)")
             return nil
         }
 
@@ -132,14 +131,15 @@ public enum TopicSummaryExtractor {
         }
         let prompt = extractionPrompt(topicName: topicName, projectName: projectName)
 
-        // Use a dedicated extraction session key — not the topic's own session.
-        // This avoids race conditions where the topic's streaming buffer has stale
-        // content from recent live conversation.
-        let extractionSessionKey = "extract-\(topicId)-\(UUID().uuidString)"
-
-        // Send via chat.send and wait for response on the clean extraction session
+        // Use the topic's real session key for both send and receive.
+        // The gateway routes streaming responses back on this key, so a synthetic
+        // key would never receive any events (the EventRouter dispatches by the
+        // gateway's session key, not a client-side UUID).
+        //
+        // To avoid race conditions with live streaming, we wait for any current
+        // streaming to finish before sending the extraction prompt.
         let response = await sendAndWaitForResponse(
-            sessionKey: extractionSessionKey,
+            sessionKey: topicSessionKey,
             prompt: prompt,
             bridge: bridge
         )
@@ -159,70 +159,67 @@ public enum TopicSummaryExtractor {
 
     // MARK: - Internal helpers
 
-    /// Sends the extraction prompt and waits for the streaming response on a clean session key.
+    /// Sends the extraction prompt and waits for the streaming response.
+    ///
+    /// Uses the topic's real session key so that the EventRouter can route
+    /// streaming deltas back correctly. Waits for any current streaming to
+    /// settle before sending, then captures the full response once streaming
+    /// completes.
     private static func sendAndWaitForResponse(
         sessionKey: String,
         prompt: String,
         bridge: SyncBridge
     ) async -> String? {
-        let responseText = await withTaskGroup(of: String?.self) { group in
-
-            // Task 1: Send the message
-            group.addTask {
-                do {
-                    let idempotencyKey = "topic-extract-\(UUID().uuidString)"
-                    _ = try await bridge.sendExtractionMessage(
-                        sessionKey: sessionKey,
-                        message: prompt,
-                        idempotencyKey: idempotencyKey
-                    )
-                    return nil as String?
-                } catch {
-                    print("[TopicSummaryExtractor] chat.send failed: \(error)")
-                    return nil as String?
-                }
-            }
-
-            // Task 2: Wait for streaming response on the clean extraction session
-            group.addTask {
-                let startTime = Date()
-                var seenStreaming = false
-
-                while Date().timeIntervalSince(startTime) < extractionTimeout {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    guard !Task.isCancelled else { return nil as String? }
-
-                    let current = await bridge.streamingContent(for: sessionKey)
-
-                    if !current.isEmpty {
-                        seenStreaming = true
-                    }
-
-                    let isStreaming = await bridge.isSessionStreaming(sessionKey)
-
-                    if seenStreaming && !isStreaming {
-                        let final = await bridge.streamingContent(for: sessionKey)
-                        // Clean up the cached content after reading
-                        await bridge.clearCompletedContent(for: sessionKey)
-                        return final.isEmpty ? nil : final
-                    }
-                }
-
-                print("[TopicSummaryExtractor] Extraction timed out after \(extractionTimeout)s")
+        // Wait for any current streaming on this session to finish,
+        // so we don't capture stale content from a live conversation.
+        let waitStart = Date()
+        while await bridge.isSessionStreaming(sessionKey) {
+            guard Date().timeIntervalSince(waitStart) < 30 else {
+                print("[TopicSummaryExtractor] Timed out waiting for current streaming to finish")
                 return nil
             }
-
-            var result: String? = nil
-            for await value in group {
-                if let v = value {
-                    result = v
-                    group.cancelAll()
-                    break
-                }
-            }
-            return result
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
 
-        return responseText
+        // Clear any leftover completed content from a previous response
+        await bridge.clearCompletedContent(for: sessionKey)
+
+        // Send the extraction message
+        do {
+            let idempotencyKey = "topic-extract-\(UUID().uuidString)"
+            _ = try await bridge.sendExtractionMessage(
+                sessionKey: sessionKey,
+                message: prompt,
+                idempotencyKey: idempotencyKey
+            )
+        } catch {
+            print("[TopicSummaryExtractor] chat.send failed: \(error)")
+            return nil
+        }
+
+        // Wait for the streaming response to start and then complete
+        let startTime = Date()
+        var seenStreaming = false
+
+        while Date().timeIntervalSince(startTime) < extractionTimeout {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return nil }
+
+            let isStreaming = await bridge.isSessionStreaming(sessionKey)
+
+            if isStreaming {
+                seenStreaming = true
+            }
+
+            // Once we've seen streaming start and it's now finished, capture the result
+            if seenStreaming && !isStreaming {
+                let final = await bridge.streamingContent(for: sessionKey)
+                await bridge.clearCompletedContent(for: sessionKey)
+                return final.isEmpty ? nil : final
+            }
+        }
+
+        print("[TopicSummaryExtractor] Extraction timed out after \(extractionTimeout)s")
+        return nil
     }
 }
