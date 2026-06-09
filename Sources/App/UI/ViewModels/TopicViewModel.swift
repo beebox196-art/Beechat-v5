@@ -49,7 +49,7 @@ final class TopicViewModel: Identifiable {
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    /// Phase 2: Save topic summary via the extraction + write pipeline.
+    /// Phase 2.1a: Save topic summary via the extraction + write pipeline.
     ///
     /// Called from SessionRow's context menu. Updates `isSaving` and `saveStatus`
     /// so the UI can show transient status.
@@ -59,31 +59,34 @@ final class TopicViewModel: Identifiable {
         isSaving = true
         saveStatus = .saving
 
-        let resultPath = await bridge.triggerTopicSummary(topicId: id)
+        let result = await bridge.triggerTopicSummary(topicId: id)
 
-        if let path = resultPath {
+        switch result {
+        case .success:
             saveStatus = .success
-        } else {
-            // Could be no durable content, or extraction/write failure
-            // Try to distinguish
-            saveStatus = .failed(reason: "No durable content found or extraction failed")
+        case .noContent:
+            saveStatus = .empty
+        case .timedOut:
+            saveStatus = .timedOut
+        case .failed(let reason):
+            saveStatus = .failed(reason: reason)
         }
 
         isSaving = false
 
-        // Auto-reset status after a delay (success=2s, empty=2s, error=4s)
+        // Auto-reset status after a delay (success=2s, empty=2s, timedOut=4s, error=4s)
         let delay: UInt64
         switch saveStatus {
         case .success, .empty:
             delay = 2_000_000_000 // 2 seconds
-        case .failed:
-            delay = 4_000_000_000 // 4 seconds
+        case .timedOut, .failed:
+            delay = 4_000_000_000 // 4 seconds — persists as tooltip
         case .idle, .saving:
             delay = 0
         }
         if delay > 0 {
             try? await Task.sleep(nanoseconds: delay)
-            // Don't reset failed status — it persists until retry/success/topic change
+            // Don't reset failed/timedOut status — it persists until retry/success/topic change
             if case .success = saveStatus {
                 saveStatus = .idle
             } else if case .empty = saveStatus {
@@ -98,6 +101,7 @@ enum TopicSaveStatus: Equatable {
     case idle
     case saving
     case success
-    case empty       // No durable content to save
+    case empty           // No durable content to save
+    case timedOut        // Extraction timed out (180s) — Phase 2.1a
     case failed(reason: String)
 }

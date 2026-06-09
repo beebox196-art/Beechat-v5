@@ -552,49 +552,84 @@ public actor SyncBridge {
     ///
     /// - Parameter topicId: The topic's unique identifier.
     /// - Returns: The path to the written summary file, or nil if nothing was saved.
-    public func triggerTopicSummary(topicId: String) async -> String? {
+    /// Result of the topic summary pipeline, exposing failure modes for UI display.
+    public enum TopicSummaryResult {
+        case success(path: String)          // Summary written to this path
+        case noContent                       // No durable items found
+        case timedOut                        // Extraction timed out (180s)
+        case failed(reason: String)         // Extraction or write failure
+    }
+
+    /// Triggers the full topic summary extraction + write pipeline.
+    ///
+    /// Called from TopicViewModel.saveTopicSummary() when the user clicks
+    /// "Save Topic Summary" in the context menu.
+    ///
+    /// - Parameter topicId: The topic's unique identifier.
+    /// - Returns: A `TopicSummaryResult` indicating success or the specific failure mode.
+    public func triggerTopicSummary(topicId: String) async -> TopicSummaryResult {
         // Look up the topic
         let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
         guard let topic = try? topicRepo.fetchById(topicId) else {
             print("[SyncBridge] triggerTopicSummary: topic not found: \(topicId)")
-            return nil
+            return .failed(reason: "Topic not found")
         }
 
         guard let sessionKey = topic.sessionKey else {
             print("[SyncBridge] triggerTopicSummary: topic has no session key: \(topicId)")
-            return nil
+            return .failed(reason: "No session key for this topic")
         }
 
         // Extract durable items from the conversation
-        let extracted = await TopicSummaryExtractor.extract(
+        let extractionResult = await TopicSummaryExtractor.extract(
             topicId: topicId,
             topicName: topic.name,
             projectPath: topic.projectPath,
             bridge: self
         )
 
-        guard let extracted = extracted, !extracted.isEmpty else {
-            print("[SyncBridge] triggerTopicSummary: no durable items extracted for \(topicId)")
-            return nil
+        switch extractionResult {
+        case .success(let extracted):
+            guard !extracted.isEmpty else {
+                print("[SyncBridge] triggerTopicSummary: no durable items extracted for \(topicId)")
+                return .noContent
+            }
+
+        case .noContent:
+            print("[SyncBridge] triggerTopicSummary: no content for \(topicId)")
+            return .noContent
+
+        case .timedOut:
+            print("[SyncBridge] triggerTopicSummary: extraction timed out for \(topicId)")
+            return .timedOut
+
+        case .failed(let reason):
+            print("[SyncBridge] triggerTopicSummary: extraction failed for \(topicId): \(reason)")
+            return .failed(reason: reason)
         }
 
-        // Write/merge the summary
-        let workspacePath = "/Users/openclaw/.openclaw/workspace/"
-        let resultPath = TopicSummaryWriter.write(
-            topicId: topicId,
-            topicName: topic.name,
-            projectPath: topic.projectPath,
-            workspacePath: workspacePath,
-            extracted: extracted
-        )
+        // Write/merge the summary (only reached on .success with non-empty extracted)
+        if case .success(let extracted) = extractionResult {
+            let workspacePath = "/Users/openclaw/.openclaw/workspace/"
+            let resultPath = TopicSummaryWriter.write(
+                topicId: topicId,
+                topicName: topic.name,
+                projectPath: topic.projectPath,
+                workspacePath: workspacePath,
+                extracted: extracted
+            )
 
-        if let resultPath = resultPath {
-            print("[SyncBridge] Topic summary written: \(resultPath)")
-        } else {
-            print("[SyncBridge] triggerTopicSummary: write failed for \(topicId)")
+            if let resultPath = resultPath {
+                print("[SyncBridge] Topic summary written: \(resultPath)")
+                return .success(path: resultPath)
+            } else {
+                print("[SyncBridge] triggerTopicSummary: write failed for \(topicId)")
+                return .failed(reason: "Summary file write failed")
+            }
         }
 
-        return resultPath
+        // Should not reach here (all cases handled above), but defensive
+        return .failed(reason: "Unexpected extraction state")
     }
 
     /// Look up the project path for a session key by resolving the topic.

@@ -7,8 +7,10 @@ struct SessionRow: View {
     var thinkingState: ThinkingState = .idle
     var sessionUsage: Double? = nil
     var unreadCount: Int = 0  // In-memory unread count from SyncBridgeObserver
+    var isSelected: Bool = false
     var onReset: (() -> Void)? = nil
     var onSelect: (() -> Void)?
+    var onMarkUnread: ((Bool) -> Void)? = nil
     var projectContextState: ProjectContextState = .none
     var bridge: SyncBridge? = nil  // Phase 2: needed for saveTopicSummary
 
@@ -150,6 +152,21 @@ struct SessionRow: View {
             Label("Reset Session", systemImage: "arrow.clockwise")
         }
 
+        // Mark as Unread / Mark as Read (mutually exclusive)
+        if unreadCount == 0 && !isSelected {
+            Button {
+                onMarkUnread?(true)
+            } label: {
+                Label("Mark as Unread", systemImage: "circle.badge")
+            }
+        } else if unreadCount > 0 {
+            Button {
+                onMarkUnread?(false)
+            } label: {
+                Label("Mark as Read", systemImage: "circle.slash")
+            }
+        }
+
         Divider()
 
         // Delete Topic (existing — would be added by parent if needed)
@@ -183,6 +200,20 @@ struct SessionRow: View {
                 .accessibilityLabel("No durable topic changes found")
                 .accessibilityValue("No changes to save")
 
+        case .timedOut:
+            Label {
+                Text("Summary timed out")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.orange)
+            } icon: {
+                Image(systemName: "clock.badge.exclamationmark.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.orange)
+            }
+            .help("Extraction timed out after 180s — the model may still be working")
+            .accessibilityLabel("Topic summary extraction timed out")
+            .accessibilityValue("Timed out after 180 seconds")
+
         case .failed(let reason):
             Label {
                 Text("Could not save")
@@ -207,7 +238,7 @@ struct SessionRow: View {
         if shouldShowResetDot {
             parts.append("session at \(Int((sessionUsage ?? 0) * 100))% — reset available")
         }
-        // Phase 2: announce save status
+        // Phase 2.1a: announce save status including timedOut
         switch topic.saveStatus {
         case .saving:
             parts.append("saving topic summary")
@@ -215,6 +246,8 @@ struct SessionRow: View {
             parts.append("topic summary saved")
         case .empty:
             parts.append("no durable changes found")
+        case .timedOut:
+            parts.append("topic summary extraction timed out")
         case .failed(let reason):
             parts.append("topic summary save failed: \(reason)")
         case .idle:
