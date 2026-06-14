@@ -71,11 +71,17 @@ struct MessageCanvas: View {
             themeManager.color(.bgSurface)
                 .ignoresSafeArea()
 
-            // MAJOR-1/2: `.id(topicId)` forces SwiftUI to tear down and
-            // rebuild the ScrollView when the topic changes, giving a fresh
-            // `ScrollPosition` with no stale `viewID` from the prior topic.
-            // Combined with `defaultScrollAnchor(.bottom, for: .initialOffset)`,
-            // the new topic lands at its bottom on first render (SC-2).
+            // MAJOR-1/2: `.id(topicId)` forces SwiftUI to discard the
+            // entire ScrollView subtree and create a fresh one when the
+            // topic changes. The new ScrollView's internal `viewID` map is
+            // empty, so `defaultScrollAnchor(.bottom, for: .initialOffset)`
+            // applies to the new content. The parent-owned `scrollPosition`
+            // binding is not reset by `.id()`, but on a brand new view it
+            // has no viewID to bind to yet, so the initial anchor wins.
+            // Later user scrolling updates `scrollPosition` as normal.
+            // Fallback (if SC-2 smoke test fails): add
+            //   .onChange(of: topicId) { scrollPosition = ScrollPosition() }
+            // for an explicit reset.
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 0) {
                     if canLoadEarlier {
