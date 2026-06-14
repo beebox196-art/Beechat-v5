@@ -20,7 +20,7 @@
 | SC-7 | "Jump to Latest" button appears when scrolled up, disappears when at bottom | Manual smoke test: scroll up → button appears; scroll back to bottom → button hides |
 | SC-8 | All tests pass (existing + new) | `swift test` clean run |
 | SC-9 | Build is clean Release with no new warnings | `swift build -c release` |
-| SC-10 | MessageCanvas.swift is shorter (fewer state fields, fewer compat shims, fewer scroll handlers) | Diff vs. base shows net deletion |
+| SC-10 | MessageCanvas.swift has fewer state fields, fewer compat shims, and fewer scroll handlers (was 4 imperative `onChange` + `onAppear` + `ScrollViewReader` + `scrollToBottom`; now 1 `onChange(of: messages)` + 1 `ScrollPosition` binding). Raw LOC may grow from architecture comments; logical complexity is reduced. | Diff vs. base shows net deletion of scroll-handler logic |
 
 ---
 
@@ -450,36 +450,16 @@ The entire `ScrollViewReader` wrapper is deleted.
 
 ## 8. Commit Strategy
 
-Single commit on `fix/scroll-position-modern`:
+Six commits, atomic and reviewable, on `fix/scroll-position-sp001-clean`:
 
-```
-fix(canvas): SP-001 — ScrollPosition-based scroll handling (single source of truth)
+1. `fix(canvas): SP-001 — ScrollPosition-based scroll handling`
+2. `chore(preflight): add Equatable conformance to Message`
+3. `fix(sync-bridge): D1 — diff-guard streamingContent`
+4. `fix(message-list): D2 — diff-guard allMessages`
+5. `fix(gateway): A — PendingRequestMap.remove returns Bool`
+6. `fix(canvas): address review findings — wire topicId, use auto-synthesized Equatable, update spec`
 
-Replaces the 4-5 layer scroll-handling patch stack with a single
-declarative ScrollPosition binding. Per Q/Kieran/Mel/Gav team
-consensus (2026-06-13).
-
-Deletes:
-- ScrollViewReader (no longer needed)
-- @State isAtBottom (replaced by computed property from viewID)
-- @State scrollProxy (deleted)
-- SA-002 onAppear + onChange(of: topicId) scrollTo handlers
-- onScrollGeometryChangeCompat + scrollBounceBehaviorCompat
-- ScrollGeometry struct
-
-Keeps:
-- 3-way indicator chain (BWS-001 Fix #1)
-- bottom-anchor spacer (addressable scroll target)
-- Load-earlier button + anchorMessageId (uses new API)
-- Jump-to-Latest button (redriven from computed isAtBottom)
-- WidthReader + WidthPreferenceKey (separate concern)
-
-Tests:
-- Remove 5 equatable tests
-- Add 3 ScrollPosition tests
-- 5 indicator-chain tests unchanged
-- 8 tests in MessageCanvasTests.swift total
-```
+The sixth commit is the response to the Kieran adversarial review (3 MAJORs, 2 MINORs, 3 NITs) and is added on top of the original five.
 
 ---
 

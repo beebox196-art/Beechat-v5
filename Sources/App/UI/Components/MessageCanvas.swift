@@ -13,9 +13,10 @@ import BeeChatPersistence
 /// The "Jump to Latest" button and the auto-scroll-on-new-message policy
 /// both drive `scrollPosition` directly.
 ///
-/// Streaming poll is throttled to ~5fps (200ms) to reduce SwiftUI layout
-/// recalculations. The StreamingBubble expands naturally in the VStack; no
-/// height feedback loop is used.
+/// Streaming poll runs at 50ms (~20fps); D1 in `MessageListObserver` and
+/// `SyncBridgeObserver` diff-guards the assignment so identical content does
+/// not invalidate the SwiftUI body. The StreamingBubble expands naturally
+/// in the VStack; no height feedback loop is used.
 struct MessageCanvas: View {
     @Environment(ThemeManager.self) var themeManager
 
@@ -70,6 +71,11 @@ struct MessageCanvas: View {
             themeManager.color(.bgSurface)
                 .ignoresSafeArea()
 
+            // MAJOR-1/2: `.id(topicId)` forces SwiftUI to tear down and
+            // rebuild the ScrollView when the topic changes, giving a fresh
+            // `ScrollPosition` with no stale `viewID` from the prior topic.
+            // Combined with `defaultScrollAnchor(.bottom, for: .initialOffset)`,
+            // the new topic lands at its bottom on first render (SC-2).
             ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 0) {
                     if canLoadEarlier {
@@ -128,6 +134,7 @@ struct MessageCanvas: View {
                 }
                 .scrollTargetLayout()  // SP-001: makes .id() values addressable
             }
+            .id(topicId)  // MAJOR-1/2: tear down + rebuild on topic change
             .scrollContentBackground(.hidden)
             // SP-001: single, declarative scroll-position binding.
             // .bottom anchor means the bottom-most visible view updates

@@ -45,17 +45,13 @@ final class MessageListObserver {
         applyWindow()
     }
 
-    /// Lightweight equality check for the diff guard. Compares by
-    /// id + content + timestamp + role (the four fields the UI cares about
-    /// for layout and rendering). Order-sensitive.
+    /// Lightweight equality check for the diff guard. Delegates to
+    /// `Message`'s auto-synthesized `Equatable` conformance (all 12 fields
+    /// compared). Order-sensitive. This addresses Kieran MAJOR-3 — the
+    /// earlier manual 4-field comparison silently excluded `editedAt`,
+    /// `isRead`, `metadata`, etc.
     private func messagesDiffer(_ lhs: [Message], _ rhs: [Message]) -> Bool {
-        guard lhs.count == rhs.count else { return true }
-        for (l, r) in zip(lhs, rhs) {
-            if l.id != r.id || l.content != r.content || l.timestamp != r.timestamp || l.role != r.role {
-                return true
-            }
-        }
-        return false
+        lhs != rhs
     }
 
     /// Apply the display window to the full message set
