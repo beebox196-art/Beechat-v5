@@ -34,11 +34,18 @@ public actor PendingRequestMap: Sendable {
         }
     }
     
-    public func remove(id: String, reason: String) {
+    /// Remove a pending request by ID, rejecting it with the given reason.
+    /// - Returns: `true` if the entry was found and its reject callback was
+    ///   invoked (i.e., the continuation was resumed). Callers that need to
+    ///   avoid double-resuming a `CheckedContinuation` MUST check this value.
+    @discardableResult
+    public func remove(id: String, reason: String) -> Bool {
         if let req = pending.removeValue(forKey: id) {
             req.timer.cancel()
             req.reject(NSError(domain: "PendingRequestMap", code: -1, userInfo: [NSLocalizedDescriptionKey: reason]))
+            return true
         }
+        return false
     }
     
     public func clearAll(reason: String) {
