@@ -155,7 +155,13 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
                 if let bridge = syncBridge {
                     let selectedKey = self.streamingSessionKey ?? ""
                     let content = await bridge.streamingContent(for: selectedKey)
-                    self.streamingContent = content
+                    // D1: Diff guard — only mutate state when content actually changes.
+                    // Without this, identical 50 ms polls invalidate the SwiftUI body
+                    // and trigger LazyVStack infinite layout recomputation (Path A of
+                    // the 13 May 99% CPU hang root cause in Docs/Status/DEBUG.md).
+                    if self.streamingContent != content {
+                        self.streamingContent = content
+                    }
                 }
                 // Yield to prevent CPU spin — 50ms gives ~20fps update rate for streaming content
                 do {
