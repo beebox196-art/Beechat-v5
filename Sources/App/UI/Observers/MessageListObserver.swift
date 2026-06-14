@@ -35,8 +35,27 @@ final class MessageListObserver {
 
     /// Single entry point for both stream and local paths
     func setAllMessages(_ allMessages: [Message]) {
+        // D2: Diff guard — skip update when data hasn't changed to prevent
+        // SwiftUI LazyVStack churn from GRDB ValueObservation reference-only yields.
+        // This is Path C of the 13 May 99% CPU hang root cause in
+        // Docs/Status/DEBUG.md. A new array reference is yielded on every
+        // streaming delta write even when the visible data is identical.
+        guard messagesDiffer(self.allMessages, allMessages) else { return }
         self.allMessages = allMessages
         applyWindow()
+    }
+
+    /// Lightweight equality check for the diff guard. Compares by
+    /// id + content + timestamp + role (the four fields the UI cares about
+    /// for layout and rendering). Order-sensitive.
+    private func messagesDiffer(_ lhs: [Message], _ rhs: [Message]) -> Bool {
+        guard lhs.count == rhs.count else { return true }
+        for (l, r) in zip(lhs, rhs) {
+            if l.id != r.id || l.content != r.content || l.timestamp != r.timestamp || l.role != r.role {
+                return true
+            }
+        }
+        return false
     }
 
     /// Apply the display window to the full message set
