@@ -439,6 +439,24 @@ public actor SyncBridge {
 
             // Update usage cache so UI reflects the reset immediately
             sessionUsageCache[sessionKey] = 0
+
+            // Clear local Session.totalTokens so the GRDB observation in
+            // MessageViewModel.startSessionUsageObservation() fires,
+            // which calls refreshUsageFromSessions() and clears the
+            // orange-dot indicator (which reads from sessionUsageMap,
+            // not from this in-memory cache).
+            do {
+                try DatabaseManager.shared.write { db in
+                    try db.execute(
+                        sql: "UPDATE sessions SET totalTokens = NULL WHERE id = ?",
+                        arguments: [sessionKey]
+                    )
+                }
+            } catch {
+                // Non-fatal: in-memory cache is still cleared, and the next
+                // fetchSessions() will refresh totalTokens from the gateway.
+                print("[SyncBridge] manualReset: failed to clear local totalTokens for \(sessionKey): \(error)")
+            }
         }
 
         delegate?.syncBridge(self, didStopManualReset: sessionKey)
