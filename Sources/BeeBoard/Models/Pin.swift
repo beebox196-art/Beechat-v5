@@ -18,6 +18,7 @@ public struct Pin: Codable, FetchableRecord, MutablePersistableRecord, TableReco
     public var tags: String
     public var pinType: String
     public var pinData: String?
+    public var isArchived: Bool = false
     public var createdAt: Date
     public var updatedAt: Date
 
@@ -36,6 +37,7 @@ public struct Pin: Codable, FetchableRecord, MutablePersistableRecord, TableReco
         case tags
         case pinType
         case pinData
+        case isArchived
         case createdAt
         case updatedAt
     }
@@ -57,6 +59,7 @@ public struct Pin: Codable, FetchableRecord, MutablePersistableRecord, TableReco
         groupId: String? = nil,
         priority: Int = 0,
         tags: String = "[]",
+        isArchived: Bool = false,
         pinType: String = "note",
         pinData: String? = nil,
         createdAt: Date = Date(),
@@ -74,6 +77,7 @@ public struct Pin: Codable, FetchableRecord, MutablePersistableRecord, TableReco
         self.groupId = groupId
         self.priority = priority
         self.tags = tags
+        self.isArchived = isArchived
         self.pinType = pinType
         self.pinData = pinData
         self.createdAt = createdAt

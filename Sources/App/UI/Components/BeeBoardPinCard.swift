@@ -7,6 +7,7 @@ struct BeeBoardPinCard: View {
 
     let isSelected: Bool
     let isDimmed: Bool
+    let isInArchiveView: Bool
     let tags: [String]
     let tagPalette: [String]
     let onSelect: () -> Void
@@ -15,6 +16,9 @@ struct BeeBoardPinCard: View {
     let onExpand: () -> Void
     let onTagsChange: ([String]) -> Void
     let onUpdatePriority: (Int) -> Void
+    let onArchive: (() -> Void)?
+    let onRestore: (() -> Void)?
+    let onRestoreWithPriority: ((Int) -> Void)?
 
     @State private var dragStart: CGPoint?
     @State private var dragOffset: CGSize = .zero
@@ -48,9 +52,9 @@ struct BeeBoardPinCard: View {
         .overlay(cardBorder)
         .shadow(
             color: themeManager.color(.shadowMedium),
-            radius: isSelected ? 8 : 3,
+            radius: isInArchiveView ? 1 : (isSelected ? 8 : 3),
             x: 0,
-            y: isSelected ? 4 : 1
+            y: isInArchiveView ? 0 : (isSelected ? 4 : 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: themeManager.radius(.lg)))
         .offset(dragOffset)
@@ -64,10 +68,21 @@ struct BeeBoardPinCard: View {
         }
         .gesture(dragGesture)
         .contextMenu {
-            Menu("Priority") {
-                ForEach([(0, "None"), (1, "Low"), (2, "Medium"), (3, "High"), (4, "Urgent")], id: \.0) { value, label in
-                    Button(label) { onUpdatePriority(value) }
+            if isInArchiveView {
+                Button("Restore Pin") { onRestore?() }
+                Menu("Restore to…") {
+                    ForEach([(0, "None"), (1, "Low"), (2, "Medium"), (3, "High"), (4, "Urgent")], id: \.0) { value, label in
+                        Button(label) { onRestoreWithPriority?(value) }
+                    }
                 }
+            } else {
+                Menu("Priority") {
+                    ForEach([(0, "None"), (1, "Low"), (2, "Medium"), (3, "High"), (4, "Urgent")], id: \.0) { value, label in
+                        Button(label) { onUpdatePriority(value) }
+                    }
+                }
+                Divider()
+                Button("Archive Pin") { onArchive?() }
             }
             Button("Expand Pin") { onExpand() }
             Divider()
@@ -80,9 +95,15 @@ struct BeeBoardPinCard: View {
 
     private var header: some View {
         HStack(spacing: themeManager.spacing(.sm)) {
-            Circle()
-                .fill(Color(hex: pin.colorHex) ?? themeManager.color(.accentPrimary))
-                .frame(width: 8, height: 8)
+            if isInArchiveView {
+                Image(systemName: "archivebox.fill")
+                    .font(.system(size: 8))
+                    .foregroundColor(themeManager.color(.textSecondary).opacity(0.7))
+            } else {
+                Circle()
+                    .fill(Color(hex: pin.colorHex) ?? themeManager.color(.accentPrimary))
+                    .frame(width: 8, height: 8)
+            }
 
             if pin.pinType == "rich" {
                 Image(systemName: "paperclip")
@@ -94,12 +115,12 @@ struct BeeBoardPinCard: View {
                 TextField("Title", text: titleBinding)
                     .textFieldStyle(.plain)
                     .font(themeManager.font(.body))
-                    .foregroundColor(themeManager.color(.textPrimary))
+                    .foregroundColor(themeManager.color(.textPrimary).opacity(isInArchiveView ? 0.85 : 1.0))
                     .focused($isTitleFocused)
             } else {
                 Text(pin.title.isEmpty ? "Untitled" : pin.title)
                     .font(themeManager.font(.body))
-                    .foregroundColor(themeManager.color(.textPrimary))
+                    .foregroundColor(themeManager.color(.textPrimary).opacity(isInArchiveView ? 0.85 : 1.0))
                     .lineLimit(1)
             }
 
@@ -224,7 +245,7 @@ struct BeeBoardPinCard: View {
             .fill(themeManager.color(.bgElevated))
             .overlay(
                 RoundedRectangle(cornerRadius: themeManager.radius(.lg))
-                    .fill(priorityColor.opacity(tintOpacity))
+                    .fill(isInArchiveView ? Color.gray.opacity(0.12) : priorityColor.opacity(tintOpacity))
             )
     }
 
@@ -303,6 +324,7 @@ struct BeeBoardPinCard: View {
         ),
         isSelected: true,
         isDimmed: false,
+        isInArchiveView: false,
         tags: ["sales", "ai"],
         tagPalette: BeeBoardViewModel.groupColorPalette,
         onSelect: {},
@@ -310,7 +332,10 @@ struct BeeBoardPinCard: View {
         onRequestDelete: {},
         onExpand: {},
         onTagsChange: { _ in },
-        onUpdatePriority: { _ in }
+        onUpdatePriority: { _ in },
+        onArchive: {},
+        onRestore: {},
+        onRestoreWithPriority: { _ in }
     )
     .padding()
     .environment(ThemeManager())

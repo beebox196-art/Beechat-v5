@@ -5,6 +5,8 @@ struct BeeBoardCanvasView: View {
     @Environment(ThemeManager.self) var themeManager
     @Bindable var viewModel: BeeBoardViewModel
 
+    var onPinArchived: ((String) -> Void)? = nil
+
     private let canvasSize = CGSize(width: 1800, height: 1200)
 
     var body: some View {
@@ -12,16 +14,17 @@ struct BeeBoardCanvasView: View {
             ZStack(alignment: .topLeading) {
                 canvasBackground
 
-                if viewModel.pins.isEmpty {
+                if viewModel.filteredPins.isEmpty {
                     emptyState
                         .position(x: 420, y: 260)
                 }
 
-                ForEach(viewModel.pins) { pin in
+                ForEach(viewModel.filteredPins) { pin in
                     BeeBoardPinCard(
                         pin: viewModel.binding(for: pin),
                         isSelected: viewModel.selectedPinId == pin.id,
                         isDimmed: viewModel.isDimmedBySearch(pin),
+                        isInArchiveView: viewModel.showArchived,
                         tags: viewModel.tags(for: pin),
                         tagPalette: BeeBoardViewModel.groupColorPalette,
                         onSelect: { viewModel.select(pinId: pin.id) },
@@ -29,7 +32,10 @@ struct BeeBoardCanvasView: View {
                         onRequestDelete: { viewModel.requestDelete(pinId: pin.id) },
                         onExpand: { viewModel.openDetail(pinId: pin.id) },
                         onTagsChange: { tags in viewModel.setTags(tags, for: pin.id) },
-                        onUpdatePriority: { prio in viewModel.updatePriority(pinId: pin.id, priority: prio) }
+                        onUpdatePriority: { prio in viewModel.updatePriority(pinId: pin.id, priority: prio) },
+                        onArchive: { onPinArchived?(pin.id) },
+                        onRestore: { viewModel.restorePin(id: pin.id) },
+                        onRestoreWithPriority: { prio in viewModel.restorePin(id: pin.id, priority: prio) }
                     )
                     .position(
                         x: CGFloat(pin.positionX),
@@ -37,6 +43,7 @@ struct BeeBoardCanvasView: View {
                     )
                     .opacity(viewModel.isDimmedBySearch(pin) ? 0.25 : 1.0)
                     .zIndex(viewModel.selectedPinId == pin.id ? 2 : 1)
+                    .transition(.opacity)
                 }
             }
             .frame(width: canvasSize.width, height: canvasSize.height)
@@ -54,6 +61,7 @@ struct BeeBoardCanvasView: View {
             .gesture(
                 SpatialTapGesture(count: 2)
                     .onEnded { value in
+                        guard !viewModel.showArchived else { return }
                         viewModel.createPin(at: value.location)
                     }
             )
@@ -93,15 +101,15 @@ struct BeeBoardCanvasView: View {
 
     private var emptyState: some View {
         VStack(spacing: themeManager.spacing(.md)) {
-            Image(systemName: "pin.square")
+            Image(systemName: viewModel.showArchived ? "archivebox" : "pin.square")
                 .font(.system(size: 36))
                 .foregroundColor(themeManager.color(.textSecondary).opacity(0.55))
 
-            Text("Double-click the canvas to create a pin")
+            Text(viewModel.showArchived ? "No archived pins" : "Double-click the canvas to create a pin")
                 .font(themeManager.font(.subheading))
                 .foregroundColor(themeManager.color(.textPrimary))
 
-            Text("Or use the + button above.")
+            Text(viewModel.showArchived ? "Completed pins will appear here." : "Or use the + button above.")
                 .font(themeManager.font(.body))
                 .foregroundColor(themeManager.color(.textSecondary))
         }

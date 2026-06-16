@@ -56,11 +56,13 @@ final class BeeBoardViewModel {
     var detailPinId: String?
     var activeSortOption: BeeBoardSortOption?
     var canUndoSort = false
+    var showArchived = false
 
     var filteredPins: [Pin] {
-        guard !searchText.isEmpty else { return pins }
+        let result = showArchived ? pins.filter { $0.isArchived } : pins.filter { !$0.isArchived }
+        guard !searchText.isEmpty else { return result }
         let query = searchText.lowercased()
-        return pins.filter { pin in
+        return result.filter { pin in
             pin.title.lowercased().contains(query) ||
             (pin.content?.lowercased().contains(query) ?? false) ||
             pin.tags.lowercased().contains(query)
@@ -68,8 +70,7 @@ final class BeeBoardViewModel {
     }
 
     var matchingPinIds: Set<String> {
-        guard !searchText.isEmpty else { return Set(pins.map(\.id)) }
-        return Set(filteredPins.map(\.id))
+        Set(filteredPins.map(\.id))
     }
 
     @ObservationIgnored private let boardRepository: BoardRepository
@@ -296,6 +297,32 @@ final class BeeBoardViewModel {
         }
     }
 
+    // MARK: - Archive
+
+    func archivePin(id: String) {
+        guard let index = pins.firstIndex(where: { $0.id == id }), !pins[index].isArchived else { return }
+        pins[index].isArchived = true
+        pins[index].updatedAt = Date()
+        scheduleSave(pins[index])
+    }
+
+    func restorePin(id: String) {
+        guard let index = pins.firstIndex(where: { $0.id == id }), pins[index].isArchived else { return }
+        pins[index].isArchived = false
+        pins[index].updatedAt = Date()
+        scheduleSave(pins[index])
+    }
+
+    func restorePin(id: String, priority: Int) {
+        guard let index = pins.firstIndex(where: { $0.id == id }), pins[index].isArchived else { return }
+        let clamped = min(max(priority, 0), 4)
+        pins[index].isArchived = false
+        pins[index].priority = clamped
+        pins[index].colorHex = Self.priorityColors[clamped] ?? Self.priorityColors[0]!
+        pins[index].updatedAt = Date()
+        scheduleSave(pins[index])
+    }
+
     func tags(for pin: Pin) -> [String] {
         guard let data = pin.tags.data(using: .utf8),
               let decoded = try? JSONDecoder().decode([String].self, from: data) else {
@@ -404,21 +431,22 @@ final class BeeBoardViewModel {
         activeSortOption = option
         canUndoSort = true
 
+        let visiblePins = filteredPins
         let sortedPins: [Pin]
         switch option {
         case .priority:
-            sortedPins = pins.sorted { lhs, rhs in
+            sortedPins = visiblePins.sorted { lhs, rhs in
                 if lhs.priority == rhs.priority { return lhs.createdAt < rhs.createdAt }
                 return lhs.priority > rhs.priority
             }
         case .age:
-            sortedPins = pins.sorted { $0.createdAt < $1.createdAt }
+            sortedPins = visiblePins.sorted { $0.createdAt < $1.createdAt }
         case .alphabetical:
-            sortedPins = pins.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            sortedPins = visiblePins.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         case .colour:
-            sortedPins = pins.sorted { $0.colorHex < $1.colorHex }
+            sortedPins = visiblePins.sorted { $0.colorHex < $1.colorHex }
         case .tag:
-            sortedPins = pins.sorted { firstTag($0) < firstTag($1) }
+            sortedPins = visiblePins.sorted { firstTag($0) < firstTag($1) }
         }
 
         applyGridLayout(to: sortedPins)
@@ -622,7 +650,7 @@ final class BeeBoardViewModel {
 
     private func groupFrame(for groupId: String) -> BeeBoardGroupFrame? {
         guard let group = groups.first(where: { $0.id == groupId }) else { return nil }
-        let members = pins.filter { $0.groupId == groupId }
+        let members = filteredPins.filter { $0.groupId == groupId }
         guard !members.isEmpty else { return nil }
 
         let minX = members.map { $0.positionX - ($0.width / 2) }.min() ?? 0

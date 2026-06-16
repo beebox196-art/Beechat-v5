@@ -71,6 +71,14 @@ public enum BeeBoardMigrator {
             }
         }
 
+        migrator.registerMigration("BeeBoardMigration005_Archive") { db in
+            if try db.columns(in: "beeboard_pins").first(where: { $0.name == "isArchived" }) == nil {
+                try db.alter(table: "beeboard_pins") { t in
+                    t.add(column: "isArchived", .boolean).notNull().defaults(to: false)
+                }
+            }
+        }
+
         migrator.registerMigration("BeeBoardMigration004_PinData") { db in
             if try db.columns(in: "beeboard_pins").first(where: { $0.name == "pinType" }) == nil {
                 try db.alter(table: "beeboard_pins") { t in
