@@ -32,6 +32,7 @@ final class MockRPCClient: RPCClientProtocol {
     
     func chatSend(sessionKey: String, message: String, idempotencyKey: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil) async throws -> String { return "run-id" }
     func chatAbort(sessionKey: String) async throws -> Bool { return true }
+    func sessionsMessagesSubscribe(sessionKey: String) async throws { }
 }
 
 

@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-public struct Message: Codable, UpsertableRecord {
+public struct Message: Codable, Equatable, UpsertableRecord {
     public static let databaseTableName = "messages"
     
     public var id: String

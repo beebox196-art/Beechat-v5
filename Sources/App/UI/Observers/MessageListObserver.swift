@@ -43,13 +43,7 @@ final class MessageListObserver {
     }
 
     private func messagesDiffer(_ lhs: [Message], _ rhs: [Message]) -> Bool {
-        guard lhs.count == rhs.count else { return true }
-        for (l, r) in zip(lhs, rhs) {
-            if l.id != r.id || l.content != r.content || l.timestamp != r.timestamp || l.role != r.role {
-                return true
-            }
-        }
-        return false
+        return lhs != rhs
     }
 
     /// Apply the display window to the full message set

@@ -6,7 +6,7 @@ import BeeChatSyncBridge
 /// Derives from Topic (NOT Session), adds UI-only presentation fields.
 /// Topic ordering: alphabetical by name, case-insensitive.
 @Observable
-final class TopicViewModel: Identifiable {
+final class TopicViewModel: Identifiable, Equatable, Hashable {
     let id: String          // = Topic.id
     var title: String       // = Topic.name
     var icon: String?       // UI-only: SF Symbol name, stored in UserDefaults
