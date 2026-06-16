@@ -9,6 +9,8 @@ struct SessionRow: View {
     var unreadCount: Int = 0  // In-memory unread count from SyncBridgeObserver
     var onReset: (() -> Void)? = nil
     var onSelect: (() -> Void)?
+    var onMarkUnread: ((Bool) -> Void)? = nil
+    var isSelected: Bool = false
     var projectContextState: ProjectContextState = .none
     var bridge: SyncBridge? = nil  // Phase 2: needed for saveTopicSummary
 
@@ -148,6 +150,21 @@ struct SessionRow: View {
             onReset?()
         } label: {
             Label("Reset Session", systemImage: "arrow.clockwise")
+        }
+
+        // Mark as Unread / Mark as Read (mutually exclusive)
+        if unreadCount == 0 && !isSelected {
+            Button {
+                onMarkUnread?(true)
+            } label: {
+                Label("Mark as Unread", systemImage: "circle.badge")
+            }
+        } else if unreadCount > 0 {
+            Button {
+                onMarkUnread?(false)
+            } label: {
+                Label("Mark as Read", systemImage: "circle.slash")
+            }
         }
 
         Divider()

@@ -506,6 +506,10 @@ struct MainWindow: View {
                     onSelect: {
                         editTopicTarget = EditTopicTarget(id: topic.id)
                     },
+                    onMarkUnread: { markUnread in
+                        syncBridgeObserver.setUnread(for: topic.sessionKey, count: markUnread ? 1 : 0)
+                    },
+                    isSelected: sidebarSelection.wrappedValue == topic.id,
                     projectContextState: projectState,
                     bridge: appState.syncBridge
                 )

@@ -267,6 +267,18 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
         unreadCounts.removeValue(forKey: normalizedSessionKey(key))
     }
 
+    /// Set the unread count for a given session key. Used by the "Mark as Unread" context menu
+    /// action. A count of 0 clears the entry (same effect as clearUnread).
+    func setUnread(for sessionKey: String?, count: Int) {
+        guard let key = sessionKey else { return }
+        let normalized = SessionKeyNormalizer.stripPrefix(key).lowercased()
+        if count > 0 {
+            unreadCounts[normalized] = count
+        } else {
+            unreadCounts.removeValue(forKey: normalized)
+        }
+    }
+
     /// Set to true while an auto-reset is in progress (for UI binding).
     var autoResetting: Bool = false
     /// Set to true while a manual reset is in progress (for UI binding).
