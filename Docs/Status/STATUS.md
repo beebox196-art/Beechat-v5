@@ -67,8 +67,8 @@ Updated: 2026-06-16 22:00 GMT+1
 
 | What | Reviewer | Status |
 |---|---|---|
-| BeeBoard Archive (0582aac) | Kieran | In progress |
-| Mark as Unread (94164d3) | Kieran | Pending |
+| BeeBoard Archive (0582aac) | Kieran | ✅ PASS |
+| Mark as Unread (94164d3) | Kieran | Pending (minor, 3 files) |
 
 ## Pre-Merge Checklist (develop → main)
 
