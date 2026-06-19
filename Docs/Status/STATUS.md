@@ -70,6 +70,14 @@ Updated: 2026-06-16 22:00 GMT+1
 | BeeBoard Archive (0582aac) | Kieran | ✅ PASS |
 | Mark as Unread (94164d3) | Kieran | Pending (minor, 3 files) |
 
+## Feature Requests (Post-Stabilisation)
+
+| ID | Feature | Notes | Owner |
+|---|---|---|---|
+| FR-1 | Font size scaling | Adjustable font size + proportional sidebar width. High-res display makes text too small. Minimal disruption — scale factor through ThemeManager tokens. | Mel (scope) |
+| FR-2 | Tap-to-reconnect | Spec: `Docs/Specs/Active/FR-002-TAP-TO-RECONNECT.md`. Tap status bar when offline → reconnect. 2 files, ~40 lines. Pending Kieran review → Q build. | Q |
+| FR-3 | D2 message list diff-guard | Replace 4-field manual compare | Q |
+
 ## Pre-Merge Checklist (develop → main)
 
 - [ ] All tests pass (98/98, keychain hang excluded)
