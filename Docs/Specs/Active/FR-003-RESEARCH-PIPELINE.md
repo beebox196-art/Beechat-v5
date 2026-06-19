@@ -1,7 +1,7 @@
 # FR-003: Research Pipeline
 
 **Priority:** High
-**Status:** Spec — Kieran reviewed (Approve with conditions, all applied). Updated to include minimal BeeChat research panel per Adam feedback.
+**Status:** Spec — fully reviewed (Kieran architecture ✅ + Mel UX ✅, all conditions applied). Ready for implementation.
 **Author:** Bee (synthesised from Gav + Kieran input)
 **Date:** 2026-06-19
 **Predecessor:** FR-002 (tap-to-reconnect, merged v0.9.1)
@@ -25,14 +25,47 @@ A **server-side research pipeline** with two entry points: a minimal research pa
 
 A minimal UI panel in BeeChat — accessible from the sidebar or a toolbar button:
 
-- **Text field:** Paste a link, topic, or idea (multi-line supported)
-- **Depth selector:** Three buttons — Quick Scan / Standard / Deep Dive (default: Standard)
-- **Tags field:** Optional, free text, comma-separated
-- **Submit button:** Sends the research request
+- **Text field:** Paste a link, topic, or idea (multi-line `TextEditor` with placeholder overlay, minHeight 80 / maxHeight 160)
+- **Depth selector:** macOS native `Picker` with `.segmented` style — three segments: ⚡ Quick / Standard / 🔬 Deep (default: Standard pre-selected)
+- **Tags field:** Optional, free text `TextField`, comma-separated, placeholder shows format example
+- **Submit button:** Full-width accent button "Start Research" — disabled when topic text is empty
+- **Sheet size:** `minWidth: 460, ideal: 480, minHeight: 340` — matches AgentActivityPanel pattern
+- **Header:** "🔍 Research" title + "Done" button — matches AgentActivityPanel header pattern exactly
+- **Keyboard:** `Cmd+Shift+R` to open panel, `Cmd+Return` to submit, `Escape` to close (macOS sheet standard)
+- **Focus:** Text field auto-focuses on appear via `@FocusState` — cursor ready immediately, no extra click
+
+**Panel type:** Sheet (`.sheet`) presented from MainWindow. Matches existing pattern (ThemePicker, FolderPicker, AgentActivityPanel, BeeBoardSheet, EditTopicSheet all use sheets). Sheet preserves chat context underneath — user doesn't lose their conversation view.
+
+**Depth selector UX:** Segmented control (not buttons, not dropdown). One click to select. Default visible. macOS standard for 2-4 mutually exclusive options. Minimal code (~8 lines vs 25+ for custom buttons). Emoji prefixes (⚡/Standard/🔬) serve as visual anchors.
+
+**Submit flow:** Sheet closes on submit. Research output appears as messages in the current topic's chat view:
+1. User message: `/research --depth standard "topic"` (visible in chat — transparency over magic)
+2. System bubble: "Researching: [topic] — Depth: [level] — Est. [time]" (italic, centred, `.caption` font)
+3. ThinkingBee indicator appears (`.thinking` → `.streaming` transition)
+4. Gav's summary appears as assistant message with "🔍 Gav" badge — includes 3-5 bullet points + `📄 Full report: [filename.html](file:///path/)` clickable link
+
+**Progress indication:** Uses existing UI only — no new components:
+- ThinkingBee animation shows research is running
+- System bubble shows estimated time
+- Gav's summary message shows completion
+- No progress bar in panel (panel is closed by then)
+- No separate notification (unread dot on topic handles background case)
+
+**Output location:** Current topic. No new topic creation. Research is a message in the conversation, same as any other. Follow-up discussion happens naturally in the same topic.
+
+**Empty topic guard:** Research button disabled when no topic selected (`messageViewModel.selectedTopicId == nil`). Button greyed out, same as delete button pattern.
+
+**Friction:** 3 actions for default depth (open panel, paste topic, submit). 4 actions for non-default (open, paste, select depth, submit). Meets Adam's "no syntax to remember" requirement.
 
 Under the hood, the panel constructs the same text payload (e.g. `/research --depth standard "topic" --tags topcon,competitor`) and sends it through the existing WebSocket. No new message types, no shared package changes, no state management beyond the UI controls themselves.
 
-**SwiftUI estimate:** ~60 lines in a new `ResearchPanel.swift` view (Mac-only, `Sources/App/UI/`). Does not touch BeeChatSyncBridge, BeeChatPersistence, or any shared package. The depth selector and tags field are local `@State` — no AppState changes, no environment object additions.
+**SwiftUI estimate:** ~80-100 lines in a new `Sources/App/UI/Components/ResearchPanel.swift` view (Mac-only). Does not touch BeeChatSyncBridge, BeeChatPersistence, or any shared package. The depth selector and tags field are local `@State` — no AppState changes, no environment object additions.
+
+**Send pipeline:** ResearchPanel calls `ComposerViewModel.sendPayload(_ text: String)` — a new clean method that wraps the existing send chain (`MessageViewModel.sendMessage(text:)` → `SyncBridge.sendMessage()` → `RPCClient.chatSend()`). This preserves the thinking indicator (`.thinking` → `.streaming` transition). ResearchPanel receives `ComposerViewModel` as a parameter, the same way `Composer` does. Do NOT call `MessageViewModel` directly — that would skip the `onMessageSent` callback and the user would see no feedback for 30+ seconds.
+
+**Auto-reset interaction:** If the current session is at 80% usage, auto-reset will fire before the research message. The `/research` payload will be preceded by `[SESSION-CONTEXT]`. Bee's command parsing must handle this — search for `/research` in the message body, not just at position 0.
+
+**Sidebar width constraint:** The sidebar toolbar currently has 5 permanent buttons. Adding a 6th fits at ideal width (240px) but will be cramped at minimum width (180px). Use a compact icon (`.body` size) and verify layout at minimum sidebar width.
 
 ### Slash command (power user / fallback)
 
@@ -291,15 +324,17 @@ If Sag already captured relevant X/Twitter signal, use it instead of re-searchin
 | `~/.openclaw/workspace/skills/research-pipeline/templates/report.html` | HTML template | New |
 | `~/.openclaw/workspace/skills/research-pipeline/scripts/ingest.py` | KB ingestion script | New |
 | `~/.openclaw/workspace/skills/research-pipeline/data/research-index.json` | Research log | New |
-| `Sources/App/UI/ResearchPanel.swift` | Minimal research panel (text field + depth selector + tags + submit) | New (~60 lines) |
-| `Sources/App/UI/Components/Sidebar.swift` or toolbar | Button to open research panel | Modified (~5 lines) |
+| `Sources/App/UI/Components/ResearchPanel.swift` | Minimal research panel (text field + depth selector + tags + submit) | New (~80-100 lines) |
+| `Sources/App/UI/MainWindow.swift` | Add @State + .sheet + sidebar button | Modified (~8 lines) |
+| `Sources/App/UI/Components/Composer.swift` or `ComposerViewModel` | Add `sendPayload(_ text: String)` method | Modified (~5 lines) |
 | Bee routing (internal) | `/research` command parsing | Config |
 | `~/Desktop/Research Reports/` | Output directory | New (filesystem) |
 
-**Swift changes: 1 new file (~60 lines) + 1 small modification (~5 lines). No shared package changes. No BeeChatSyncBridge or BeeChatPersistence changes.**
+**Swift changes: 1 new file (~80-100 lines) + 2 small modifications (~13 lines total). No shared package changes. No BeeChatSyncBridge or BeeChatPersistence changes.**
 
 ## Review Checklist
 
+### Pipeline
 - [ ] Pipeline produces consistent output regardless of which agent runs it
 - [ ] Dedup check works (same topic twice → second run references first)
 - [ ] Sag integration doesn't duplicate already-captured signal
@@ -311,13 +346,33 @@ If Sag already captured relevant X/Twitter signal, use it instead of re-searchin
 - [ ] Quick Scan completes in under 5 min
 - [ ] Deep Dive completes in under 30 min
 
+### BeeChat UI
+- [ ] Research panel opens from sidebar toolbar button (magnifyingglass icon)
+- [ ] `Cmd+Shift+R` keyboard shortcut opens panel
+- [ ] Text field auto-focuses on sheet appear
+- [ ] Text field accepts link, topic, or idea (multi-line, placeholder overlay)
+- [ ] Depth selector shows three segments (⚡ Quick / Standard / 🔬 Deep) with Standard pre-selected
+- [ ] Tags field accepts free text, comma-separated, placeholder shows format example
+- [ ] Submit button disabled when topic text is empty
+- [ ] Submit sends payload via `ComposerViewModel.sendPayload()` (preserves thinking indicator)
+- [ ] Sheet closes on submit — user returns to current topic chat view
+- [ ] Research button disabled when no topic selected
+- [ ] Panel layout verified at minimum sidebar width (180px) — no crowding
+- [ ] `/research "test topic"` in BeeChat composer also works (slash command fallback)
+- [ ] ThinkingBee indicator appears after submit
+- [ ] System bubble shows "Researching: [topic] — Depth: [level] — Est. [time]"
+- [ ] Gav's summary appears as assistant message with clickable HTML report link
+- [ ] Full VoiceOver labels and keyboard navigation on all panel elements
+
 ## Build & Validation
 
 | Step | Owner |
 |------|-------|
-| Spec review | Kieran |
+| Spec review | Kieran ✅ (Approve with conditions — all applied) |
+| UX review | Mel ✅ (Sheet + segmented control + full UX spec) |
 | Skill implementation | Gav (pipeline) + Bee (routing) |
+| UI implementation | Q (ResearchPanel.swift + ComposerViewModel.sendPayload + MainWindow sheet) |
 | Test runs | Gav (3 depths: quick, standard, deep) |
-| Kieran review | Verify pipeline consistency, error handling |
-| Adam smoke test | `/research "test"` from BeeChat + Telegram |
+| Kieran code review | Verify pipeline consistency, error handling, UI integration |
+| Adam smoke test | `/research "test"` from BeeChat panel + Telegram |
 | KB integration verification | Bee (search for output 1 week later) |
