@@ -1,5 +1,6 @@
 import Foundation
 import BeeChatGateway
+import BeeChatPersistence
 
 public struct SessionInfo: Codable, Sendable {
     public let key: String
@@ -13,7 +14,7 @@ public struct SessionInfo: Codable, Sendable {
     /// Plugin-specific extension data from the gateway. Nil when the gateway
     /// does not include `pluginExtensions` in the response (backwards compatible).
     public let pluginExtensions: [String: [String: AnyCodable]]?
-    
+
     public init(
         key: String,
         label: String? = nil,
@@ -48,7 +49,7 @@ public struct SessionInfo: Codable, Sendable {
         spawnedBy = try container.decodeIfPresent(String.self, forKey: .spawnedBy)
         pluginExtensions = try container.decodeIfPresent([String: [String: AnyCodable]].self, forKey: .pluginExtensions)
     }
-    
+
     /// Convenience accessor: extracts `pluginExtensions["beechat"]["metadata"]`
     /// into the typed `BeeChatTopicMetadata` struct. Returns nil when no
     /// beechat metadata exists on this session, or when the metadata is malformed
@@ -68,7 +69,21 @@ public struct SessionInfo: Codable, Sendable {
             updatedAt: updatedAt
         )
     }
-    
+
+    /// Converts to a lightweight `GatewaySessionInfo` for persistence layer.
+    public var asGatewaySessionInfo: GatewaySessionInfo {
+        GatewaySessionInfo(
+            key: key,
+            label: label,
+            channel: channel,
+            model: model,
+            totalTokens: totalTokens,
+            lastMessageAt: lastMessageAt,
+            agentId: agentId,
+            spawnedBy: spawnedBy
+        )
+    }
+
     private enum CodingKeys: String, CodingKey {
         case key, label, channel, model, totalTokens, lastMessageAt, agentId, spawnedBy, pluginExtensions
     }

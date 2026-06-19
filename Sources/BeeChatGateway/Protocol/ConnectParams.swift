@@ -1,8 +1,8 @@
 import Foundation
 
 public struct ConnectParams: Codable, Sendable {
-    public let minProtocol: Int = 3
-    public let maxProtocol: Int = 3
+    public let minProtocol: Int = 4
+    public let maxProtocol: Int = 4
     public let client: ClientInfo
     public let role: String
     public let scopes: [String]
@@ -16,15 +16,23 @@ public struct ConnectParams: Codable, Sendable {
     
     public struct ClientInfo: Codable, Sendable {
         public let id: String
+        public let displayName: String?
         public let version: String
         public let platform: String
+        public let deviceFamily: String?
+        public let modelIdentifier: String?
         public let mode: String
+        public let instanceId: String?
         
-        public init(id: String, version: String, platform: String, mode: String) {
+        public init(id: String, version: String, platform: String, mode: String, displayName: String? = nil, deviceFamily: String? = nil, modelIdentifier: String? = nil, instanceId: String? = nil) {
             self.id = id
+            self.displayName = displayName
             self.version = version
             self.platform = platform
+            self.deviceFamily = deviceFamily
+            self.modelIdentifier = modelIdentifier
             self.mode = mode
+            self.instanceId = instanceId
         }
     }
     
@@ -73,7 +81,7 @@ public struct HelloOk: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: HelloOkCodingKeys.self)
         self.type = (try? container.decode(String.self, forKey: .type)) ?? "hello-ok"
-        self.protocol = (try? container.decode(Int.self, forKey: .protocol)) ?? 3
+        self.protocol = (try? container.decode(Int.self, forKey: .protocol)) ?? 4
         self.server = try container.decode(ServerInfo.self, forKey: .server)
         self.features = (try? container.decode(Features.self, forKey: .features)) ?? Features()
         self.snapshot = try? container.decodeIfPresent([String: AnyCodable].self, forKey: .snapshot)

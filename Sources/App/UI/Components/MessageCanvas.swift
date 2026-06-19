@@ -2,7 +2,12 @@ import SwiftUI
 import BeeChatPersistence
 
 /// Scrollable message canvas — displays messages and typing indicator.
-/// Auto-scrolls to bottom on new messages. Measures canvas width for bubble sizing
+///
+/// Scroll philosophy (v4, 2026-06-01): `defaultScrollAnchor(.bottom)` handles auto-scroll
+/// natively. The only manual scroll is "Jump to Latest" (user-initiated).
+///
+/// Streaming poll is throttled to ~5fps (200ms) to reduce SwiftUI layout recalculations.
+/// The StreamingBubble expands naturally in the VStack; no height feedback loop is used.
 struct MessageCanvas: View {
     @Environment(ThemeManager.self) var themeManager
 
@@ -11,6 +16,7 @@ struct MessageCanvas: View {
     var streamingContent: String = ""
     var thinkingState: ThinkingState = .idle
     var canLoadEarlier: Bool = false
+    var topicId: String? = nil
     var onLoadEarlier: () -> Void = {}
 
     private var showStreamingBubble: Bool {
@@ -24,9 +30,9 @@ struct MessageCanvas: View {
         return true
     }
 
-    @State private var autoScroll = true
+    @State private var isAtBottom: Bool = true
     @State private var measuredWidth: CGFloat = 1200
-    @State private var anchorMessageId: String?
+    @State private var anchorMessageId: String? = nil
 
     var body: some View {
         ZStack {
@@ -73,12 +79,29 @@ struct MessageCanvas: View {
                                 .id("streaming-bubble")
                         }
 
+                        // 4px anchor — enough for LazyVStack to render reliably,
+                        // invisible to the user. 8px was visibly too tall (white space).
                         Color.clear
-                            .frame(height: 1)
+                            .frame(height: 4)
                             .id("bottom-anchor")
                     }
                 }
                 .scrollContentBackground(.hidden)
+                .defaultScrollAnchor(.bottom)
+                .scrollBounceBehaviorCompat(axes: .vertical)
+                .onScrollGeometryChangeCompat(
+                    transform: { geo in
+                        guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
+                            return true
+                        }
+                        // Simple threshold: within 80px of bottom = at bottom
+                        let distanceFromBottom = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
+                        return distanceFromBottom < 80
+                    },
+                    action: { _, newValue in
+                        isAtBottom = newValue
+                    }
+                )
                 .background(
                     WidthReader { width in
                         Color.clear
@@ -88,31 +111,22 @@ struct MessageCanvas: View {
                 .onPreferenceChange(WidthPreferenceKey.self) { newWidth in
                     measuredWidth = newWidth
                 }
-                .onChange(of: messages.count) { _, _ in
-                    if let anchorId = anchorMessageId {
+
+                // Manual scrolls: load-earlier anchor, topic switch, and appear
+                .onChange(of: anchorMessageId) { _, newId in
+                    if let anchorId = newId {
                         withAnimation(.easeInOut(duration: 0.15)) {
                             proxy.scrollTo(anchorId, anchor: .top)
                         }
                         anchorMessageId = nil
-                    } else {
-                        scrollToBottom(proxy: proxy)
                     }
                 }
-                .onChange(of: isStreaming) { _, isNowStreaming in
-                    if isNowStreaming {
-                        scrollToBottom(proxy: proxy)
-                    }
+                .onChange(of: topicId) { _, _ in
+                    // defaultScrollAnchor(.bottom) handles initial positioning.
+                    // The asyncAfter nudge fights with it and can cause bounce — removed.
                 }
-                .onChange(of: showStreamingBubble) { _, isShowing in
-                    if isShowing {
-                        scrollToBottom(proxy: proxy)
-                    }
-                }
-                .onChange(of: thinkingState) { oldState, newState in
-                    BeeChatLogger.log("[ThinkingBee] MessageCanvas: thinkingState changed \(oldState) → \(newState)")
-                }
-                .onAppear {
-                    scrollToBottom(proxy: proxy)
+                .overlay(alignment: .bottomTrailing) {
+                    jumpToLatestButton(proxy: proxy)
                 }
             }
             .environment(\.canvasWidth, measuredWidth)
@@ -120,13 +134,36 @@ struct MessageCanvas: View {
         .frame(maxHeight: .infinity)
     }
 
-    private func scrollToBottom(proxy: ScrollViewProxy) {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            proxy.scrollTo("bottom-anchor", anchor: .bottom)
-        }
+    /// Jump-to-Latest button — fixed-size overlay, opacity-only transitions.
+    /// Takes the ScrollViewProxy directly so it works even though the button
+    /// lives outside the ScrollViewReader closure.
+    private func jumpToLatestButton(proxy: ScrollViewProxy) -> some View {
+        Color.clear
+            .frame(width: 48, height: 48)
+            .overlay {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                    }
+                    isAtBottom = true
+                }) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Jump to latest message")
+                .accessibilityHint("Scrolls to the most recent message")
+                .opacity(isAtBottom ? 0 : 1)
+                .allowsHitTesting(!isAtBottom)
+                .accessibilityHidden(isAtBottom)
+            }
+            .padding(.bottom, 12)
+            .padding(.trailing, 12)
     }
 }
-
 
 private struct WidthReader<Content: View>: View {
     var content: (CGFloat) -> Content
@@ -140,8 +177,56 @@ private struct WidthReader<Content: View>: View {
 
 /// Preference key for passing measured width up the view hierarchy.
 private struct WidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 1200
+    static var defaultValue: CGFloat = 1200
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+// MARK: - Scroll Geometry Compatibility (macOS 14+)
+
+/// Compatibility wrapper for `onScrollGeometryChange` which requires macOS 15+.
+/// On macOS 14, `isAtBottom` stays true (Jump button hidden, auto-scroll still works
+/// via `defaultScrollAnchor(.bottom)`).
+struct ScrollGeometry {
+    var contentSize: CGSize
+    var containerSize: CGSize
+    var contentOffset: CGPoint
+}
+
+extension View {
+    /// On macOS 15+/iOS 18+: uses native `onScrollGeometryChange` with two-closure pattern.
+    /// On older platforms: leaves state unchanged (auto-scroll via `defaultScrollAnchor(.bottom)` still works).
+    @ViewBuilder
+    func onScrollGeometryChangeCompat(
+        transform: @escaping (ScrollGeometry) -> Bool,
+        action: @escaping (_ oldValue: Bool, _ newValue: Bool) -> Void
+    ) -> some View {
+        if #available(macOS 15.0, iOS 18.0, *) {
+            self.onScrollGeometryChange(for: Bool.self) { geo in
+                let sg = ScrollGeometry(
+                    contentSize: geo.contentSize,
+                    containerSize: geo.containerSize,
+                    contentOffset: geo.contentOffset
+                )
+                return transform(sg)
+            } action: { oldValue, newValue in
+                action(oldValue, newValue)
+            }
+        } else {
+            // macOS 14 fallback: no onScrollGeometryChange available.
+            // defaultScrollAnchor(.bottom) handles auto-scroll.
+            // isAtBottom stays true (Jump button hidden).
+            self
+        }
+    }
+
+    @ViewBuilder
+    func scrollBounceBehaviorCompat(axes: Axis.Set) -> some View {
+        if #available(macOS 15.0, iOS 18.0, *) {
+            self.scrollBounceBehavior(.basedOnSize, axes: axes)
+        } else {
+            self
+        }
     }
 }

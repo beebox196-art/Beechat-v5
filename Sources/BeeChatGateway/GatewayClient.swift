@@ -1,6 +1,29 @@
+import os
 import Foundation
 
 public actor GatewayClient {
+    private let debugLogURL = URL(fileURLWithPath: "/Users/openclaw/Desktop/BeeChat-debug.log")
+    
+    private func debugLog(_ message: String) {
+        let df = ISO8601DateFormatter()
+        df.timeZone = TimeZone(identifier: "Europe/London")
+        let timestamp = df.string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+        if let data = line.data(using: .utf8) {
+            let fm = FileManager.default
+            if fm.fileExists(atPath: debugLogURL.path) {
+                if let handle = try? FileHandle(forWritingTo: debugLogURL) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                try? data.write(to: debugLogURL)
+            }
+        }
+        print("[GW] \(message)")
+    }
+    
     public struct Configuration: Sendable {
         public let url: String
         public let token: String
@@ -27,7 +50,16 @@ public actor GatewayClient {
             self.token = token
             self.deviceToken = deviceToken
             self.clientMode = clientMode
-            self.clientInfo = clientInfo ?? .init(id: "openclaw-macos", version: "1.0", platform: "macos", mode: clientMode)
+            let defaultClientInfo: ConnectParams.ClientInfo = {
+                #if os(iOS)
+                return .init(id: "openclaw-ios", version: "1.0", platform: "ios", mode: clientMode, deviceFamily: "mobile")
+                #elseif os(macOS)
+                return .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: clientMode, deviceFamily: "desktop")
+                #else
+                return .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: clientMode, deviceFamily: "desktop")
+                #endif
+            }()
+            self.clientInfo = clientInfo ?? defaultClientInfo
             self.requestTimeout = requestTimeout
             self.maxRetries = maxRetries
             self.baseRetryDelay = baseRetryDelay
@@ -46,6 +78,16 @@ public actor GatewayClient {
     private var _maxPayload: Int = 1048576
     private var currentDeviceToken: String?
     private var challengeNonce: String?
+    /// Stores the decoded hello-ok response for scope verification.
+    private var _helloResponse: HelloOk?
+    
+    /// Accessor for the hello-ok handshake response (scopes, deviceToken, etc.)
+    public var helloResponse: HelloOk? { _helloResponse }
+    
+    /// Returns the scopes granted in the handshake response.
+    public func grantedScopes() async -> [String] {
+        _helloResponse?.auth?.scopes ?? []
+    }
     
     private var eventContinuation: AsyncStream<(event: String, payload: [String: AnyCodable]?)>.Continuation?
     
@@ -90,6 +132,7 @@ public actor GatewayClient {
     }
     
     public func connect() async throws {
+        debugLog("connect() called — current state=\(state.rawValue)")
         handshakeContinuationResumed = false
         await disconnect()
         retryCount = 0
@@ -126,28 +169,77 @@ public actor GatewayClient {
         nextRequestId += 1
         let frame = RequestFrame(id: id, method: method, params: params)
         
-        return try await withCheckedThrowingContinuation { continuation in
-            Task {
-                await pendingRequests.add(id: id, timeout: config.requestTimeout, resolve: { payload in
-                    continuation.resume(returning: payload)
-                }, reject: { error in
-                    continuation.resume(throwing: error)
-                })
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Atomic guard against double-resume. OSAllocatedUnfairLock provides
+                // thread-safe access across actor boundaries (resolve/reject closures run
+                // on PendingRequestMap's actor; catch block runs on calling Task's executor).
+                let hasResumed = OSAllocatedUnfairLock(initialState: false)
                 
-                do {
-                    let data = try JSONEncoder().encode(frame)
-                    guard let text = String(data: data, encoding: .utf8) else {
-                        let error = NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode request frame as UTF-8"])
-                        await pendingRequests.remove(id: id, reason: error.localizedDescription)
-                        continuation.resume(throwing: error)
-                        return
+                Task {
+                    await self.pendingRequests.add(id: id, timeout: self.config.requestTimeout, resolve: { payload in
+                        let shouldResume = hasResumed.withLock { flag -> Bool in
+                            if flag { return false }
+                            flag = true
+                            return true
+                        }
+                        if shouldResume {
+                            continuation.resume(returning: payload)
+                        }
+                    }, reject: { error in
+                        let shouldResume = hasResumed.withLock { flag -> Bool in
+                            if flag { return false }
+                            flag = true
+                            return true
+                        }
+                        if shouldResume {
+                            continuation.resume(throwing: error)
+                        }
+                    })
+                    
+                    do {
+                        let data = try JSONEncoder().encode(frame)
+                        guard let text = String(data: data, encoding: .utf8) else {
+                            let error = NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode request frame as UTF-8"])
+                            let alreadyHandled = await self.pendingRequests.remove(id: id, reason: error.localizedDescription)
+                            if !alreadyHandled {
+                                let shouldResume = hasResumed.withLock { flag -> Bool in
+                                    if flag { return false }
+                                    flag = true
+                                    return true
+                                }
+                                if shouldResume {
+                                    continuation.resume(throwing: error)
+                                }
+                            }
+                            return
+                        }
+                        try await self.transport.send(text)
+                    } catch {
+                        let alreadyHandled = await self.pendingRequests.remove(id: id, reason: error.localizedDescription)
+                        if !alreadyHandled {
+                            let shouldResume = hasResumed.withLock { flag -> Bool in
+                                if flag { return false }
+                                flag = true
+                                return true
+                            }
+                            if shouldResume {
+                                continuation.resume(throwing: error)
+                            }
+                        }
                     }
-                    try await transport.send(text) 
-                } catch {
-                    await pendingRequests.remove(id: id, reason: error.localizedDescription)
-                    continuation.resume(throwing: error)
                 }
             }
+        } onCancel: { [weak self] in
+            guard let self else { return }
+            // Fire-and-forget: onCancel is synchronous so we can't await actor methods.
+            // The remove() call will reject the pending request if it exists, which
+            // resumes the continuation via the reject callback. If the entry doesn't
+            // exist yet (cancel fired before add()), remove() is a no-op and the
+            // continuation will be resumed by timeout instead. This window is
+            // extremely narrow (one actor hop) and the fallback is bounded by
+            // requestTimeout.
+            Task { await self.pendingRequests.remove(id: id, reason: "Request cancelled") }
         }
     }
     
@@ -159,6 +251,7 @@ public actor GatewayClient {
     
     private func performConnect() async {
         updateState(.connecting)
+        debugLog("performConnect — url=\(config.url) client=\(config.clientInfo.id) mode=\(config.clientInfo.mode)")
         
         guard let url = URL(string: "\(config.url)?token=\(config.token)") else {
             failHandshake("Invalid gateway URL")
@@ -173,6 +266,7 @@ public actor GatewayClient {
         }
         
         transport.connect(url: url, origin: origin)
+        debugLog("transport.connect called — url=\(url.absoluteString) origin=\(origin)")
         
         transport.onClose = { [weak self] code, reason in
             Task { await self?.handleClose(code: code, reason: reason) }
@@ -180,6 +274,7 @@ public actor GatewayClient {
         
         Task {
             do {
+                debugLog("receiveMessages loop starting — state=\(self.state.rawValue)")
                 while self.state != .disconnected && self.state != .error {
                     let message = try await self.transport.receive()
                     switch message {
@@ -221,11 +316,12 @@ public actor GatewayClient {
                 break
             }
         } catch {
-            print("[GW] handleMessage decode error: \(error)")
+            debugLog("handleMessage decode error: \(error)")
         }
     }
     
     private func handleEvent(_ frame: EventFrame) async {
+        debugLog("handleEvent — event=\(frame.event)")
         if frame.event == "connect.challenge" {
             self.challengeNonce = frame.payload?["nonce"]?.value as? String
             await performHandshake()
@@ -252,6 +348,7 @@ public actor GatewayClient {
     }
     
     private func succeedHandshake() {
+        debugLog("succeedHandshake — resuming continuation")
         guard !handshakeContinuationResumed, let cont = handshakeContinuation else { return }
         handshakeContinuationResumed = true
         handshakeContinuation = nil
@@ -259,6 +356,7 @@ public actor GatewayClient {
     }
     
     private func failHandshake(_ message: String, code: Int = -1) {
+        debugLog("failHandshake — message=\(message) code=\(code)")
         guard !handshakeContinuationResumed, let cont = handshakeContinuation else { return }
         handshakeContinuationResumed = true
         handshakeContinuation = nil
@@ -268,10 +366,12 @@ public actor GatewayClient {
     private func resolveHandshake(_ frame: ResponseFrame) async {
         if !frame.ok {
             let msg = frame.error?.message ?? "unknown error"
+            debugLog("Handshake rejected: \(msg)")
             updateState(.error)
             failHandshake("Handshake failed: \(msg)", code: -2)
             return
         }
+        debugLog("Handshake response OK, decoding...")
         
         var helloOk: HelloOk?
         
@@ -280,7 +380,7 @@ public actor GatewayClient {
             do {
                 helloOk = try JSONDecoder().decode(HelloOk.self, from: rawData)
             } catch {
-                print("[GW] Handshake decode from rawData failed: \(error)")
+                debugLog("Handshake decode from rawData failed: \(error)")
             }
         }
         
@@ -290,7 +390,7 @@ public actor GatewayClient {
                 let encoded = try JSONEncoder().encode(payload)
                 helloOk = try JSONDecoder().decode(HelloOk.self, from: encoded)
             } catch {
-                print("[GW] Handshake decode from payload failed: \(error)")
+                debugLog("Handshake decode from payload failed: \(error)")
             }
         }
         
@@ -301,13 +401,14 @@ public actor GatewayClient {
         
         if let helloOk = helloOk {
             self._maxPayload = helloOk.policy.maxPayload
+            self._helloResponse = helloOk
             
             if let deviceToken = helloOk.auth?.deviceToken {
                 self.currentDeviceToken = deviceToken
                 do {
                     try tokenStore.setDeviceToken(deviceToken)
                 } catch {
-                    print("[GW] Failed to store device token: \(error)")
+                    debugLog("Failed to store device token: \(error)")
                 }
                 onDeviceToken?(deviceToken)
             }
@@ -319,7 +420,7 @@ public actor GatewayClient {
     }
     
     private func manuallyDecodeHelloOk(payload: [String: AnyCodable]) -> HelloOk? {
-        let protocolVersion = (payload["protocol"]?.value as? Int) ?? 3
+        let protocolVersion = (payload["protocol"]?.value as? Int) ?? 4
         let maxPayload = (payload["policy"]?.value as? [String: Any])?["maxPayload"] as? Int
             ?? (payload["policy"]?.value as? [String: AnyCodable])?["maxPayload"]?.value as? Int
             ?? 1048576
@@ -391,40 +492,48 @@ public actor GatewayClient {
         let role = "operator"
         let scopes = ["operator.read", "operator.write", "operator.admin", "operator.approvals", "operator.pairing"]
         
-        // Build device identity only when we have a stored deviceToken
+        // ALWAYS build device identity — needed for pairing flow on first connect.
+        // Without device identity, the gateway clears scopes (except for Control UI clients).
+        // With device identity, local connections get auto-paired and full scopes.
         var deviceIdentity: ConnectParams.DeviceIdentity? = nil
-        if currentDeviceToken != nil {
-            print("[GW] performHandshake — building device identity (have deviceToken)")
-            do {
-                let keyPair = try DeviceCrypto.getOrCreateKeyPair()
-                let deviceId = DeviceCrypto.getDeviceId(keyPair)
-                let publicKey = DeviceCrypto.exportPublicKey(keyPair)
-                let signedAt = Int(Date().timeIntervalSince1970 * 1000)
-                
-                let signature = try DeviceCrypto.signChallenge(
-                    keyPair,
-                    deviceId: deviceId,
-                    clientId: config.clientInfo.id,
-                    clientMode: config.clientInfo.mode,
-                    role: role,
-                    scopes: scopes,
-                    signedAtMs: signedAt,
-                    token: config.token,
-                    nonce: nonce,
-                    platform: "macos",
-                    deviceFamily: "desktop"
-                )
-                
-                deviceIdentity = ConnectParams.DeviceIdentity(
-                    id: deviceId,
-                    publicKey: publicKey,
-                    signature: signature,
-                    signedAt: signedAt,
-                    nonce: nonce
-                )
-            } catch {
-                print("[GW] Device identity build failed: \(error)")
-            }
+        do {
+            let keyPair = try DeviceCrypto.getOrCreateKeyPair()
+            let deviceId = DeviceCrypto.getDeviceId(keyPair)
+            let publicKey = DeviceCrypto.exportPublicKey(keyPair)
+            let signedAt = Int(Date().timeIntervalSince1970 * 1000)
+            
+            let signature = try DeviceCrypto.signChallenge(
+                keyPair,
+                deviceId: deviceId,
+                clientId: config.clientInfo.id,
+                clientMode: config.clientInfo.mode,
+                role: role,
+                scopes: scopes,
+                signedAtMs: signedAt,
+                token: config.token,
+                nonce: nonce,
+                platform: config.clientInfo.platform,
+                deviceFamily: config.clientInfo.deviceFamily ?? {
+                    #if os(iOS)
+                    return "mobile"
+                    #elseif os(macOS)
+                    return "desktop"
+                    #else
+                    return "desktop"
+                    #endif
+                }()
+            )
+            
+            deviceIdentity = ConnectParams.DeviceIdentity(
+                id: deviceId,
+                publicKey: publicKey,
+                signature: signature,
+                signedAt: signedAt,
+                nonce: nonce
+            )
+        } catch {
+            debugLog("Device identity build failed: \(error)")
+            // Connection will proceed without device identity, but scopes may be limited
         }
         
         let params = ConnectParams(
@@ -439,7 +548,15 @@ public actor GatewayClient {
                 deviceToken: currentDeviceToken
             ),
             locale: Locale.current.identifier,
-            userAgent: "BeeChat/1.0 (macOS)",
+            userAgent: {
+                #if os(iOS)
+                return "BeeChat/1.0 (iOS)"
+                #elseif os(macOS)
+                return "BeeChat/1.0 (macOS)"
+                #else
+                return "BeeChat/1.0 (macOS)"
+                #endif
+            }(),
             device: deviceIdentity
         )
         
@@ -449,6 +566,7 @@ public actor GatewayClient {
             guard let text = String(data: data, encoding: .utf8) else {
                 throw NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode handshake frame as UTF-8"])
             }
+            debugLog("Sending handshake: \(text.prefix(500))")
             try await transport.send(text)
             
             let timeoutSeconds = config.requestTimeout
@@ -466,6 +584,7 @@ public actor GatewayClient {
     }
     
     private func handleTransportError(_ error: Error) async {
+        debugLog("Transport error: \(error.localizedDescription) — state=\(state.rawValue)")
         if state == .connecting || state == .handshaking {
             updateState(.error)
             failHandshake("Connection failed: \(error.localizedDescription)", code: -7)

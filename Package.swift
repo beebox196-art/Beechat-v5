@@ -1,10 +1,11 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
     name: "BeeChatPersistence",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
+        .iOS(.v17)
     ],
     products: [
         .library(
@@ -16,10 +17,13 @@ let package = Package(
         .library(
             name: "BeeChatSyncBridge",
             targets: ["BeeChatSyncBridge"]),
+        .library(
+            name: "BeeBoard",
+            targets: ["BeeBoard"]),
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
-        .package(url: "https://github.com/kevinhermawan/ChatField", from: "3.0.4"),
+        .package(path: "Vendors/ChatField"),
     ],
     targets: [
         .target(
@@ -27,10 +31,14 @@ let package = Package(
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift")
             ],
-            path: "Sources/BeeChatPersistence"),
+            path: "Sources/BeeChatPersistence",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
         .target(
             name: "BeeChatGateway",
-            path: "Sources/BeeChatGateway"),
+            path: "Sources/BeeChatGateway",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
         .target(
             name: "BeeChatSyncBridge",
             dependencies: [
@@ -38,19 +46,36 @@ let package = Package(
                 .target(name: "BeeChatPersistence"),
                 .target(name: "BeeChatGateway"),
             ],
-            path: "Sources/BeeChatSyncBridge"),
+            path: "Sources/BeeChatSyncBridge",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
+        .target(
+            name: "BeeBoard",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+                .target(name: "BeeChatPersistence"),
+            ],
+            path: "Sources/BeeBoard",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
         .testTarget(
             name: "BeeChatPersistenceTests",
             dependencies: ["BeeChatPersistence"],
-            path: "Tests/BeeChatPersistenceTests"),
+            path: "Tests/BeeChatPersistenceTests",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
         .testTarget(
             name: "BeeChatGatewayTests",
             dependencies: ["BeeChatGateway"],
-            path: "Tests/BeeChatGatewayTests"),
+            path: "Tests/BeeChatGatewayTests",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
         .testTarget(
             name: "BeeChatSyncBridgeTests",
             dependencies: ["BeeChatSyncBridge", "BeeChatPersistence", "BeeChatGateway"],
-            path: "Tests/BeeChatSyncBridgeTests"),
+            path: "Tests/BeeChatSyncBridgeTests",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
         .executableTarget(
             name: "BeeChatIntegrationTest",
             dependencies: [
@@ -58,18 +83,29 @@ let package = Package(
                 .target(name: "BeeChatGateway"),
                 .target(name: "BeeChatSyncBridge"),
             ],
-            path: "Sources/BeeChatIntegrationTest"),
+            path: "Sources/BeeChatIntegrationTest",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
         .executableTarget(
             name: "BeeChatApp",
             dependencies: [
                 .target(name: "BeeChatPersistence"),
                 .target(name: "BeeChatGateway"),
                 .target(name: "BeeChatSyncBridge"),
+                .target(name: "BeeBoard"),
                 .product(name: "ChatField", package: "ChatField"),
             ],
             path: "Sources/App",
             resources: [
                 .process("Assets.xcassets"),
-            ]),
+            ],
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
+        .testTarget(
+            name: "BeeChatAppTests",
+            dependencies: ["BeeChatApp"],
+            path: "Tests/BeeChatAppTests",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
     ]
 )
