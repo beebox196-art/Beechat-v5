@@ -97,7 +97,7 @@ final class AppState {
 
                             // Topic sync now via REST endpoint (see TopicServer.swift)
 
-                            Task {
+                            connectionStateTask = Task {
                                 let stream = await bridge.connectionStateStream()
                                 for await state in stream {
                                     self.connectionState = state
@@ -135,7 +135,7 @@ final class AppState {
     func reconnect() {
         // Guard 1: no bridge to reconnect with
         guard syncBridge != nil else { return }
-        // Guard 2: already reconnecting (Kieran MAJOR #1 — prevents race on rapid taps)
+        // Guard 2: already reconnecting — prevents race on rapid taps
         guard connectionState != .connecting && connectionState != .handshaking else { return }
         // Set state SYNCHRONOUSLY before any await — closes the re-entrancy window
         connectionState = .connecting
@@ -150,7 +150,7 @@ final class AppState {
                 await bridge.stop()
             }
 
-            // Cancel old connection state subscription (Kieran MAJOR #2 — prevents state clobbering)
+            // Cancel old connection state subscription — prevents state clobbering
             connectionStateTask?.cancel()
             connectionStateTask = nil
 

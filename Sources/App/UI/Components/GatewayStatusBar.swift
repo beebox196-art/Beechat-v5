@@ -12,7 +12,7 @@ struct GatewayStatusBar: View {
     }
 
     private var isTappable: Bool {
-        // Kieran MINOR #1 — don't show tappable state during initialisation
+        // Don't show tappable state during initialisation
         appState.isStartupComplete && (connectionState == .disconnected || connectionState == .error)
     }
 
