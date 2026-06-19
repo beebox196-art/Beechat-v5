@@ -1,6 +1,6 @@
 # BeeChat-v5 Status
 
-Updated: 2026-06-16 22:00 GMT+1
+Updated: 2026-06-19 15:00 GMT+1
 
 ## Current Build
 
@@ -42,7 +42,7 @@ Updated: 2026-06-16 22:00 GMT+1
 |---|---|---|---|
 | KI-1 | Streaming bounce on new-message compile (minor, all topics) | Low | Accepted known issue |
 | KI-2 | KeychainTokenStoreTests/SyncBridgeTests hang in headless env | Low | Pre-existing, needs MockTokenStore |
-| KI-3 | Tap-to-reconnect on offline banner not implemented | Medium | Feature gap (never built) |
+| KI-3 | Tap-to-reconnect on offline banner not implemented | Medium | ✅ FIXED — FR-002 built, reviewed, smoke-tested |
 | KI-4 | BeeChatLogger not exported from BeeChatSyncBridge | Low | Forces print() in SyncBridge code |
 
 ## Feature Inventory (develop @ 94164d3)
@@ -61,7 +61,7 @@ Updated: 2026-06-16 22:00 GMT+1
 - ✅ Orange dot clears after manual reset
 - ✅ BeeBoard Archive (archive/restore pins, Active/Archived view)
 - ❌ D2 message list diff-guard (4-field manual compare still on develop)
-- ❌ Tap-to-reconnect on offline banner
+- ✅ Tap-to-reconnect on offline banner (FR-002)
 
 ## Reviews Pending
 
@@ -75,7 +75,7 @@ Updated: 2026-06-16 22:00 GMT+1
 | ID | Feature | Notes | Owner |
 |---|---|---|---|
 | FR-1 | Font size scaling | Adjustable font size + proportional sidebar width. High-res display makes text too small. Minimal disruption — scale factor through ThemeManager tokens. | Mel (scope) |
-| FR-2 | Tap-to-reconnect | Spec: `Docs/Specs/Active/FR-002-TAP-TO-RECONNECT.md`. Tap status bar when offline → reconnect. 2 files, ~40 lines. Pending Kieran review → Q build. | Q |
+| FR-2 | Tap-to-reconnect | Spec reviewed (Kieran PASS WITH CHANGES). Q building on `feature/FR-002-tap-to-reconnect` branch. 2 files, ~40 lines. | Q |
 | FR-3 | D2 message list diff-guard | Replace 4-field manual compare | Q |
 
 ## Pre-Merge Checklist (develop → main)
