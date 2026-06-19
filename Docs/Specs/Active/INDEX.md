@@ -7,7 +7,8 @@
 
 | Spec | Description | Status |
 |------|-------------|--------|
-| `FR-002-TAP-TO-RECONNECT.md` | Tap status bar to reconnect when offline | PASS WITH CHANGES — ready for Q to build |
+| `FR-002-TAP-TO-RECONNECT.md` | Tap status bar to reconnect when offline | ✅ MERGED v0.9.1 |
+| `FR-003-RESEARCH-PIPELINE.md` | Server-side research pipeline triggered by `/research` command | Pending team review |
 | `FOLDER-FAVOURITES-SPEC.md` | Favourite folders in sidebar | Feature request, pending scope |
 | `BASELINE-PLAN.md` | Baseline stabilisation plan | Draft, pending approval |
 
