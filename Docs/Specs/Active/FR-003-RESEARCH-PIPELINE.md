@@ -1,7 +1,7 @@
 # FR-003: Research Pipeline
 
 **Priority:** High
-**Status:** Spec — pending team review
+**Status:** Spec — Kieran reviewed (Approve with conditions, all applied). Updated to include minimal BeeChat research panel per Adam feedback.
 **Author:** Bee (synthesised from Gav + Kieran input)
 **Date:** 2026-06-19
 **Predecessor:** FR-002 (tap-to-reconnect, merged v0.9.1)
@@ -15,29 +15,43 @@ Research is currently ad-hoc. Adam drops a link or topic into Telegram, Bee or G
 
 ## Solution
 
-A **server-side research pipeline** triggered by a slash command. The intelligence lives in OpenClaw (a new skill), not in BeeChat's UI. Zero Swift changes for MVP.
+A **server-side research pipeline** with two entry points: a minimal research panel in BeeChat (text field + depth selector — no syntax to remember) and a slash command for power users. The intelligence lives in OpenClaw (a new skill), not in BeeChat's UI.
 
-**Principle:** BeeChat stays thin. The pipeline is a skill. The trigger is text.
+**Principle:** The pipeline is a server-side skill. BeeChat provides a minimal research panel that constructs the same text payload — no syntax to remember, no shared package changes.
 
 ## Trigger
 
-### Slash command (BeeChat composer)
+### BeeChat research panel (primary entry point)
 
+A minimal UI panel in BeeChat — accessible from the sidebar or a toolbar button:
+
+- **Text field:** Paste a link, topic, or idea (multi-line supported)
+- **Depth selector:** Three buttons — Quick Scan / Standard / Deep Dive (default: Standard)
+- **Tags field:** Optional, free text, comma-separated
+- **Submit button:** Sends the research request
+
+Under the hood, the panel constructs the same text payload (e.g. `/research --depth standard "topic" --tags topcon,competitor`) and sends it through the existing WebSocket. No new message types, no shared package changes, no state management beyond the UI controls themselves.
+
+**SwiftUI estimate:** ~60 lines in a new `ResearchPanel.swift` view (Mac-only, `Sources/App/UI/`). Does not touch BeeChatSyncBridge, BeeChatPersistence, or any shared package. The depth selector and tags field are local `@State` — no AppState changes, no environment object additions.
+
+### Slash command (power user / fallback)
+
+For users who prefer typing, the slash command still works in the existing composer:
 ```
 /research "Topcon positioning market share"              — defaults (standard, HTML)
 /research --depth quick "latest AI news today"            — quick scan, chat brief
 /research --depth deep "PulseChain 2026 roadmap"          — deep dive, HTML report
-/research --format brief "quantum computing 2026"         — chat summary, no HTML
-/research --tags topcon,competitor "Topcon SDK APIs"       — tag for KB findability
 ```
 
-### Telegram command (mobile entry path)
+### Telegram command (transitional mobile entry path)
 
-Same syntax, same pipeline:
+Same syntax, same pipeline — until BeeChat Mobile replaces Telegram:
 ```
 /research "topic"                    — defaults
 /research --depth deep "topic"       — deep dive
 ```
+
+**The research panel and slash command produce the same payload.** The panel is just a friendlier way to construct it — no syntax to remember.
 
 ### Defaults
 
@@ -277,10 +291,12 @@ If Sag already captured relevant X/Twitter signal, use it instead of re-searchin
 | `~/.openclaw/workspace/skills/research-pipeline/templates/report.html` | HTML template | New |
 | `~/.openclaw/workspace/skills/research-pipeline/scripts/ingest.py` | KB ingestion script | New |
 | `~/.openclaw/workspace/skills/research-pipeline/data/research-index.json` | Research log | New |
+| `Sources/App/UI/ResearchPanel.swift` | Minimal research panel (text field + depth selector + tags + submit) | New (~60 lines) |
+| `Sources/App/UI/Components/Sidebar.swift` or toolbar | Button to open research panel | Modified (~5 lines) |
 | Bee routing (internal) | `/research` command parsing | Config |
 | `~/Desktop/Research Reports/` | Output directory | New (filesystem) |
 
-**Total: 0 Swift files changed. All work is in OpenClaw skills + Bee routing.**
+**Swift changes: 1 new file (~60 lines) + 1 small modification (~5 lines). No shared package changes. No BeeChatSyncBridge or BeeChatPersistence changes.**
 
 ## Review Checklist
 
