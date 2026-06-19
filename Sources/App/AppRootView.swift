@@ -55,6 +55,7 @@ final class AppState {
     var offlineStatus: String?
 
     private var hasStarted = false
+    private var connectionStateTask: Task<Void, Never>?
 
     init() {}
 
@@ -127,6 +128,68 @@ final class AppState {
                 self.errorMessage = error.localizedDescription
                 self.connectionState = .error
                 print("[AppState]  Startup failed: \(error)")
+            }
+        }
+    }
+
+    func reconnect() {
+        // Guard 1: no bridge to reconnect with
+        guard syncBridge != nil else { return }
+        // Guard 2: already reconnecting (Kieran MAJOR #1 — prevents race on rapid taps)
+        guard connectionState != .connecting && connectionState != .handshaking else { return }
+        // Set state SYNCHRONOUSLY before any await — closes the re-entrancy window
+        connectionState = .connecting
+
+        Task {
+            // Clear stale error state
+            offlineStatus = nil
+            errorMessage = nil
+
+            // Stop existing bridge
+            if let bridge = syncBridge {
+                await bridge.stop()
+            }
+
+            // Cancel old connection state subscription (Kieran MAJOR #2 — prevents state clobbering)
+            connectionStateTask?.cancel()
+            connectionStateTask = nil
+
+            // Rebuild and reconnect (same path as startup, minus DB init)
+            let configPath = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".openclaw/openclaw.json")
+
+            guard FileManager.default.fileExists(atPath: configPath.path) else {
+                connectionState = .error
+                offlineStatus = "Offline — no gateway config found"
+                return
+            }
+
+            do {
+                let gatewayConfig = try loadGatewayConfig(from: configPath)
+                let tokenStore = KeychainTokenStore()
+                let gatewayClient = GatewayClient(config: gatewayConfig, tokenStore: tokenStore)
+                let persistenceStore = BeeChatPersistenceStore(dbManager: DatabaseManager.shared)
+                let config = SyncBridgeConfiguration(
+                    gatewayClient: gatewayClient,
+                    persistenceStore: persistenceStore
+                )
+                let bridge = SyncBridge(config: config)
+                self.syncBridge = bridge
+
+                try await bridge.start()
+                connectionState = .connected
+                isStartupComplete = true
+
+                // Subscribe to live connection state — store the Task for cancellation on next reconnect
+                connectionStateTask = Task {
+                    let stream = await bridge.connectionStateStream()
+                    for await state in stream {
+                        self.connectionState = state
+                    }
+                }
+            } catch {
+                connectionState = .error
+                offlineStatus = "Offline — \(error.localizedDescription)"
             }
         }
     }
