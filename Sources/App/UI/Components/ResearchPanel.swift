@@ -105,7 +105,9 @@ struct ResearchPanel: View {
 
                     Picker("Depth", selection: $selectedDepth) {
                         ForEach(ResearchDepth.allCases, id: \.self) { depth in
-                            Text(depth.displayName).tag(depth)
+                            Text(depth.displayName)
+                                .tag(depth)
+                                .accessibilityLabel(depth.accessibilityLabel)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -177,7 +179,8 @@ struct ResearchPanel: View {
         let tagsFlag = tagsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? ""
             : " --tags \(tagsText.trimmingCharacters(in: .whitespacesAndNewlines))"
-        let payload = "/research \(depthFlag) \"\(trimmedTopic)\"\(tagsFlag)"
+        let escapedTopic = trimmedTopic.replacingOccurrences(of: "\"", with: "\\\"")
+        let payload = "/research \(depthFlag) \"\(escapedTopic)\"\(tagsFlag)"
 
         composerViewModel.sendPayload(payload)
         dismiss()
