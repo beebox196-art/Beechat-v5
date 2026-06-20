@@ -1,6 +1,6 @@
 # Active Specs Index — BeeChat-v5
 
-**Last Updated:** 2026-06-19
+**Last Updated:** 2026-06-20
 **Total Active:** 8 specs (+ 2 re-org plans + this index)
 
 ## Active Feature Specs
@@ -8,7 +8,7 @@
 | Spec | Description | Status |
 |------|-------------|--------|
 | `FR-002-TAP-TO-RECONNECT.md` | Tap status bar to reconnect when offline | ✅ MERGED v0.9.1 |
-| `FR-003-RESEARCH-PIPELINE.md` | Server-side research pipeline triggered by `/research` command | Pending team review |
+| `FR-003-RESEARCH-PIPELINE.md` | Server-side research pipeline triggered by `/research` command | ✅ MERGED v0.9.2 |
 | `FOLDER-FAVOURITES-SPEC.md` | Favourite folders in sidebar | Feature request, pending scope |
 | `BASELINE-PLAN.md` | Baseline stabilisation plan | Draft, pending approval |
 
