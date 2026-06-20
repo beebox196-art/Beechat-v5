@@ -25,6 +25,7 @@ struct MainWindow: View {
     @State private var showFolderPicker = false
     @State private var showAgentActivity = false
     @State private var showBeeBoard = false
+    @State private var showResearchPanel = false
     /// Wrapper for sheet(item:) presentation — avoids stale capture issues with .sheet(isPresented:)
     struct EditTopicTarget: Identifiable {
         let id: String
@@ -113,6 +114,18 @@ struct MainWindow: View {
                     .help("Change Theme")
                     .accessibilityLabel("Appearance")
                     .accessibilityHint("Change app theme")
+
+                    Button(action: { showResearchPanel = true }) {
+                        Image(systemName: "magnifyingglass")
+                            .font(themeManager.font(.body))
+                            .foregroundColor(themeManager.color(.textSecondary))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Research")
+                    .accessibilityLabel("Research")
+                    .accessibilityHint("Open research panel")
+                    .disabled(messageViewModel.selectedTopicId == nil)
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
 
                     if messageViewModel.selectedTopicId != nil {
                         Button(action: {
@@ -270,6 +283,10 @@ struct MainWindow: View {
         }
         .sheet(isPresented: $showBeeBoard) {
             BeeBoardSheet()
+                .environment(themeManager)
+        }
+        .sheet(isPresented: $showResearchPanel) {
+            ResearchPanel(composerViewModel: composerViewModel)
                 .environment(themeManager)
         }
         .sheet(item: $editTopicTarget) { target in
