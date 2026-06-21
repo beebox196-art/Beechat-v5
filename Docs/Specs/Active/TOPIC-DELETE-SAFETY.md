@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-27
 **Author:** Bee
-**Status:** DRAFT — awaiting Kieran review
+**Status:** DRAFT — urgent portion superseded by `FR-004-URGENT-DELETE-CONFIRM.md` (2026-06-21). Archive-flow portion (Feature 2) still pending and is the basis for the v0.9.4 spec.
 
 ---
 

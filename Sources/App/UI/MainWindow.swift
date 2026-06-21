@@ -17,6 +17,10 @@ struct MainWindow: View {
 
     @State private var showDeleteAlert = false
     @State private var deleteErrorMsg: String?
+    // FR-004: confirm-gate state for the 3 delete paths (trash, keyboard, notification).
+    // Separate from `showDeleteAlert`/`deleteErrorMsg` (which are for *post-delete* error reporting).
+    @State private var pendingDeleteTopicId: String? = nil
+    @State private var showDeleteConfirmAlert: Bool = false
     @State private var showResetAlert = false
     @State private var resetTargetSessionKey: String? = nil
     @State private var showResetErrorAlert = false
@@ -130,7 +134,7 @@ struct MainWindow: View {
                     if messageViewModel.selectedTopicId != nil {
                         Button(action: {
                             if let id = messageViewModel.selectedTopicId {
-                                deleteTopic(id)
+                                requestDeleteTopic(id)
                             }
                         }) {
                             Image(systemName: "trash")
@@ -152,14 +156,14 @@ struct MainWindow: View {
             .background(themeManager.color(.bgSurface))
             .onKeyPress(.delete) {
                 if let id = messageViewModel.selectedTopicId {
-                    deleteTopic(id)
+                    requestDeleteTopic(id)
                     return .handled
                 }
                 return .ignored
             }
             .onReceive(NotificationCenter.default.publisher(for: .deleteSelectedTopic)) { _ in
                 if let id = messageViewModel.selectedTopicId {
-                    deleteTopic(id)
+                    requestDeleteTopic(id)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .newTopic)) { _ in
@@ -269,6 +273,18 @@ struct MainWindow: View {
             Text(resetErrorMsg ?? "Could not reset session. Please check your connection.")
         }
         .resetSessionAlert(isPresented: $showResetAlert, resetError: $resetErrorMsg, showError: $showResetErrorAlert, sessionKey: resetTargetSessionKey, bridge: appState.syncBridge)
+        .deleteTopicConfirmAlert(
+            isPresented: $showDeleteConfirmAlert,
+            topicId: pendingDeleteTopicId,
+            topicName: messageViewModel.selectedTopic?.title,
+            messageCount: messageViewModel.selectedTopic?.messageCount ?? 0,
+            onConfirm: {
+                if let id = pendingDeleteTopicId {
+                    deleteTopic(id)
+                    pendingDeleteTopicId = nil
+                }
+            }
+        )
         .sheet(isPresented: $showThemePicker) {
             ThemePicker()
                 .environment(themeManager)
@@ -446,6 +462,13 @@ struct MainWindow: View {
                 }
             }
         }
+    }
+
+    // FR-004: Gate the delete behind a native SwiftUI confirmation alert.
+    // The alert is wired in body via `.deleteTopicConfirmAlert(...)`; on confirm it calls `deleteTopic(_:)`.
+    private func requestDeleteTopic(_ id: String) {
+        pendingDeleteTopicId = id
+        showDeleteConfirmAlert = true
     }
 
     private func deleteTopic(_ id: String) {
@@ -697,5 +720,50 @@ struct ResetSessionAlertModifier: ViewModifier {
 extension View {
     func resetSessionAlert(isPresented: Binding<Bool>, resetError: Binding<String?>, showError: Binding<Bool>, sessionKey: String?, bridge: SyncBridge?) -> some View {
         modifier(ResetSessionAlertModifier(isPresented: isPresented, resetError: resetError, showError: showError, sessionKey: sessionKey, bridge: bridge))
+    }
+}
+
+// MARK: - Delete Topic Confirm Modifier (FR-004)
+
+struct DeleteTopicConfirmAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let topicId: String?
+    let topicName: String?
+    let messageCount: Int
+    let onConfirm: () -> Void
+
+    func body(content: Content) -> some View {
+        content.alert("Delete \(topicName ?? "topic")?", isPresented: $isPresented) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                onConfirm()
+            }
+        } message: {
+            if messageCount == 0 {
+                Text("This topic is empty. This cannot be undone.")
+            } else if messageCount == 1 {
+                Text("This topic has 1 message. This cannot be undone.")
+            } else {
+                Text("This topic has \(messageCount) messages. This cannot be undone.")
+            }
+        }
+    }
+}
+
+extension View {
+    func deleteTopicConfirmAlert(
+        isPresented: Binding<Bool>,
+        topicId: String?,
+        topicName: String?,
+        messageCount: Int,
+        onConfirm: @escaping () -> Void
+    ) -> some View {
+        modifier(DeleteTopicConfirmAlertModifier(
+            isPresented: isPresented,
+            topicId: topicId,
+            topicName: topicName,
+            messageCount: messageCount,
+            onConfirm: onConfirm
+        ))
     }
 }
