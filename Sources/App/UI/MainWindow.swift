@@ -57,6 +57,14 @@ struct MainWindow: View {
         )
     }
 
+    // FR-004 (Kieran re-review): single source of truth for the pending-delete topic lookup.
+    // Used by the `.deleteTopicConfirmAlert(...)` modifier in `body` below for both `topicName`
+    // and `messageCount` — keeps the predicate in one place and the O(n) topics scan out of
+    // duplicated argument lists.
+    private var pendingTopic: TopicViewModel? {
+        messageViewModel.topics.first(where: { $0.id == pendingDeleteTopicId })
+    }
+
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
@@ -275,11 +283,13 @@ struct MainWindow: View {
         .resetSessionAlert(isPresented: $showResetAlert, resetError: $resetErrorMsg, showError: $showResetErrorAlert, sessionKey: resetTargetSessionKey, bridge: appState.syncBridge)
         .deleteTopicConfirmAlert(
             isPresented: $showDeleteConfirmAlert,
-            // FR-004 fix (Kieran finding 1): bind displayed name/count to the *pending* delete target,
-            // not the live sidebar selection. If Adam switches selection while the alert is open,
-            // the alert text must still describe the topic that will actually be deleted.
-            topicName: messageViewModel.topics.first(where: { $0.id == pendingDeleteTopicId })?.title,
-            messageCount: messageViewModel.topics.first(where: { $0.id == pendingDeleteTopicId })?.messageCount ?? 0,
+            // FR-004 (Kieran re-review): `pendingTopic` is a single computed lookup — see the
+            // private computed property below. It binds to the *pending* delete target
+            // (`pendingDeleteTopicId`), not the live sidebar selection: if Adam switches
+            // selection while the alert is open, the alert text must still describe the
+            // topic that will actually be deleted.
+            topicName: pendingTopic?.title,
+            messageCount: pendingTopic?.messageCount ?? 0,
             onConfirm: {
                 if let id = pendingDeleteTopicId {
                     deleteTopic(id)

@@ -107,7 +107,6 @@ private func requestDeleteTopic(_ id: String) {
 
 struct DeleteTopicConfirmAlertModifier: ViewModifier {
     @Binding var isPresented: Bool
-    let topicId: String?
     let topicName: String?
     let messageCount: Int
     let onConfirm: () -> Void
@@ -133,14 +132,12 @@ struct DeleteTopicConfirmAlertModifier: ViewModifier {
 extension View {
     func deleteTopicConfirmAlert(
         isPresented: Binding<Bool>,
-        topicId: String?,
         topicName: String?,
         messageCount: Int,
         onConfirm: @escaping () -> Void
     ) -> some View {
         modifier(DeleteTopicConfirmAlertModifier(
             isPresented: isPresented,
-            topicId: topicId,
             topicName: topicName,
             messageCount: messageCount,
             onConfirm: onConfirm
@@ -152,11 +149,14 @@ extension View {
 ### 4.5 Wire the modifier onto the view (alongside `resetSessionAlert` around line 271)
 
 ```swift
+// FR-004: `pendingTopic` is a private computed property on `MainWindow` that resolves
+// the topic the delete was requested against — *not* the live sidebar selection. If
+// Adam switches selection while the alert is open, the alert text must still describe
+// the topic that will actually be deleted.
 .deleteTopicConfirmAlert(
     isPresented: $showDeleteConfirmAlert,
-    topicId: pendingDeleteTopicId,
-    topicName: messageViewModel.selectedTopic?.name,
-    messageCount: messageViewModel.selectedTopic?.messageCount ?? 0,
+    topicName: pendingTopic?.title,
+    messageCount: pendingTopic?.messageCount ?? 0,
     onConfirm: {
         if let id = pendingDeleteTopicId {
             deleteTopic(id)
