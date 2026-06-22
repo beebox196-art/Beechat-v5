@@ -25,6 +25,11 @@ public actor SyncBridge {
     /// Session keys known from the last fetchSessions() call
     package var knownSessionKeys: Set<String> = []
 
+    /// Test helper: inject known session keys for testing resolveToCanonicalKey.
+    package func setKnownSessionKeys(_ keys: Set<String>) {
+        knownSessionKeys = keys
+    }
+
     public weak var delegate: SyncBridgeDelegate?
 
     public func setDelegate(_ delegate: SyncBridgeDelegate?) {
@@ -207,7 +212,72 @@ public actor SyncBridge {
 
         try config.persistenceStore.upsertSessions(sessions)
 
+        // Option A: Align local topic session keys with gateway canonical keys.
+        // When the gateway returns a session whose key differs from the local topic's
+        // sessionKey, update the local DB to use the gateway's canonical key.
+        // This ensures manualReset() and sendMessage() send the correct key.
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+        for info in infos {
+            await alignSessionKey(gatewayKey: info.key, beechatMetadata: info.beechatMetadata, topicRepo: topicRepo)
+        }
+
         return sessions
+    }
+
+    /// Align a local topic's sessionKey with the gateway's canonical key.
+    /// Called after each fetchSessions() to fix stale UUID-format keys.
+    package func alignSessionKey(gatewayKey: String, beechatMetadata: BeeChatTopicMetadata?, topicRepo: TopicRepository) async {
+        do {
+            // Strategy 1: If the gateway session has beechat metadata with a topicId,
+            // look up the local topic directly.
+            if let meta = beechatMetadata {
+                let topicId = meta.topicId
+                if let topic = try topicRepo.fetchById(topicId) {
+                    let localKey = topic.sessionKey ?? ""
+                    if localKey != gatewayKey {
+                        print("[SyncBridge] Aligning topic \(topicId) key: \(localKey) → \(gatewayKey)")
+                        try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
+                        try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                    }
+                    return
+                }
+            }
+
+            // Strategy 2: For Telegram-discovered sessions (keys matching
+            // agent:main:telegram:group:*:topic:*), try suffix-based matching
+            // against local topic IDs.
+            if gatewayKey.contains(":telegram:") {
+                let stripped = SessionKeyNormalizer.stripPrefix(gatewayKey).lowercased()
+                if let topicId = try topicRepo.resolveTopicIdBySuffix(gatewayKey: gatewayKey, stripped: stripped) {
+                    if let topic = try topicRepo.fetchById(topicId) {
+                        let localKey = topic.sessionKey ?? ""
+                        if localKey != gatewayKey {
+                            print("[SyncBridge] Aligning telegram topic \(topicId) key via suffix: \(localKey) → \(gatewayKey)")
+                            try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
+                            try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                        }
+                    }
+                    return
+                }
+            }
+
+            // Strategy 3: For gateway keys that don't match above, try a general
+            // suffix match against local topic UUIDs.
+            let stripped = SessionKeyNormalizer.stripPrefix(gatewayKey).lowercased()
+            if stripped != gatewayKey.lowercased(),
+               let topicId = try topicRepo.resolveTopicIdBySuffix(gatewayKey: gatewayKey, stripped: stripped) {
+                if let topic = try topicRepo.fetchById(topicId) {
+                    let localKey = topic.sessionKey ?? ""
+                    if localKey != gatewayKey {
+                        print("[SyncBridge] Aligning topic \(topicId) key via general suffix: \(localKey) → \(gatewayKey)")
+                        try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
+                        try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                    }
+                }
+            }
+        } catch {
+            print("[SyncBridge] alignSessionKey error for \(gatewayKey): \(error)")
+        }
     }
 
     public func fetchHistory(sessionKey: String, limit: Int? = nil) async throws -> [Message] {
@@ -238,16 +308,23 @@ public actor SyncBridge {
     }
 
     public func sendMessage(sessionKey: String, text: String, thinking: String? = nil, attachments: [ChatAttachment]? = nil, topic: Topic? = nil) async throws -> String {
-        guard !sendingSessionKeys.contains(sessionKey) else {
+        // Resolve local key to gateway canonical key if they differ
+        var effectiveSessionKey = sessionKey
+        if let canonicalKey = await resolveToCanonicalKey(localKey: sessionKey) {
+            print("[SyncBridge] sendMessage: resolved \(sessionKey) → \(canonicalKey)")
+            effectiveSessionKey = canonicalKey
+        }
+        
+        guard !sendingSessionKeys.contains(effectiveSessionKey) else {
             throw SyncBridgeError.concurrentSendInProgress
         }
-        sendingSessionKeys.insert(sessionKey)
-        defer { sendingSessionKeys.remove(sessionKey) }
+        sendingSessionKeys.insert(effectiveSessionKey)
+        defer { sendingSessionKeys.remove(effectiveSessionKey) }
         
         // Abort any in-flight generation before auto-reset
-        if streamingSessionKeys.contains(sessionKey) {
+        if streamingSessionKeys.contains(effectiveSessionKey) {
             do {
-                try await abortGeneration(sessionKey: sessionKey)
+                try await abortGeneration(sessionKey: effectiveSessionKey)
             } catch {
                 print("[SyncBridge] Abort failed during auto-reset prep: \(error)")
             }
@@ -257,7 +334,8 @@ public actor SyncBridge {
         var didAutoReset = false
         
         // Inject pending manual reset context if present (consumed once)
-        if let pendingContext = pendingResetContext.removeValue(forKey: sessionKey) {
+        // Check both original and canonical keys for pending context
+        if let pendingContext = pendingResetContext.removeValue(forKey: effectiveSessionKey) ?? pendingResetContext.removeValue(forKey: sessionKey) {
             if effectiveText.isEmpty {
                 effectiveText = pendingContext
             } else {
@@ -268,41 +346,45 @@ public actor SyncBridge {
         
         // Auto-reset at 80% safety ceiling — always fires, no cooldown check
         // Cooldown only applies to sub-threshold resets (which don't exist in hybrid model)
-        let cooldownLeft = resetCooldownCount[sessionKey] ?? 0
+        let cooldownLeft = resetCooldownCount[effectiveSessionKey] ?? resetCooldownCount[sessionKey] ?? 0
         if cooldownLeft > 0 {
-            resetCooldownCount[sessionKey] = cooldownLeft - 1
+            resetCooldownCount[effectiveSessionKey] = cooldownLeft - 1
             if cooldownLeft - 1 == 0 {
-                resetCooldownCount.removeValue(forKey: sessionKey)
+                resetCooldownCount.removeValue(forKey: effectiveSessionKey)
             }
         }
         
         // Usage check for auto-reset (80% ceiling)
         if !didAutoReset {
             do {
-                let usage = try await rpcClient.sessionsUsage(sessionKey: sessionKey)
+                let usage = try await rpcClient.sessionsUsage(sessionKey: effectiveSessionKey)
                 if usage > 1.0 {
                     print("[SyncBridge] Usage RPC returned unexpected value: \(usage), capping at 1.0")
                 }
                 let cappedUsage = min(usage, 1.0)
                 let autoThreshold = await sessionResetManager.config.autoResetThreshold
                 if cappedUsage >= autoThreshold {
-                    delegate?.syncBridge(self, didStartAutoReset: sessionKey)
+                    delegate?.syncBridge(self, didStartAutoReset: effectiveSessionKey)
                     do {
-                        let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
-                        if recentMessages.isEmpty {
-                            print("[SyncBridge] fetchLocalHistory: no messages found for session \(sessionKey)")
+                        // Try both keys for history lookup
+                        var recentMessages = try fetchLocalHistory(sessionKey: effectiveSessionKey, limit: 30)
+                        if recentMessages.isEmpty && effectiveSessionKey != sessionKey {
+                            recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
                         }
-                        let ok = try await resetSession(sessionKey: sessionKey)
+                        if recentMessages.isEmpty {
+                            print("[SyncBridge] fetchLocalHistory: no messages found for session \(effectiveSessionKey)")
+                        }
+                        let ok = try await resetSession(sessionKey: effectiveSessionKey)
                         if ok {
                             effectiveText = formatCombinedContext(recentMessages, userMessage: text)
                             let cooldown = await sessionResetManager.config.cooldownMessages
-                            resetCooldownCount[sessionKey] = cooldown
+                            resetCooldownCount[effectiveSessionKey] = cooldown
                             didAutoReset = true
                         }
                     } catch {
-                        print("[SyncBridge] Auto-reset failed for \(sessionKey): \(error)")
+                        print("[SyncBridge] Auto-reset failed for \(effectiveSessionKey): \(error)")
                     }
-                    delegate?.syncBridge(self, didStopAutoReset: sessionKey)
+                    delegate?.syncBridge(self, didStopAutoReset: effectiveSessionKey)
                 }
             } catch {
                 // Gateway unreachable — send without reset
@@ -311,7 +393,7 @@ public actor SyncBridge {
         }
         
         // Topic context injection
-        if isTopicContextEnabled, let topic, !contextInjectedKeys.contains(sessionKey) {
+        if isTopicContextEnabled, let topic, !contextInjectedKeys.contains(effectiveSessionKey) {
             if !didAutoReset {
                 let topicContextHeader = buildContextHeader(topic: topic)
 
@@ -358,14 +440,14 @@ public actor SyncBridge {
                     effectiveText = "\(topicContextHeader)\n\n\(effectiveText)"
                 }
             }
-            contextInjectedKeys.insert(sessionKey)
+            contextInjectedKeys.insert(effectiveSessionKey)
         }
         
-        // Create delivery ledger entry
+        // Create delivery ledger entry — use canonical key for session tracking
         let idempotencyKey = UUID().uuidString
         let entry = DeliveryLedgerEntry(
             id: UUID(),
-            sessionKey: sessionKey,
+            sessionKey: effectiveSessionKey,
             idempotencyKey: idempotencyKey,
             content: effectiveText,
             originalContent: text,
@@ -378,7 +460,7 @@ public actor SyncBridge {
         
         do {
             let runId = try await rpcClient.chatSend(
-                sessionKey: sessionKey,
+                sessionKey: effectiveSessionKey,
                 message: effectiveText,
                 idempotencyKey: idempotencyKey,
                 thinking: thinking,
@@ -413,53 +495,78 @@ public actor SyncBridge {
     /// Returns true if reset succeeded, false if already pending or failed.
     /// No cooldown — user-initiated resets always execute.
     public func manualReset(sessionKey: String) async throws -> Bool {
-        // Guard against double-tap: if pending context already exists, this is a repeat
-        guard pendingResetContext[sessionKey] == nil else {
+        // Resolve local key to gateway canonical key first, so the guard
+        // checks the canonical key too.
+        var effectiveSessionKey = sessionKey
+        if let canonicalKey = await resolveToCanonicalKey(localKey: sessionKey) {
+            print("[SyncBridge] manualReset: resolved \(sessionKey) → \(canonicalKey)")
+            effectiveSessionKey = canonicalKey
+        }
+
+        // Guard against double-tap: if pending context already exists for either key, skip
+        guard pendingResetContext[effectiveSessionKey] == nil && pendingResetContext[sessionKey] == nil else {
             print("[SyncBridge] manualReset: pending context already exists for \(sessionKey), skipping")
             return true
         }
 
         // Abort any in-flight generation
-        if streamingSessionKeys.contains(sessionKey) {
-            try? await abortGeneration(sessionKey: sessionKey)
+        if streamingSessionKeys.contains(sessionKey) || streamingSessionKeys.contains(effectiveSessionKey) {
+            try? await abortGeneration(sessionKey: effectiveSessionKey)
         }
 
-        delegate?.syncBridge(self, didStartManualReset: sessionKey)
+        delegate?.syncBridge(self, didStartManualReset: effectiveSessionKey)
 
         // Fetch local history BEFORE reset (reads from local SQLite, not gateway)
-        let recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
+        // Try both the original key and the canonical key for history lookup
+        var recentMessages: [Message]
+        do {
+            recentMessages = try fetchLocalHistory(sessionKey: sessionKey, limit: 30)
+            // If no messages found under the original key, try the canonical key
+            if recentMessages.isEmpty && effectiveSessionKey != sessionKey {
+                recentMessages = try fetchLocalHistory(sessionKey: effectiveSessionKey, limit: 30)
+            }
+        } catch {
+            recentMessages = try fetchLocalHistory(sessionKey: effectiveSessionKey, limit: 30)
+        }
 
-        // Reset session on gateway
-        let ok = try await resetSession(sessionKey: sessionKey)
+        // Reset session on gateway using the canonical key
+        let ok = try await resetSession(sessionKey: effectiveSessionKey)
 
         if ok {
             // Format context and store for next send
             let contextPayload = formatCombinedContext(recentMessages, userMessage: "")
             pendingResetContext[sessionKey] = contextPayload
+            if effectiveSessionKey != sessionKey {
+                pendingResetContext[effectiveSessionKey] = contextPayload
+            }
 
             // Update usage cache so UI reflects the reset immediately
-            sessionUsageCache[sessionKey] = 0
+            sessionUsageCache[effectiveSessionKey] = 0
+            if effectiveSessionKey != sessionKey {
+                sessionUsageCache[sessionKey] = 0
+            }
 
             // Clear local Session.totalTokens so the GRDB observation in
             // MessageViewModel.startSessionUsageObservation() fires,
             // which calls refreshUsageFromSessions() and clears the
             // orange-dot indicator (which reads from sessionUsageMap,
             // not from this in-memory cache).
+            // Clear both keys to handle both the old local key and the canonical key.
             do {
                 try DatabaseManager.shared.write { db in
                     try db.execute(
-                        sql: "UPDATE sessions SET totalTokens = NULL WHERE id = ?",
-                        arguments: [sessionKey]
+                        sql: "UPDATE sessions SET totalTokens = NULL WHERE id IN (?, ?)",
+                        arguments: [effectiveSessionKey, sessionKey]
                     )
                 }
             } catch {
                 // Non-fatal: in-memory cache is still cleared, and the next
                 // fetchSessions() will refresh totalTokens from the gateway.
-                print("[SyncBridge] manualReset: failed to clear local totalTokens for \(sessionKey): \(error)")
+                print("[SyncBridge] manualReset: failed to clear local totalTokens for \(effectiveSessionKey): \(error)")
             }
         }
 
-        delegate?.syncBridge(self, didStopManualReset: sessionKey)
+        delegate?.syncBridge(self, didStopManualReset: effectiveSessionKey)
         return ok
     }
 
@@ -473,6 +580,49 @@ public actor SyncBridge {
         } else {
             pendingResetContext.removeAll()
         }
+    }
+
+    // MARK: - Session Key Resolution
+
+    /// Resolve a local session key to the canonical gateway key.
+    /// Checks the gateway's session list for a session whose beechat metadata
+    /// references the same topic, or whose key suffix-matches the local key.
+    /// Returns nil if the local key is already canonical or no mapping is found.
+    package func resolveToCanonicalKey(localKey: String) async -> String? {
+        // If already a canonical gateway key (contains "telegram:" or matches known keys), no resolution needed
+        if localKey.contains(":telegram:") || knownSessionKeys.contains(localKey) {
+            return nil
+        }
+
+        // Check knownSessionKeys for a gateway session whose stripped suffix matches
+        // our local key's stripped suffix (i.e., the UUID part after "agent:main:")
+        let strippedLocal = SessionKeyNormalizer.stripPrefix(localKey).lowercased()
+        for gatewayKey in knownSessionKeys {
+            let strippedGateway = SessionKeyNormalizer.stripPrefix(gatewayKey).lowercased()
+            if strippedGateway == strippedLocal && gatewayKey != localKey {
+                return gatewayKey
+            }
+        }
+
+        // Check local DB for topics whose sessionKey is the local key,
+        // and see if any gateway session has beechat metadata with that topicId
+        do {
+            let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+            if let topicId = try topicRepo.resolveTopicId(for: localKey) {
+                // We have a local topic for this key; check gateway sessions
+                // whose key might map to this same topicId
+                for gatewayKey in knownSessionKeys {
+                    let stripped = SessionKeyNormalizer.stripPrefix(gatewayKey).lowercased()
+                    if stripped == topicId.lowercased() && gatewayKey != localKey {
+                        return gatewayKey
+                    }
+                }
+            }
+        } catch {
+            print("[SyncBridge] resolveToCanonicalKey error: \(error)")
+        }
+
+        return nil
     }
 
     // MARK: - Topic Context Injection

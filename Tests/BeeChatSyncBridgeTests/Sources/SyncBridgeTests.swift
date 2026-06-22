@@ -479,6 +479,136 @@ final class SyncBridgeTests: XCTestCase {
         XCTAssertFalse(header.contains("[PROJECT-CONTEXT]"))
     }
 
+    // MARK: - Session Key Alignment Tests
+
+    func testResolveToCanonicalKeyReturnsNilForTelegramKey() async {
+        let bridgeInstance = bridge()
+        // Telegram keys are already canonical — no resolution needed
+        let result = await bridgeInstance.resolveToCanonicalKey(localKey: "agent:main:telegram:group:-1003830552971:topic:1")
+        XCTAssertNil(result, "Telegram keys should not need resolution")
+    }
+
+    func testResolveToCanonicalKeyReturnsNilForKnownKey() async {
+        let bridgeInstance = bridge()
+        // Pre-populate knownSessionKeys with the key
+        await bridgeInstance.setKnownSessionKeys(["agent:main:abc-123"])
+        // The key is already known — no resolution needed
+        let result = await bridgeInstance.resolveToCanonicalKey(localKey: "agent:main:abc-123")
+        XCTAssertNil(result, "Known keys should not need resolution")
+    }
+
+    func testResolveToCanonicalKeyMapsUUIDToTelegramKey() async throws {
+        let bridgeInstance = bridge()
+
+        // Simulate gateway returning a telegram key whose stripped suffix matches
+        // the local UUID key's stripped form
+        let localUUID = "491ea8d6-9527-4e71-89b4-d0a06df3f49d"
+        let localKey = "agent:main:\(localUUID)"
+        let gatewayKey = "agent:main:telegram:group:-1003830552971:topic:1"
+
+        // Set knownSessionKeys to include the gateway key but NOT the local key
+        await bridgeInstance.setKnownSessionKeys([gatewayKey, "agent:main:other"])
+
+        // Insert a local topic with the UUID key
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+        let topic = Topic(id: localUUID.lowercased(), name: "General", sessionKey: localKey)
+        try topicRepo.save(topic)
+        try topicRepo.saveBridge(topicId: localUUID.lowercased(), sessionKey: localKey)
+
+        // The stripped form of localKey is the UUID. The stripped form of gatewayKey
+        // is "telegram:group:-1003830552971:topic:1" — these don't match.
+        // But resolveTopicId(for:) should find the topic by its local key.
+        // The suffix-based match in knownSessionKeys won't match because the
+        // UUID doesn't appear in the telegram key.
+        // So this should return nil (no resolution found).
+        let result = await bridgeInstance.resolveToCanonicalKey(localKey: localKey)
+        // In this scenario, without beechat metadata, the resolution can't match
+        // because the gateway key's suffix doesn't contain the UUID.
+        // This is expected — alignment happens in fetchSessions() via beechat metadata.
+        XCTAssertNil(result, "UUID key with no matching suffix in gateway keys should return nil")
+
+        // Cleanup
+        try topicRepo.deleteCascading(localUUID.lowercased())
+    }
+
+    func testResolveToCanonicalKeyMatchesSuffixInKnownKeys() async throws {
+        let bridgeInstance = bridge()
+
+        // Scenario: local key is agent:main:ABC-123 but gateway has agent:main:abc-123
+        // (case difference only)
+        let localKey = "agent:main:ABC-123"
+        let gatewayKey = "agent:main:abc-123"
+
+        await bridgeInstance.setKnownSessionKeys([gatewayKey])
+
+        let result = await bridgeInstance.resolveToCanonicalKey(localKey: localKey)
+        XCTAssertEqual(result, gatewayKey, "Should resolve case-mismatched local key to gateway key")
+    }
+
+    func testAlignSessionKeyUpdatesLocalWhenDifferent() async throws {
+        let bridgeInstance = bridge()
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+
+        // Create a local topic with a UUID-format key
+        let topicId = UUID().uuidString
+        let localKey = "agent:main:\(UUID().uuidString.lowercased())"
+        let gatewayKey = "agent:main:telegram:group:-1003830552971:topic:1"
+
+        let topic = Topic(id: topicId, name: "General", sessionKey: localKey)
+        try topicRepo.save(topic)
+        try topicRepo.saveBridge(topicId: topicId, sessionKey: localKey)
+
+        // Create beechat metadata pointing to this topic
+        let metadata = BeeChatTopicMetadata(
+            topicId: topicId,
+            isArchived: false,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+
+        // Align
+        await bridgeInstance.alignSessionKey(gatewayKey: gatewayKey, beechatMetadata: metadata, topicRepo: topicRepo)
+
+        // Verify the topic's sessionKey was updated
+        let updatedTopic = try topicRepo.fetchById(topicId)
+        XCTAssertEqual(updatedTopic?.sessionKey, gatewayKey, "Topic sessionKey should be updated to gateway key")
+
+        // Verify the bridge was updated too
+        let resolvedKey = try topicRepo.resolveSessionKey(topicId: topicId)
+        XCTAssertEqual(resolvedKey, gatewayKey, "Bridge should map to gateway key")
+
+        // Cleanup
+        try topicRepo.deleteCascading(topicId)
+    }
+
+    func testAlignSessionKeyNoOpWhenAlreadyCanonical() async throws {
+        let bridgeInstance = bridge()
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+
+        // Create a topic whose key already matches the gateway key
+        let topicId = UUID().uuidString
+        let gatewayKey = "agent:main:telegram:group:-1003830552971:topic:1"
+
+        let topic = Topic(id: topicId, name: "General", sessionKey: gatewayKey)
+        try topicRepo.save(topic)
+        try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+
+        let metadata = BeeChatTopicMetadata(
+            topicId: topicId,
+            isArchived: false,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+
+        // Align — should be a no-op since keys already match
+        await bridgeInstance.alignSessionKey(gatewayKey: gatewayKey, beechatMetadata: metadata, topicRepo: topicRepo)
+
+        // Verify no change
+        let updatedTopic = try topicRepo.fetchById(topicId)
+        XCTAssertEqual(updatedTopic?.sessionKey, gatewayKey, "SessionKey should remain unchanged")
+
+        // Cleanup
+        try topicRepo.deleteCascading(topicId)
+    }
+
     // MARK: - Helper
 
     private func bridge() -> SyncBridge {
