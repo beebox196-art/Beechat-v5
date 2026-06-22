@@ -208,7 +208,11 @@ public actor SyncBridge {
             )
         }
 
-        knownSessionKeys = Set(sessions.map { $0.id })
+        // C1 fix: Use infos (all gateway sessions) not sessions (filtered by token count).
+        // A newly-created session with 0 tokens still needs to be resolvable by
+        // resolveToCanonicalKey, otherwise sendMessage/manualReset fall back to the
+        // stale local UUID key until the session accumulates tokens.
+        knownSessionKeys = Set(infos.map { $0.key })
 
         try config.persistenceStore.upsertSessions(sessions)
 
@@ -238,6 +242,14 @@ public actor SyncBridge {
                         print("[SyncBridge] Aligning topic \(topicId) key: \(localKey) → \(gatewayKey)")
                         try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
                         try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                        // C2 fix: Migrate messages stored under the old key so they
+                        // remain reachable after alignment.
+                        try DatabaseManager.shared.write { db in
+                            try db.execute(
+                                sql: "UPDATE messages SET sessionId = ? WHERE sessionId = ?",
+                                arguments: [gatewayKey, localKey]
+                            )
+                        }
                     }
                     return
                 }
@@ -255,6 +267,13 @@ public actor SyncBridge {
                             print("[SyncBridge] Aligning telegram topic \(topicId) key via suffix: \(localKey) → \(gatewayKey)")
                             try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
                             try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                            // C2 fix: Migrate messages stored under the old key
+                            try DatabaseManager.shared.write { db in
+                                try db.execute(
+                                    sql: "UPDATE messages SET sessionId = ? WHERE sessionId = ?",
+                                    arguments: [gatewayKey, localKey]
+                                )
+                            }
                         }
                     }
                     return
@@ -272,6 +291,13 @@ public actor SyncBridge {
                         print("[SyncBridge] Aligning topic \(topicId) key via general suffix: \(localKey) → \(gatewayKey)")
                         try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
                         try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                        // C2 fix: Migrate messages stored under the old key
+                        try DatabaseManager.shared.write { db in
+                            try db.execute(
+                                sql: "UPDATE messages SET sessionId = ? WHERE sessionId = ?",
+                                arguments: [gatewayKey, localKey]
+                            )
+                        }
                     }
                 }
             }
@@ -486,7 +512,14 @@ public actor SyncBridge {
     // MARK: - Session Reset Flow
 
     public func resetSession(sessionKey: String) async throws -> Bool {
-        contextInjectedKeys.remove(sessionKey)  // re-inject on next send
+        // H2 fix: Also clear contextInjectedKeys under any local key that maps to
+        // this canonical key, so context is re-injected on next send.
+        contextInjectedKeys.remove(sessionKey)
+        for key in contextInjectedKeys {
+            if let canonical = await resolveToCanonicalKey(localKey: key), canonical == sessionKey {
+                contextInjectedKeys.remove(key)
+            }
+        }
         return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
     }
 
@@ -572,13 +605,21 @@ public actor SyncBridge {
 
     /// Clear pending reset context for all sessions except the given one.
     /// Called on topic switch to avoid stale context being injected into the wrong session.
-    public func clearPendingResetContext(except sessionKey: String?) {
+    /// H1 fix: Accepts optional additional except keys so both the local and canonical
+    /// key forms are preserved when key resolution is known.
+    public func clearPendingResetContext(except sessionKey: String?, exceptAdditional additionalExceptKeys: Set<String>? = nil) {
+        let exceptKeys: Set<String>
         if let key = sessionKey {
-            for k in pendingResetContext.keys where k != key {
+            exceptKeys = Set([key]).union(additionalExceptKeys ?? [])
+        } else {
+            exceptKeys = additionalExceptKeys ?? []
+        }
+        if exceptKeys.isEmpty {
+            pendingResetContext.removeAll()
+        } else {
+            for k in pendingResetContext.keys where !exceptKeys.contains(k) {
                 pendingResetContext.removeValue(forKey: k)
             }
-        } else {
-            pendingResetContext.removeAll()
         }
     }
 
@@ -588,7 +629,7 @@ public actor SyncBridge {
     /// Checks the gateway's session list for a session whose beechat metadata
     /// references the same topic, or whose key suffix-matches the local key.
     /// Returns nil if the local key is already canonical or no mapping is found.
-    package func resolveToCanonicalKey(localKey: String) async -> String? {
+    public func resolveToCanonicalKey(localKey: String) async -> String? {
         // If already a canonical gateway key (contains "telegram:" or matches known keys), no resolution needed
         if localKey.contains(":telegram:") || knownSessionKeys.contains(localKey) {
             return nil
