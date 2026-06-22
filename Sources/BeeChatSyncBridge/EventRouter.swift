@@ -46,8 +46,13 @@ public struct EventRouter {
 
         switch state {
         case "delta":
-            if let text = messageText {
-                await syncBridge.processChatDelta(sessionKey: sessionKey, text: text)
+            // v4 streaming: use deltaText with replace semantics
+            if let deltaText = chatEvent.deltaText, !deltaText.isEmpty {
+                let shouldReplace = chatEvent.replace ?? false
+                await syncBridge.processChatDelta(sessionKey: sessionKey, text: deltaText, replace: shouldReplace)
+            } else if let text = messageText {
+                // v3 fallback: message.content carries cumulative text (always replace)
+                await syncBridge.processChatDelta(sessionKey: sessionKey, text: text, replace: true)
             }
         case "final":
             if let text = messageText, let msg = chatEvent.message {
@@ -68,6 +73,9 @@ public struct EventRouter {
                 }
             }
             try await syncBridge.processChatFinal(sessionKey: sessionKey)
+        case "aborted":
+            // v4: agent run was cancelled/aborted
+            try await syncBridge.processChatError(sessionKey: sessionKey, errorMessage: chatEvent.stopReason ?? "Aborted")
         case "error":
             try await syncBridge.processChatError(sessionKey: sessionKey, errorMessage: errorMessage ?? "Unknown error")
         default:
@@ -130,7 +138,15 @@ public struct EventRouter {
     }
 
     private func handleSessionsChanged() async throws {
-        _ = try await syncBridge.fetchSessions()
+        let sessions = try await syncBridge.fetchSessions()
+        let sessionKeys = sessions.map { $0.id }
+
+        // Subscribe to message events for any new sessions.
+        // Known sessions are already subscribed in SyncBridge.start(),
+        // but new sessions created after startup need subscribing here.
+        await syncBridge.subscribeNewSessions(sessionKeys: Set(sessionKeys))
+
+        await syncBridge.delegate?.syncBridge(syncBridge, didReceiveSessionChange: sessionKeys)
     }
 
     private func handleTick() async {

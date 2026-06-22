@@ -113,7 +113,32 @@ The app connects to the OpenClaw gateway, displays topics in a sidebar, shows me
 - **Duplicated logic:** `isBeeChatSession()` and `normalizeSessionKey()` exist in both SyncBridge.swift and Reconciler.swift
 - See `DEPENDENCY_ANALYSIS.md` for full assessment
 
+## Documentation Structure
+
+All project documentation is organised under `Docs/`:
+
+| Folder | Purpose |
+|--------|----------|
+| `Docs/Specs/Active/` | Current specs (in progress or recently completed) |
+| `Docs/Specs/Archive/` | Superseded/completed specs (kept for reference) |
+| `Docs/Reviews/Cycles/<topic>/` | Review cycles grouped by topic |
+| `Docs/Reviews/Components/` | Component-level reviews |
+| `Docs/Reviews/Final/` | Final implementation reviews (A/B/C/D) |
+| `Docs/Reviews/Adversarial/` | Adversarial and audit reviews |
+| `Docs/Reviews/Consensus/` | Consensus documents |
+| `Docs/Diagnosis/` | Diagnosis and evaluation reports |
+| `Docs/Implementation/` | Implementation notes and fix specs |
+| `Docs/Analysis/` | One-off assessments |
+| `Docs/Architecture/` | Architecture specs |
+| `Docs/Design/` | Design system and sessions |
+| `Docs/Research/` | Research documents |
+| `Docs/History/` | Historical records |
+| `Docs/Status/` | Status and debug files |
+
+See `Docs/Specs/Archive/README.md` for archive index and `Docs/Reviews/INDEX.md` for review index.
+
 ## Known Issues
+- **BUG: Session reset uses wrong key for Telegram topics (2026-06-22)** — See `Docs/Bugs/session-reset-general-topic.md`. Local SQLite `topics` table stores UUID-format keys (`agent:main:491ea8d6...`) while the gateway uses canonical Telegram keys (`agent:main:telegram:group:-...:topic:N`). Manual reset passes the UUID key, resetting the wrong session. All 14 locally-created topics are affected. Fix requires key alignment in `fetchSessions()`.
 - M4 AsyncStream delivery tests remain as low-priority gap
 - GatewayStatusBar shows "No gateway connection" briefly on startup (cosmetic)
 - `AnyCodable` Sendable warning (Swift 6 compatibility issue)

@@ -41,6 +41,30 @@ public struct SessionKeyNormalizer: Sendable {
 /// Implemented as an `enum` (no stored state) to avoid `Sendable` issues with
 /// the non-Sendable `TopicRepository` class.
 public enum BeeChatSessionFilter {
+    /// Check whether a session key maps to a known BeeChat topic,
+    /// using an injected TopicRepository to avoid deadlock on iOS @MainActor.
+    public static func isBeeChatSession(_ sessionKey: String, topicRepo: TopicRepository) throws -> Bool {
+        if try topicRepo.resolveTopicId(for: sessionKey) != nil {
+            return true
+        }
+        let stripped = SessionKeyNormalizer.stripPrefix(sessionKey)
+        if stripped != sessionKey,
+           try topicRepo.resolveTopicIdBySuffix(gatewayKey: sessionKey, stripped: stripped) != nil {
+            return true
+        }
+        return false
+    }
+
+    /// Normalize a gateway session key to the local topic ID,
+    /// using an injected TopicRepository.
+    public static func normalize(_ gatewayKey: String, topicRepo: TopicRepository) throws -> String {
+        let stripped = SessionKeyNormalizer.stripPrefix(gatewayKey)
+        if let topicId = try topicRepo.resolveTopicIdBySuffix(gatewayKey: gatewayKey, stripped: stripped) {
+            return topicId
+        }
+        return gatewayKey
+    }
+
     /// Check whether a session key maps to a known BeeChat topic.
     public static func isBeeChatSession(_ sessionKey: String) throws -> Bool {
         let topicRepo = TopicRepository()

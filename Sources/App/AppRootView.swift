@@ -2,6 +2,7 @@ import SwiftUI
 import BeeChatSyncBridge
 import BeeChatPersistence
 import BeeChatGateway
+import BeeBoard
 import os
 
 @main
@@ -54,6 +55,7 @@ final class AppState {
     var offlineStatus: String?
 
     private var hasStarted = false
+    private var connectionStateTask: Task<Void, Never>?
 
     init() {}
 
@@ -65,6 +67,7 @@ final class AppState {
                 let dbManager = DatabaseManager.shared
                 let dbPath = defaultDatabasePath()
                 try dbManager.openDatabase(at: dbPath)
+                try BeeBoardMigrator.migrate(dbManager: dbManager)
 
                 let persistenceStore = BeeChatPersistenceStore(dbManager: dbManager)
 
@@ -92,13 +95,16 @@ final class AppState {
                             self.connectionState = .connected
                             self.isStartupComplete = true
 
-                            Task {
+                            // Topic sync now via REST endpoint (see TopicServer.swift)
+
+                            connectionStateTask = Task {
                                 let stream = await bridge.connectionStateStream()
                                 for await state in stream {
                                     self.connectionState = state
                                 }
                             }
                         } catch {
+                            print("[AppState]  Bridge start failed: \(error) — \(error.localizedDescription)")
                             self.connectionState = .error
                             self.offlineStatus = "Offline — \(error.localizedDescription)"
                             self.isStartupComplete = true
@@ -109,10 +115,10 @@ final class AppState {
                         self.connectionState = .error
                         self.offlineStatus = "Offline — gateway config error"
                         self.isStartupComplete = true
-                        print("[AppState] Malformed gateway config: \(error)")
+                        print("[AppState]  Malformed gateway config: \(error)")
                     }
                 } else {
-                    print("[AppState] No openclaw.json — local DB mode only")
+                    print("[AppState]  No openclaw.json — local DB mode only")
                     self.isReady = true
                     self.connectionState = .disconnected
                     self.offlineStatus = "Offline — no gateway config found"
@@ -121,7 +127,69 @@ final class AppState {
             } catch {
                 self.errorMessage = error.localizedDescription
                 self.connectionState = .error
-                print("[AppState] Startup failed: \(error)")
+                print("[AppState]  Startup failed: \(error)")
+            }
+        }
+    }
+
+    func reconnect() {
+        // Guard 1: no bridge to reconnect with
+        guard syncBridge != nil else { return }
+        // Guard 2: already reconnecting — prevents race on rapid taps
+        guard connectionState != .connecting && connectionState != .handshaking else { return }
+        // Set state SYNCHRONOUSLY before any await — closes the re-entrancy window
+        connectionState = .connecting
+
+        Task {
+            // Clear stale error state
+            offlineStatus = nil
+            errorMessage = nil
+
+            // Stop existing bridge
+            if let bridge = syncBridge {
+                await bridge.stop()
+            }
+
+            // Cancel old connection state subscription — prevents state clobbering
+            connectionStateTask?.cancel()
+            connectionStateTask = nil
+
+            // Rebuild and reconnect (same path as startup, minus DB init)
+            let configPath = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".openclaw/openclaw.json")
+
+            guard FileManager.default.fileExists(atPath: configPath.path) else {
+                connectionState = .error
+                offlineStatus = "Offline — no gateway config found"
+                return
+            }
+
+            do {
+                let gatewayConfig = try loadGatewayConfig(from: configPath)
+                let tokenStore = KeychainTokenStore()
+                let gatewayClient = GatewayClient(config: gatewayConfig, tokenStore: tokenStore)
+                let persistenceStore = BeeChatPersistenceStore(dbManager: DatabaseManager.shared)
+                let config = SyncBridgeConfiguration(
+                    gatewayClient: gatewayClient,
+                    persistenceStore: persistenceStore
+                )
+                let bridge = SyncBridge(config: config)
+                self.syncBridge = bridge
+
+                try await bridge.start()
+                connectionState = .connected
+                isStartupComplete = true
+
+                // Subscribe to live connection state — store the Task for cancellation on next reconnect
+                connectionStateTask = Task {
+                    let stream = await bridge.connectionStateStream()
+                    for await state in stream {
+                        self.connectionState = state
+                    }
+                }
+            } catch {
+                connectionState = .error
+                offlineStatus = "Offline — \(error.localizedDescription)"
             }
         }
     }
@@ -170,7 +238,7 @@ final class AppState {
             url: wsURL,
             token: token,
             clientMode: "webchat",
-            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "webchat")
+            clientInfo: .init(id: "openclaw-control-ui", version: "1.0", platform: "macos", mode: "webchat", deviceFamily: "desktop")
         )
     }
 }

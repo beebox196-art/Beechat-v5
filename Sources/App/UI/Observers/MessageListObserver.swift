@@ -35,8 +35,15 @@ final class MessageListObserver {
 
     /// Single entry point for both stream and local paths
     func setAllMessages(_ allMessages: [Message]) {
+        // Diff guard: skip update when data hasn't changed to prevent
+        // SwiftUI LazyVStack churn from GRDB ValueObservation reference-only yields.
+        guard messagesDiffer(self.allMessages, allMessages) else { return }
         self.allMessages = allMessages
         applyWindow()
+    }
+
+    private func messagesDiffer(_ lhs: [Message], _ rhs: [Message]) -> Bool {
+        return lhs != rhs
     }
 
     /// Apply the display window to the full message set

@@ -1,5 +1,7 @@
 import SwiftUI
+#if canImport(AppKit)
 import AppKit
+#endif
 import ChatField
 
 /// Message composer — ChatField with accessory buttons.
@@ -21,10 +23,12 @@ struct Composer: View {
             // we insert a newline (macOS convention).
             // ⚠️ Fragile: if ChatField ever adds Option handling internally,
             // this path breaks silently. Monitor on ChatField upgrades.
+            #if canImport(AppKit)
             if NSApp.currentEvent?.modifierFlags.contains(.option) == true {
                 viewModel.inputText += "\n"
                 return
             }
+            #endif
             if viewModel.canSend {
                 onSend()
                 isTextFieldFocused = true

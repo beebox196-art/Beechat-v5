@@ -11,6 +11,11 @@ struct GatewayStatusBar: View {
         connectionState == .connected
     }
 
+    private var isTappable: Bool {
+        // Don't show tappable state during initialisation
+        appState.isStartupComplete && (connectionState == .disconnected || connectionState == .error)
+    }
+
     private var statusText: String {
         if !appState.isStartupComplete {
             return "Initialising…"
@@ -56,13 +61,24 @@ struct GatewayStatusBar: View {
             Text(statusText)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(themeManager.color(.textSecondary))
+            if isTappable {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(themeManager.color(.textSecondary))
+            }
         }
         .padding(.horizontal, themeManager.spacing(.lg))
         .padding(.vertical, themeManager.spacing(.xxs))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(themeManager.color(.bgSurface))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isTappable {
+                appState.reconnect()
+            }
+        }
         .accessibilityLabel("Gateway status")
-        .accessibilityHint("Current gateway connection status")
+        .accessibilityHint(isTappable ? "Tap to reconnect" : "Current gateway connection status")
         .accessibilityValue(Text(statusText))
     }
 }

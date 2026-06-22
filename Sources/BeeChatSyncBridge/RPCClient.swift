@@ -5,6 +5,7 @@ import BeeChatPersistence
 public protocol RPCClientProtocol {
     func sessionsList() async throws -> [SessionInfo]
     func sessionsSubscribe() async throws
+    func sessionsMessagesSubscribe(sessionKey: String) async throws
     func sessionsUsage(sessionKey: String) async throws -> Double
     func sessionsReset(sessionKey: String, reason: String) async throws -> Bool
     func chatHistory(sessionKey: String, limit: Int?) async throws -> [ChatMessagePayload]
@@ -47,6 +48,11 @@ public struct RPCClient: RPCClientProtocol {
     
     public func sessionsSubscribe() async throws {
         _ = try await gateway.call(method: "sessions.subscribe", params: [:])
+    }
+    
+    public func sessionsMessagesSubscribe(sessionKey: String) async throws {
+        let params: [String: AnyCodable] = ["key": AnyCodable(sessionKey)]
+        _ = try await gateway.call(method: "sessions.messages.subscribe", params: params)
     }
     
     public func sessionsUsage(sessionKey: String) async throws -> Double {
@@ -147,4 +153,5 @@ public struct RPCClient: RPCClientProtocol {
         let response = try await gateway.call(method: "chat.abort", params: params)
         return response["ok"]?.value as? Bool ?? false
     }
+
 }
