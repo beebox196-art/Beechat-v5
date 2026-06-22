@@ -279,11 +279,14 @@ public class TopicRepository {
             meta.telegramGroupId = groupId
             meta.telegramThreadId = threadId
 
-            let newJSON: String? = try? String(data: JSONEncoder().encode(meta), encoding: .utf8)
+            // H2 fix: Use nil instead of empty string as fallback.
+            // Empty string "" is not valid JSON and would cause decodedMetadata to return nil,
+            // silently losing all previously stored metadata on the next read.
+            let newJSON = try? String(data: JSONEncoder().encode(meta), encoding: .utf8)
 
             try db.execute(
                 sql: "UPDATE topics SET metadataJSON = ?, updatedAt = ? WHERE id = ?",
-                arguments: [newJSON ?? "", Date(), topicId]
+                arguments: [newJSON, Date(), topicId]
             )
         }
     }
@@ -323,10 +326,12 @@ public class TopicRepository {
     /// This is Strategy 4 in session key alignment — for gateway keys like
     /// "agent:main:telegram:group:-1003830552971:topic:1", we look for local topics
     /// whose metadataJSON contains matching telegramGroupId and telegramThreadId.
+    /// H1 fix: ORDER BY updatedAt DESC to prefer the most recently updated topic
+    /// if duplicates exist (e.g., during alignment races).
     public func resolveTopicIdByTelegramThread(groupId: String, threadId: String) throws -> String? {
         try dbManager.reader.read { db in
-            // Fetch all topics with metadataJSON and filter in Swift
-            let rows = try Row.fetchAll(db, sql: "SELECT id, metadataJSON FROM topics WHERE metadataJSON IS NOT NULL")
+            // Fetch all topics with metadataJSON, preferring most recently updated
+            let rows = try Row.fetchAll(db, sql: "SELECT id, metadataJSON FROM topics WHERE metadataJSON IS NOT NULL ORDER BY updatedAt DESC")
             for row in rows {
                 let id: String = row["id"]
                 let json: String = row["metadataJSON"]

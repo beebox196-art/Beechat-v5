@@ -314,6 +314,8 @@ public actor SyncBridge {
                             }
                         }
                     }
+                    // M3: No updateTelegramMetadata needed here — the topic already has
+                    // telegramGroupId/telegramThreadId stored (that's how Strategy 4 found it).
                     return
                 }
             }
