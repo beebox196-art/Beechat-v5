@@ -1,6 +1,6 @@
 # BeeChat-v5 Status
 
-Updated: 2026-06-19 15:00 GMT+1
+Updated: 2026-06-22 13:50 GMT+1
 
 ## Current Build
 
@@ -63,6 +63,55 @@ Updated: 2026-06-19 15:00 GMT+1
 - ❌ D2 message list diff-guard (4-field manual compare still on develop)
 - ✅ Tap-to-reconnect on offline banner (FR-002)
 
+## BeeBoard — Current Build State
+
+BeeBoard is a fully integrated feature of BeeChat-v5 (not a separate app). Lives in `Sources/BeeBoard/` as an SPM target within the BeeChat-v5 package. Connected to BeeChat via sidebar button and shared DatabaseManager.
+
+### Capabilities (deployed on develop @ 0582aac)
+
+- **Pin creation:** Create pins with title, content, tags, priority (P1/P2/P3), and colour
+- **Pin types:** `note` (standard) and `rich` (structured content)
+- **Pin groups:** Organise pins into named groups with colours
+- **Pin priorities:** P1 (high/red), P2 (medium/yellow), P3 (low/green)
+- **Pin tags:** JSON array of tags per pin (e.g., `["Revenue", "Openclaw"]`)
+- **Board view:** Visual pin board with drag-to-position, pin width/height
+- **Active/Archived views:** Segmented picker to switch between active pins and archived pins
+- **Archive pin:** Right-click → "Archive Pin" moves pin to Archived view. Removes from active board without deleting
+- **Restore pin:** Restore from Archived view with optional priority reassignment
+- **Undo toast:** 3-second auto-dismiss undo on archive action (cancellable, idempotent)
+- **Search:** Text search filters pins by title/content; persists across Active/Archived view switches
+- **Migration:** `isArchived` boolean column added idempotently (Migration005, checks column exists before adding)
+- **Double-tap to create:** Quick pin creation (active view only; disabled in archive view)
+
+### Archive workflow
+
+1. Right-click a pin → "Archive Pin"
+2. Pin moves from Active view to Archived view
+3. Undo toast appears (3s) — click to reverse
+4. In Archived view: right-click → "Restore Pin" (with optional priority change)
+5. Pin returns to Active view
+
+**Purpose:** Archive is for dormant ideas — pins that may come back to life, not deleted. Stale live pins are fine as long-term idea parking. Archive keeps the active board clean without losing ideas.
+
+### Known limitations (Kieran review, non-blocking)
+
+- No tests for archive logic (no BeeBoard tests exist yet — feature is non-trivial)
+- No toast for restore operations (inconsistent with archive flow)
+- Undo timer not cancelled on `.onDisappear` (small leak, consistent with codebase pattern)
+- Mixed group (some archived, some active) renders partial in archive view — edge case, fine for v1
+- `matchingPinIds` is dead code (zero readers)
+
+### Kieran review
+
+**Verdict:** PASS (0 MAJOR, 3 MINOR, 8 NITs)
+**Review file:** `Docs/Reviews/Cycles/beeboard-archive/KIERAN-REVIEW-BEEBOARD-ARCHIVE.md`
+
+### BeeBoard pins tracked by external tooling
+
+- `pin-extract.sh` script reads pins from BeeChat.sqlite for synthesis/monitoring
+- Weekly synthesis BeeBoard Alignment Matrix uses pin-extract.sh output
+- 26 pins currently active (10 P1, 9 P2, 6 P3, 1 new)
+
 ## Reviews Pending
 
 | What | Reviewer | Status |
@@ -83,13 +132,15 @@ Updated: 2026-06-19 15:00 GMT+1
 - [ ] All tests pass (98/98, keychain hang excluded)
 - [ ] Adam smoke test complete (all SC items)
 - [ ] Mark as Unread deployed and verified
-- [ ] BeeBoard Archive deployed and verified
+- [ ] BeeBoard Archive deployed and verified (feature complete, Kieran PASS — Adam to smoke test on next session)
 - [ ] Kieran review of full diff since main@52234f7
 - [ ] Adam explicit approval
 - [ ] Branching discipline documented and agreed
 
 ## Stash Audit (2026-06-16)
 
-Found 1 critical stash: `e1a10b9` — "Bounce+WS WIP stash: BeeBoard archive + minor FIX-004 uncommitted" on fix/connection-stability. Contains 14 files, 444 insertions including the complete BeeBoard Archive feature. **Port in progress.**
+Found 1 critical stash: `e1a10b9` — "Bounce+WS WIP stash: BeeBoard archive + minor FIX-004 uncommitted" on fix/connection-stability. Contains 14 files, 444 insertions including the complete BeeBoard Archive feature.
+
+**Resolved:** BeeBoard Archive was recovered from the stash, ported to develop, and committed as 0582aac. Kieran review PASS. Feature is deployed on develop.
 
 Lesson: Stashes are invisible. All work must be committed to branches, even WIP.
