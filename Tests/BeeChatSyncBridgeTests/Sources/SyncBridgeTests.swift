@@ -609,6 +609,116 @@ final class SyncBridgeTests: XCTestCase {
         try topicRepo.deleteCascading(topicId)
     }
 
+    // MARK: - SessionKeyNormalizer.parseTelegramKey Tests
+
+    func testParseTelegramKeyValid() {
+        let result = SessionKeyNormalizer.parseTelegramKey("agent:main:telegram:group:-1003830552971:topic:1")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.groupId, "-1003830552971")
+        XCTAssertEqual(result?.threadId, "1")
+    }
+
+    func testParseTelegramKeyDifferentThread() {
+        let result = SessionKeyNormalizer.parseTelegramKey("agent:main:telegram:group:-1003830552971:topic:42")
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result?.groupId, "-1003830552971")
+        XCTAssertEqual(result?.threadId, "42")
+    }
+
+    func testParseTelegramKeyNonTelegramKey() {
+        let result = SessionKeyNormalizer.parseTelegramKey("agent:main:abc-123-def")
+        XCTAssertNil(result, "Non-Telegram key should return nil")
+    }
+
+    func testParseTelegramKeyDM() {
+        // DM keys don't match the group:topic: pattern
+        let result = SessionKeyNormalizer.parseTelegramKey("agent:main:telegram:dm:12345")
+        XCTAssertNil(result, "DM key should not parse as group:topic")
+    }
+
+    func testParseTelegramKeyPartialKey() {
+        let result = SessionKeyNormalizer.parseTelegramKey("agent:main:telegram:group:-100")
+        XCTAssertNil(result, "Partial key (missing :topic: part) should return nil")
+    }
+
+    // MARK: - Strategy 4: Telegram Thread ID Matching Tests
+
+    func testAlignSessionKeyViaTelegramThreadMetadata() async throws {
+        let bridgeInstance = bridge()
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+
+        // Create a local topic with a UUID-format key (simulates Mac-created topic)
+        let topicId = UUID().uuidString
+        let localKey = "agent:main:\(UUID().uuidString.lowercased())"
+        let gatewayKey = "agent:main:telegram:group:-1003830552971:topic:1"
+
+        let topic = Topic(id: topicId, name: "General", sessionKey: localKey)
+        try topicRepo.save(topic)
+        try topicRepo.saveBridge(topicId: topicId, sessionKey: localKey)
+
+        // Store Telegram metadata on the local topic
+        try topicRepo.updateTelegramMetadata(topicId: topicId, groupId: "-1003830552971", threadId: "1")
+
+        // Verify metadata was stored
+        let fetchedTopic = try topicRepo.fetchById(topicId)
+        XCTAssertNotNil(fetchedTopic)
+        XCTAssertEqual(fetchedTopic?.telegramGroupId, "-1003830552971")
+        XCTAssertEqual(fetchedTopic?.telegramThreadId, "1")
+
+        // Align — Strategy 4 should find the topic by Telegram metadata
+        // No beechatMetadata (simulates gateway not returning local UUID)
+        await bridgeInstance.alignSessionKey(gatewayKey: gatewayKey, beechatMetadata: nil, topicRepo: topicRepo)
+
+        // Verify the topic's sessionKey was updated to the gateway key
+        let alignedTopic = try topicRepo.fetchById(topicId)
+        XCTAssertEqual(alignedTopic?.sessionKey, gatewayKey, "Topic sessionKey should be aligned to gateway key via Strategy 4")
+
+        // Verify bridge was updated
+        let resolvedKey = try topicRepo.resolveSessionKey(topicId: topicId)
+        XCTAssertEqual(resolvedKey, gatewayKey, "Bridge should map to gateway key")
+
+        // Cleanup
+        try topicRepo.deleteCascading(topicId)
+    }
+
+    func testResolveTopicIdByTelegramThread() throws {
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+
+        // Create a topic with Telegram metadata
+        let topicId = UUID().uuidString
+        let topic = Topic(id: topicId, name: "General", sessionKey: "agent:main:\(UUID().uuidString.lowercased())")
+        try topicRepo.save(topic)
+        try topicRepo.updateTelegramMetadata(topicId: topicId, groupId: "-1003830552971", threadId: "1")
+
+        // Resolve by Telegram group+thread
+        let found = try topicRepo.resolveTopicIdByTelegramThread(groupId: "-1003830552971", threadId: "1")
+        XCTAssertEqual(found, topicId, "Should find topic by Telegram group+thread ID")
+
+        // Should not find for different group
+        let notFound = try topicRepo.resolveTopicIdByTelegramThread(groupId: "-999999999", threadId: "1")
+        XCTAssertNil(notFound, "Should not find topic for different group ID")
+
+        // Cleanup
+        try topicRepo.deleteCascading(topicId)
+    }
+
+    func testFetchByIdCaseInsensitive() throws {
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+
+        // Create a topic with uppercase UUID (as UUID().uuidString produces)
+        let topicId = UUID().uuidString // e.g., "5040F20F-F205-41B9-B5A1-31FA06695278"
+        let topic = Topic(id: topicId, name: "Test Topic", sessionKey: "agent:main:test")
+        try topicRepo.save(topic)
+
+        // Look up with lowercase version (as gateway metadata might provide)
+        let found = try topicRepo.fetchById(topicId.lowercased())
+        XCTAssertNotNil(found, "fetchById should find topic with case-insensitive UUID lookup")
+        XCTAssertEqual(found?.id, topicId, "Found topic should have original case UUID")
+
+        // Cleanup
+        try topicRepo.deleteCascading(topicId)
+    }
+
     // MARK: - Helper
 
     private func bridge() -> SyncBridge {

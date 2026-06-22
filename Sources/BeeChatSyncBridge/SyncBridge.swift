@@ -234,6 +234,8 @@ public actor SyncBridge {
         do {
             // Strategy 1: If the gateway session has beechat metadata with a topicId,
             // look up the local topic directly.
+            // Note: fetchById now does case-insensitive matching to handle
+            // UUIDs that differ in case between gateway (lowercase) and local (uppercase).
             if let meta = beechatMetadata {
                 let topicId = meta.topicId
                 if let topic = try topicRepo.fetchById(topicId) {
@@ -242,6 +244,10 @@ public actor SyncBridge {
                         print("[SyncBridge] Aligning topic \(topicId) key: \(localKey) → \(gatewayKey)")
                         try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
                         try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                        // Store Telegram metadata for future Strategy 4 alignments
+                        if let (groupId, threadId) = SessionKeyNormalizer.parseTelegramKey(gatewayKey) {
+                            try topicRepo.updateTelegramMetadata(topicId: topicId, groupId: groupId, threadId: threadId)
+                        }
                         // C2 fix: Migrate messages stored under the old key so they
                         // remain reachable after alignment.
                         try DatabaseManager.shared.write { db in
@@ -265,6 +271,38 @@ public actor SyncBridge {
                         let localKey = topic.sessionKey ?? ""
                         if localKey != gatewayKey {
                             print("[SyncBridge] Aligning telegram topic \(topicId) key via suffix: \(localKey) → \(gatewayKey)")
+                            try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
+                            try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
+                            // Store Telegram metadata for future alignments
+                            if let (groupId, threadId) = SessionKeyNormalizer.parseTelegramKey(gatewayKey) {
+                                try topicRepo.updateTelegramMetadata(topicId: topicId, groupId: groupId, threadId: threadId)
+                            }
+                            // C2 fix: Migrate messages stored under the old key
+                            try DatabaseManager.shared.write { db in
+                                try db.execute(
+                                    sql: "UPDATE messages SET sessionId = ? WHERE sessionId = ?",
+                                    arguments: [gatewayKey, localKey]
+                                )
+                            }
+                        }
+                    }
+                    return
+                }
+            }
+
+            // Strategy 4: For Telegram gateway keys where suffix matching failed,
+            // parse the gateway key to extract groupId and threadId, then match
+            // against local topics that have stored Telegram metadata.
+            // This handles the case where a local topic was created with a random
+            // UUID key (e.g., agent:main:491EA8D6-...) but the gateway key is
+            // agent:main:telegram:group:-1003830552971:topic:1 — suffix match
+            // can't connect them, but stored telegramThreadId can.
+            if let (groupId, threadId) = SessionKeyNormalizer.parseTelegramKey(gatewayKey) {
+                if let topicId = try topicRepo.resolveTopicIdByTelegramThread(groupId: groupId, threadId: threadId) {
+                    if let topic = try topicRepo.fetchById(topicId) {
+                        let localKey = topic.sessionKey ?? ""
+                        if localKey != gatewayKey {
+                            print("[SyncBridge] Aligning telegram topic \(topicId) key via thread ID match: \(localKey) → \(gatewayKey)")
                             try topicRepo.updateSessionKey(topicId: topicId, sessionKey: gatewayKey)
                             try topicRepo.saveBridge(topicId: topicId, sessionKey: gatewayKey)
                             // C2 fix: Migrate messages stored under the old key

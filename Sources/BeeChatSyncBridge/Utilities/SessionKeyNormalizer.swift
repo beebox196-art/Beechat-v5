@@ -30,6 +30,27 @@ public struct SessionKeyNormalizer: Sendable {
         let stripped = stripPrefix(key)
         return (key, stripped)
     }
+
+    /// Parse a Telegram-format gateway key to extract the group ID and thread ID.
+    /// Expected format: "agent:main:telegram:group:<groupId>:topic:<threadId>"
+    /// Returns nil if the key doesn't match this pattern.
+    ///
+    /// Example: "agent:main:telegram:group:-1003830552971:topic:1"
+    ///   → (groupId: "-1003830552971", threadId: "1")
+    public static func parseTelegramKey(_ key: String) -> (groupId: String, threadId: String)? {
+        // Pattern: agent:main:telegram:group:<groupId>:topic:<threadId>
+        // After stripping prefix: telegram:group:<groupId>:topic:<threadId>
+        let stripped = stripPrefix(key)
+        let parts = stripped.split(separator: ":")
+        // Expected parts: ["telegram", "group", groupId, "topic", threadId]
+        guard parts.count == 5,
+              parts[0] == "telegram",
+              parts[1] == "group",
+              parts[3] == "topic" else {
+            return nil
+        }
+        return (groupId: String(parts[2]), threadId: String(parts[4]))
+    }
 }
 
 // MARK: - BeeChat Session Filter
