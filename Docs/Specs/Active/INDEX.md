@@ -25,7 +25,8 @@
 | `FIX-002-sidebar-interaction.md` | Sidebar interaction — standard macOS patterns | P0, needs verification if still relevant |
 | `FIX-003-POLL-SLEEP-BEE-DIAGNOSTICS.md` | Poll spin loop + thinking Bee state | Needs verification |
 | `SESSION-KEY-ALIGNMENT-REFACTOR.md` | Session key alignment refactor | v5 FINAL, ready for build |
-| `TOPIC-DELETE-SAFETY.md` | Topic delete safety spec | DRAFT since Apr, needs review |
+| `TOPIC-DELETE-SAFETY.md` | Topic delete safety spec | DRAFT since Apr, urgent portion superseded by FR-004 |
+| `FR-004-URGENT-DELETE-CONFIRM.md` | Urgent confirm-gate for the 3 delete paths | DRAFT, for Kieran review |
 
 ## Re-org Plans (Archive after execution)
 
