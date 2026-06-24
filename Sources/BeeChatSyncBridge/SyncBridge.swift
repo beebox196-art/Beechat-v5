@@ -552,15 +552,25 @@ public actor SyncBridge {
     // MARK: - Session Reset Flow
 
     public func resetSession(sessionKey: String) async throws -> Bool {
-        // H2 fix: Also clear contextInjectedKeys under any local key that maps to
-        // this canonical key, so context is re-injected on next send.
-        contextInjectedKeys.remove(sessionKey)
+        // DB-first: Resolve via database if possible, same pattern as manualReset.
+        // This ensures auto-reset also uses the canonical key from alignment,
+        // not a stale UUID key from the in-memory Topic struct.
+        var effectiveKey = sessionKey
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+        if let topicId = try? topicRepo.resolveTopicId(for: sessionKey),
+           let dbKey = try? topicRepo.resolveCurrentSessionKey(topicId: topicId),
+           dbKey != sessionKey {
+            effectiveKey = dbKey
+        }
+
+        // H2 fix: clear contextInjectedKeys
+        contextInjectedKeys.remove(effectiveKey)
         for key in contextInjectedKeys {
-            if let canonical = await resolveToCanonicalKey(localKey: key), canonical == sessionKey {
+            if let canonical = await resolveToCanonicalKey(localKey: key), canonical == effectiveKey {
                 contextInjectedKeys.remove(key)
             }
         }
-        return try await rpcClient.sessionsReset(sessionKey: sessionKey, reason: "new")
+        return try await rpcClient.sessionsReset(sessionKey: effectiveKey, reason: "new")
     }
 
     /// Manual reset triggered by user (amber dot tap or context menu).
@@ -568,11 +578,22 @@ public actor SyncBridge {
     /// Returns true if reset succeeded, false if already pending or failed.
     /// No cooldown — user-initiated resets always execute.
     public func manualReset(sessionKey: String) async throws -> Bool {
-        // Resolve local key to gateway canonical key first, so the guard
-        // checks the canonical key too.
+        // DB-first: If the caller passed a topic-derived key that may be stale,
+        // look up the current canonical key from the database (which alignment
+        // has already updated). This avoids sending a stale UUID key to the gateway.
         var effectiveSessionKey = sessionKey
-        if let canonicalKey = await resolveToCanonicalKey(localKey: sessionKey) {
-            print("[SyncBridge] manualReset: resolved \(sessionKey) → \(canonicalKey)")
+        let topicRepo = TopicRepository(dbManager: DatabaseManager.shared)
+        if let topicId = try? topicRepo.resolveTopicId(for: sessionKey),
+           let dbKey = try? topicRepo.resolveCurrentSessionKey(topicId: topicId),
+           dbKey != sessionKey {
+            print("[SyncBridge] manualReset: DB lookup resolved \(sessionKey) → \(dbKey)")
+            effectiveSessionKey = dbKey
+        }
+
+        // Then also try resolveToCanonicalKey as before (covers cases where DB
+        // hasn't been aligned yet but knownSessionKeys has the mapping)
+        if let canonicalKey = await resolveToCanonicalKey(localKey: effectiveSessionKey) {
+            print("[SyncBridge] manualReset: resolved \(effectiveSessionKey) → \(canonicalKey)")
             effectiveSessionKey = canonicalKey
         }
 

@@ -291,6 +291,21 @@ public class TopicRepository {
         }
     }
     
+    /// Resolve the current canonical session key for a topic by reading
+    /// directly from the database. This avoids stale in-memory Topic structs
+    /// that haven't yet picked up alignment updates.
+    /// Returns nil if the topic has no session key.
+    public func resolveCurrentSessionKey(topicId: String) throws -> String? {
+        try dbManager.reader.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT COALESCE(t.sessionKey, b.openclawSessionKey)
+                FROM topics t
+                LEFT JOIN topic_session_bridge b ON b.topicId = t.id
+                WHERE t.id = ?
+                """, arguments: [topicId])
+        }
+    }
+
     /// Resolve the topic ID for a gateway session key using suffix matching.
     /// Strips the "agent:main:" prefix from the gateway key, then does a
     /// case-insensitive comparison against all topic IDs.
