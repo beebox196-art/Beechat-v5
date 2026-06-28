@@ -40,6 +40,28 @@ struct BeeChatApp: App {
                 Button("Previous Topic") { /* TODO: cycle left */ }
                     .keyboardShortcut(.leftArrow, modifiers: .command)
             }
+            // FR-004: ⌘+ / ⌘− bump fontScale by 0.1.
+            // setFontScale clamps internally, so callers can pass raw values.
+            CommandMenu("View") {
+                Button("Increase Text Size") {
+                    themeManager.setFontScale(themeManager.fontScale + 0.1)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Decrease Text Size") {
+                    themeManager.setFontScale(themeManager.fontScale - 0.1)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+            }
+        }
+
+        // FR-004: native macOS Settings scene with font scale controls.
+        // Opened with ⌘, (default). Uses the same environment-injected
+        // ThemeManager instance as the main window so changes propagate
+        // via @Observable.
+        Settings {
+            FontSizeSettingsView()
+                .environment(themeManager)
         }
     }
 }
