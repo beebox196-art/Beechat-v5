@@ -138,7 +138,7 @@ All project documentation is organised under `Docs/`:
 See `Docs/Specs/Archive/README.md` for archive index and `Docs/Reviews/INDEX.md` for review index.
 
 ## Known Issues
-- **BUG: Session reset uses wrong key for Telegram topics (2026-06-22)** — See `Docs/Bugs/session-reset-general-topic.md`. Local SQLite `topics` table stores UUID-format keys (`agent:main:491ea8d6...`) while the gateway uses canonical Telegram keys (`agent:main:telegram:group:-...:topic:N`). Manual reset passes the UUID key, resetting the wrong session. All 14 locally-created topics are affected. Fix requires key alignment in `fetchSessions()`.
+- **BUG: Session reset uses wrong key for Telegram topics (2026-06-22)** — See `Docs/Bugs/session-reset-general-topic.md`. Local SQLite `topics` table stores UUID-format keys (`agent:main:491ea8d6...`) while the gateway uses canonical Telegram keys (`agent:main:telegram:group:-...:topic:N`). Manual reset passes the UUID key, resetting the wrong session. All 14 locally-created topics are affected. **FIX IN PROGRESS on branch `fix/session-key-alignment`** — Q implementation + Kieran review + Bee C1/C2/H1/H2 fixes. Commit `aeeeb23`. Binary built and installed to /Applications/BeeChatApp.app (0.9.3-dev, 2026.06.22). Awaiting Adam's live test.
 - M4 AsyncStream delivery tests remain as low-priority gap
 - GatewayStatusBar shows "No gateway connection" briefly on startup (cosmetic)
 - `AnyCodable` Sendable warning (Swift 6 compatibility issue)

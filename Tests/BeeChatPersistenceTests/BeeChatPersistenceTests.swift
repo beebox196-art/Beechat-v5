@@ -138,18 +138,16 @@ final class BeeChatPersistenceTests: XCTestCase {
     // MARK: - Migration010 Session Key Alignment Tests
     
     func testMigration010_CreatesNewSchema() throws {
-        // Verify session_key_mapping table exists
-        let mappingTableExists = try DatabaseManager.shared.read { db in
-            try db.tableExists("session_key_mapping")
-        }
-        XCTAssertTrue(mappingTableExists, "session_key_mapping table should exist after Migration010")
-        
+        // NOTE: session_key_mapping was created by Migration010 and dropped by
+        // Migration015 (dead schema — topics.sessionKey already stores the canonical
+        // gateway key directly). It is intentionally absent from the schema now.
+
         // Verify _migration_metadata table exists
         let metadataTableExists = try DatabaseManager.shared.read { db in
             try db.tableExists("_migration_metadata")
         }
         XCTAssertTrue(metadataTableExists, "_migration_metadata table should exist after Migration010")
-        
+
         // Verify new session columns exist
         let columns = try DatabaseManager.shared.read { db in
             try db.columns(in: "sessions").map { $0.name }
@@ -159,6 +157,20 @@ final class BeeChatPersistenceTests: XCTestCase {
         XCTAssertTrue(columns.contains("messageCount"), "sessions should have messageCount column")
         XCTAssertTrue(columns.contains("totalTokens"), "sessions should have totalTokens column")
         XCTAssertTrue(columns.contains("isArchived"), "sessions should have isArchived column")
+    }
+
+    func testMigration015_DropsSessionKeyMapping() throws {
+        // After Migration015, the dead session_key_mapping table should be gone.
+        let mappingTableExists = try DatabaseManager.shared.read { db in
+            try db.tableExists("session_key_mapping")
+        }
+        XCTAssertFalse(mappingTableExists, "session_key_mapping table should be dropped by Migration015")
+
+        // The legacy session_key_alignment_pending metadata flag should also be gone.
+        let pendingFlag = try DatabaseManager.shared.read { db in
+            try String.fetchOne(db, sql: "SELECT value FROM _migration_metadata WHERE key = ?", arguments: ["session_key_alignment_pending"])
+        }
+        XCTAssertNil(pendingFlag, "session_key_alignment_pending metadata flag should be cleared by Migration015")
     }
 
     func testMigration011_AddsMessageAgentIdColumn() throws {
@@ -220,114 +232,6 @@ final class BeeChatPersistenceTests: XCTestCase {
         
         let afterDelete = try store.fetchSession(id: "negative_test_session")
         XCTAssertGreaterThanOrEqual(afterDelete?.messageCount ?? 0, 0, "messageCount should not go negative")
-    }
-    
-    func testMigration010_DataMigration_PopulatesMapping() throws {
-        // Set up: create sessions with gateway keys and topics with local IDs
-        let gatewayKey1 = "agent:main:gw111111-1111-1111-1111-111111111111"
-        let gatewayKey2 = "agent:main:gw222222-2222-2222-2222-222222222222"
-        let localId1 = "local-uuid-1111"
-        let localId2 = "local-uuid-2222"
-        
-        let session1 = Session(id: gatewayKey1, agentId: "main", title: "Session 1")
-        let session2 = Session(id: gatewayKey2, agentId: "main", title: "Session 2")
-        try store.upsertSessions([session1, session2])
-        
-        let topic1 = Topic(id: localId1, name: "Custom Topic 1", lastMessagePreview: "Preview 1", unreadCount: 3, sessionKey: gatewayKey1, isArchived: true, messageCount: 5)
-        let topic2 = Topic(id: localId2, name: "Custom Topic 2", lastMessagePreview: "Preview 2", unreadCount: 0, sessionKey: gatewayKey2, isArchived: false, messageCount: 10)
-        try store.saveTopic(topic1)
-        try store.saveTopic(topic2)
-        
-        // Create messages with local UUIDs (simulating pre-migration state)
-        let msg1 = Message(id: "msg_local_1", sessionId: localId1, role: "user", content: "Hello", timestamp: Date())
-        let msg2 = Message(id: "msg_local_2", sessionId: localId2, role: "assistant", content: "Hi", timestamp: Date())
-        try store.saveMessage(msg1)
-        try store.saveMessage(msg2)
-        
-        // Simulate migration: set pending flag and run data migration
-        DatabaseManager.shared.sessionKeyAlignmentPending = true
-        
-        let topicToGatewayKey: [String: String] = [
-            localId1: gatewayKey1,
-            localId2: gatewayKey2
-        ]
-        
-        try DatabaseManager.shared.runSessionKeyAlignmentMigration(topicToGatewayKey: topicToGatewayKey)
-        
-        // Verify: pending flag cleared
-        XCTAssertFalse(DatabaseManager.shared.sessionKeyAlignmentPending, "Pending flag should be cleared after migration")
-        
-        // Verify: session_key_mapping table populated
-        let mappingCount = try DatabaseManager.shared.read { db in
-            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM session_key_mapping") ?? 0
-        }
-        XCTAssertEqual(mappingCount, 2, "session_key_mapping should have 2 entries")
-        
-        // Verify: session columns populated from topics
-        let migratedSession1 = try store.fetchSession(id: gatewayKey1)
-        XCTAssertEqual(migratedSession1?.customName, "Custom Topic 1", "customName should be set from topic")
-        XCTAssertEqual(migratedSession1?.lastMessagePreview, "Preview 1", "lastMessagePreview should be set from topic")
-        XCTAssertEqual(migratedSession1?.isArchived, true, "isArchived should be set from topic")
-        XCTAssertEqual(migratedSession1?.unreadCount, 3, "unreadCount should be set from topic")
-        
-        let migratedSession2 = try store.fetchSession(id: gatewayKey2)
-        XCTAssertEqual(migratedSession2?.customName, "Custom Topic 2", "customName should be set from topic")
-        XCTAssertEqual(migratedSession2?.isArchived, false, "isArchived should be false")
-        
-        // Verify: messages rewritten from local UUIDs to gateway keys
-        let migratedMsg1 = try store.fetchMessage(id: "msg_local_1")
-        XCTAssertEqual(migratedMsg1?.sessionId, gatewayKey1, "Message sessionId should be rewritten to gateway key")
-        
-        let migratedMsg2 = try store.fetchMessage(id: "msg_local_2")
-        XCTAssertEqual(migratedMsg2?.sessionId, gatewayKey2, "Message sessionId should be rewritten to gateway key")
-    }
-    
-    func testMigration010_DataMigration_HandlesOrphans() throws {
-        let gatewayKey = "agent:main:gw_orphan_test"
-        let localId = "local-uuid-orphan"
-        let orphanId = "orphan-local-uuid"
-        
-        let session = Session(id: gatewayKey, agentId: "main", title: "Session")
-        try store.saveSession(session)
-        
-        let topic = Topic(id: localId, name: "Topic", sessionKey: gatewayKey, messageCount: 2)
-        try store.saveTopic(topic)
-        
-        // Create a message with a local UUID
-        let msg = Message(id: "msg_orphan", sessionId: localId, role: "user", content: "Hello", timestamp: Date())
-        try store.saveMessage(msg)
-        
-        // Create an orphaned message (sessionId not in mapping)
-        let orphanMsg = Message(id: "msg_truly_orphan", sessionId: orphanId, role: "user", content: "Orphan", timestamp: Date())
-        try store.saveMessage(orphanMsg)
-        
-        DatabaseManager.shared.sessionKeyAlignmentPending = true
-        
-        let topicToGatewayKey: [String: String] = [
-            localId: gatewayKey
-            // orphanId intentionally not mapped
-        ]
-        
-        try DatabaseManager.shared.runSessionKeyAlignmentMigration(topicToGatewayKey: topicToGatewayKey)
-        
-        // Verify: orphan message rewritten to synthetic key
-        let migratedOrphanMsg = try store.fetchMessage(id: "msg_truly_orphan")
-        XCTAssertEqual(migratedOrphanMsg?.sessionId, "orphan:\(orphanId)", "Orphan message should be rewritten to synthetic key")
-        
-        // Verify: synthetic orphan session created
-        let orphanSession = try store.fetchSession(id: "orphan:\(orphanId)")
-        XCTAssertNotNil(orphanSession, "Synthetic orphan session should be created")
-        XCTAssertEqual(orphanSession?.isArchived, true, "Orphan session should be archived")
-    }
-    
-    func testMigration010_DataMigration_SkipsWhenNotPending() throws {
-        // Ensure pending flag is false
-        DatabaseManager.shared.sessionKeyAlignmentPending = false
-        
-        // Should not throw, should do nothing
-        try DatabaseManager.shared.runSessionKeyAlignmentMigration(topicToGatewayKey: [:])
-        
-        XCTAssertFalse(DatabaseManager.shared.sessionKeyAlignmentPending)
     }
     
     func testMigration010_SessionNewFieldsPersist() throws {

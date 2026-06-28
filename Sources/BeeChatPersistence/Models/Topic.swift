@@ -5,9 +5,15 @@ import GRDB
 
 public struct TopicMetadata: Codable {
     public var projectPath: String?
+    /// Telegram group ID (e.g., "-1003830552971") — stored when topic originates from a Telegram forum.
+    public var telegramGroupId: String?
+    /// Telegram thread/topic ID (e.g., "1" for General) — stored when topic originates from a Telegram forum.
+    public var telegramThreadId: String?
 
-    public init(projectPath: String? = nil) {
+    public init(projectPath: String? = nil, telegramGroupId: String? = nil, telegramThreadId: String? = nil) {
         self.projectPath = projectPath
+        self.telegramGroupId = telegramGroupId
+        self.telegramThreadId = telegramThreadId
     }
 }
 
@@ -82,13 +88,42 @@ public struct Topic: Codable, UpsertableRecord {
 
     // MARK: - Project Path (via metadataJSON)
 
-    /// The project path bound to this topic, stored in metadataJSON.
-    /// Returns nil if no project is bound or if metadataJSON is malformed.
-    public var projectPath: String? {
+    // MARK: - Metadata Accessors (via metadataJSON)
+
+    /// Private helper to decode metadataJSON.
+    private var decodedMetadata: TopicMetadata? {
         guard let json = metadataJSON,
               let data = json.data(using: .utf8),
               let meta = try? JSONDecoder().decode(TopicMetadata.self, from: data) else { return nil }
-        return meta.projectPath
+        return meta
+    }
+
+    /// The project path bound to this topic, stored in metadataJSON.
+    /// Returns nil if no project is bound or if metadataJSON is malformed.
+    public var projectPath: String? {
+        return decodedMetadata?.projectPath
+    }
+
+    /// The Telegram group ID for this topic (e.g., "-1003830552971").
+    /// Returns nil if this topic is not from a Telegram forum.
+    public var telegramGroupId: String? {
+        return decodedMetadata?.telegramGroupId
+    }
+
+    /// The Telegram thread/topic ID for this topic (e.g., "1" for General).
+    /// Returns nil if this topic is not from a Telegram forum.
+    public var telegramThreadId: String? {
+        return decodedMetadata?.telegramThreadId
+    }
+
+    /// Update metadataJSON by applying a mutation to the decoded TopicMetadata.
+    /// Handles nil/malformed metadataJSON by starting from a fresh TopicMetadata.
+    private mutating func updateMetadata(_ mutation: (inout TopicMetadata) -> Void) {
+        var meta = decodedMetadata ?? TopicMetadata()
+        mutation(&meta)
+        if let data = try? JSONEncoder().encode(meta) {
+            metadataJSON = String(data: data, encoding: .utf8)
+        }
     }
 
     /// Set or clear the project path for this topic.
@@ -99,7 +134,16 @@ public struct Topic: Codable, UpsertableRecord {
     /// - Throws: `TopicError.invalidProjectPath` if validation fails.
     public mutating func setProjectPath(_ path: String?) throws {
         guard let path = path else {
-            self.metadataJSON = nil
+            // Only clear projectPath, preserve other metadata fields
+            updateMetadata { meta in
+                meta.projectPath = nil
+            }
+            // If metadata is now empty, set to nil entirely
+            if let json = metadataJSON, let data = json.data(using: .utf8),
+               let meta = try? JSONDecoder().decode(TopicMetadata.self, from: data),
+               meta.projectPath == nil && meta.telegramGroupId == nil && meta.telegramThreadId == nil {
+                self.metadataJSON = nil
+            }
             return
         }
 
@@ -131,15 +175,18 @@ public struct Topic: Codable, UpsertableRecord {
         }
         #endif
 
-        var meta = TopicMetadata()
-        if let json = metadataJSON,
-           let data = json.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode(TopicMetadata.self, from: data) {
-            meta = decoded
+        updateMetadata { meta in
+            meta.projectPath = path
         }
-        meta.projectPath = path
-        if let data = try? JSONEncoder().encode(meta) {
-            metadataJSON = String(data: data, encoding: .utf8)
+    }
+
+    /// Set the Telegram group and thread IDs for this topic.
+    /// Called during session key alignment when a local UUID-keyed topic
+    /// is matched to a gateway Telegram topic.
+    public mutating func setTelegramMetadata(groupId: String, threadId: String) {
+        updateMetadata { meta in
+            meta.telegramGroupId = groupId
+            meta.telegramThreadId = threadId
         }
     }
 }

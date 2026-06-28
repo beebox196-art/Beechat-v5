@@ -228,7 +228,14 @@ struct MainWindow: View {
             // Clear stale pending reset context when switching topics
             if let bridge = appState.syncBridge {
                 Task {
-                    await bridge.clearPendingResetContext(except: messageViewModel.selectedTopic?.sessionKey)
+                    // H1: Resolve canonical key so both local and gateway key forms
+                    // are preserved in the pending context
+                    var additionalExcept: Set<String>? = nil
+                    if let localKey = messageViewModel.selectedTopic?.sessionKey,
+                       let canonicalKey = await bridge.resolveToCanonicalKey(localKey: localKey) {
+                        additionalExcept = [canonicalKey]
+                    }
+                    await bridge.clearPendingResetContext(except: messageViewModel.selectedTopic?.sessionKey, exceptAdditional: additionalExcept)
                 }
             }
         }

@@ -169,7 +169,20 @@ public class TopicRepository {
     /// Used for undo operations where the topic may be archived.
     public func fetchById(_ id: String) throws -> Topic? {
         try dbManager.reader.read { db in
-            try Topic.fetchOne(db, key: id)
+            // Primary key lookup (exact match)
+            if let topic = try Topic.fetchOne(db, key: id) {
+                return topic
+            }
+            // Case-insensitive fallback — UUIDs may differ in case between
+            // topic.id (uppercase from UUID().uuidString) and session key suffixes
+            // or gateway metadata (lowercase from agent:main:<uuid> format).
+            if let topic = try Topic.fetchOne(db,
+                sql: "SELECT * FROM topics WHERE id = ? COLLATE NOCASE LIMIT 1",
+                arguments: [id]
+            ) {
+                return topic
+            }
+            return nil
         }
     }
 
@@ -249,6 +262,50 @@ public class TopicRepository {
         }
     }
     
+    /// Update the Telegram metadata (groupId and threadId) in a topic's metadataJSON.
+    /// Preserves existing metadata fields (like projectPath) and only changes telegram fields.
+    public func updateTelegramMetadata(topicId: String, groupId: String, threadId: String) throws {
+        try dbManager.write { db in
+            let existingJSON: String? = try String.fetchOne(
+                db, sql: "SELECT metadataJSON FROM topics WHERE id = ?", arguments: [topicId]
+            )
+
+            var meta = TopicMetadata()
+            if let json = existingJSON,
+               let data = json.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(TopicMetadata.self, from: data) {
+                meta = decoded
+            }
+            meta.telegramGroupId = groupId
+            meta.telegramThreadId = threadId
+
+            // H2 fix: Use nil instead of empty string as fallback.
+            // Empty string "" is not valid JSON and would cause decodedMetadata to return nil,
+            // silently losing all previously stored metadata on the next read.
+            let newJSON = try? String(data: JSONEncoder().encode(meta), encoding: .utf8)
+
+            try db.execute(
+                sql: "UPDATE topics SET metadataJSON = ?, updatedAt = ? WHERE id = ?",
+                arguments: [newJSON, Date(), topicId]
+            )
+        }
+    }
+    
+    /// Resolve the current canonical session key for a topic by reading
+    /// directly from the database. This avoids stale in-memory Topic structs
+    /// that haven't yet picked up alignment updates.
+    /// Returns nil if the topic has no session key.
+    public func resolveCurrentSessionKey(topicId: String) throws -> String? {
+        try dbManager.reader.read { db in
+            try String.fetchOne(db, sql: """
+                SELECT COALESCE(t.sessionKey, b.openclawSessionKey)
+                FROM topics t
+                LEFT JOIN topic_session_bridge b ON b.topicId = t.id
+                WHERE t.id = ?
+                """, arguments: [topicId])
+        }
+    }
+
     /// Resolve the topic ID for a gateway session key using suffix matching.
     /// Strips the "agent:main:" prefix from the gateway key, then does a
     /// case-insensitive comparison against all topic IDs.
@@ -274,6 +331,30 @@ public class TopicRepository {
             }
             if let topicId = try String.fetchOne(db, sql: "SELECT topicId FROM topic_session_bridge WHERE openclawSessionKey = ?", arguments: [stripped]) {
                 return topicId
+            }
+            return nil
+        }
+    }
+    
+    /// Resolve a local topic ID by matching Telegram group ID and thread ID
+    /// stored in the topic's metadataJSON.
+    /// This is Strategy 4 in session key alignment — for gateway keys like
+    /// "agent:main:telegram:group:-1003830552971:topic:1", we look for local topics
+    /// whose metadataJSON contains matching telegramGroupId and telegramThreadId.
+    /// H1 fix: ORDER BY updatedAt DESC to prefer the most recently updated topic
+    /// if duplicates exist (e.g., during alignment races).
+    public func resolveTopicIdByTelegramThread(groupId: String, threadId: String) throws -> String? {
+        try dbManager.reader.read { db in
+            // Fetch all topics with metadataJSON, preferring most recently updated
+            let rows = try Row.fetchAll(db, sql: "SELECT id, metadataJSON FROM topics WHERE metadataJSON IS NOT NULL ORDER BY updatedAt DESC")
+            for row in rows {
+                let id: String = row["id"]
+                let json: String = row["metadataJSON"]
+                guard let data = json.data(using: .utf8),
+                      let meta = try? JSONDecoder().decode(TopicMetadata.self, from: data),
+                      meta.telegramGroupId == groupId,
+                      meta.telegramThreadId == threadId else { continue }
+                return id
             }
             return nil
         }

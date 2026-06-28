@@ -66,7 +66,9 @@ public struct SessionInfo: Codable, Sendable {
             topicId: topicId,
             isArchived: isArchived,
             projectPath: ext["projectPath"] as? String,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            telegramGroupId: ext["telegramGroupId"] as? String,
+            telegramThreadId: ext["telegramThreadId"] as? String
         )
     }
 
