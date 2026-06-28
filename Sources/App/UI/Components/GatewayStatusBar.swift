@@ -59,11 +59,11 @@ struct GatewayStatusBar: View {
                 .fill(dotColor)
                 .frame(width: 6, height: 6)
             Text(statusText)
-                .font(.system(size: 11, weight: .medium))
+                .font(themeManager.font(.caption))
                 .foregroundColor(themeManager.color(.textSecondary))
             if isTappable {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(themeManager.font(.caption))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
         }
