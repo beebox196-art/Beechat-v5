@@ -19,4 +19,12 @@ struct FontSpec: Sendable {
         let base = Font.system(size: scaledSize, weight: weight)
         return isMono ? base.monospaced() : base
     }
+
+    /// Returns the size that `font(scaledBy: factor)` will use internally.
+    /// Exposed for unit testing — SwiftUI's `Font` is opaque and does not
+    /// expose its point size publicly, so this is the only way to verify
+    /// the scale factor reaches the rendered Font.
+    func scaledSize(for factor: CGFloat) -> CGFloat {
+        size * factor
+    }
 }
