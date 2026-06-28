@@ -218,7 +218,7 @@ struct EditTopicSheet: View {
             if !hasStatusMd {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
+                        .font(themeManager.font(.caption2))
                         .foregroundColor(.orange)
                     Text("STATUS.md not found — agent will have limited project context")
                         .font(themeManager.font(.caption))
@@ -230,7 +230,7 @@ struct EditTopicSheet: View {
             ForEach(statuses, id: \.filename) { file in
                 HStack(spacing: themeManager.spacing(.sm)) {
                     Image(systemName: statusIcon(for: file.status))
-                        .font(.system(size: 9))
+                        .font(themeManager.font(.caption2))
                         .foregroundColor(statusColor(for: file.status))
                     Text(file.filename)
                         .font(themeManager.font(.caption))

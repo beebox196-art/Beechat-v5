@@ -124,7 +124,7 @@ struct AgentRow: View {
         HStack(spacing: themeManager.spacing(.md)) {
             let info = SyncBridgeObserver.AgentActivityTracker.agentEmojiAndName(for: agent.agentId)
             Text(info.emoji)
-                .font(.system(size: 16))
+                .font(themeManager.font(.subheading))
                 .frame(width: 24)
 
             Text(info.name)
@@ -185,7 +185,7 @@ struct RecentEventRow: View {
         HStack(spacing: themeManager.spacing(.md)) {
             let info = SyncBridgeObserver.AgentActivityTracker.agentEmojiAndName(for: event.agentId)
             Text(info.emoji)
-                .font(.system(size: 16))
+                .font(themeManager.font(.subheading))
                 .frame(width: 24)
 
             Text("\(info.name) \(verb)")

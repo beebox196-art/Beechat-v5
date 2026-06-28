@@ -11,9 +11,12 @@ import SwiftUI
 /// ThemeManager is @MainActor-isolated, but TextFieldStyle._body is a
 /// nonisolated protocol requirement. We can't call ThemeManager from here.
 /// The values below match our artisanal-tech theme tokens:
-///   - Font: .system(size: 14) ≈ themeManager.font(.body)
 ///   - Foreground: .primary (adapts to light/dark mode automatically)
 ///   - Padding matches the old MacTextView textContainerInset
+///
+/// **FR-004:** Font is applied externally on the ChatField in Composer.swift
+/// (`.font(themeManager.font(.body))`) — see Composer.swift. SwiftUI propagates
+/// font via environment down into the TextField inside ChatField.
 ///
 /// Background, clip shape, and accessory colours are applied directly on
 /// the Composer view where ThemeManager is accessible.
@@ -21,7 +24,6 @@ struct BeeChatChatFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .textFieldStyle(.plain)
-            .font(.system(size: 14, weight: .regular))
             .foregroundStyle(.primary)
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
