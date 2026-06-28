@@ -93,6 +93,11 @@ struct Composer: View {
                 .accessibilityHint("Send your message to the AI")
             }
         }
+        // FR-004: font must be applied on the ChatField itself (not inside
+        // BeeChatChatFieldStyle, which is a TextFieldStyle and has no
+        // @Environment access). SwiftUI propagates font via environment
+        // down into the inner TextField.
+        .font(themeManager.font(.body))
         .focused($isTextFieldFocused)
         .textFieldStyle(BeeChatChatFieldStyle())
         .frame(maxWidth: .infinity)

@@ -148,7 +148,7 @@ struct MessageCanvas: View {
                     isAtBottom = true
                 }) {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(themeManager.font(.body))
                         .frame(width: 36, height: 36)
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())

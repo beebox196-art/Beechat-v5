@@ -91,19 +91,19 @@ struct SessionRow: View {
             // Project context indicator (Mel Warning-3)
             if case .linked(let name) = projectContextState {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 10))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
                     .help("Project context linked: \(name)")
                     .accessibilityLabel("Project bound to \(name)")
             } else if case .injected(let name) = projectContextState {
                 Image(systemName: "folder.fill")
-                    .font(.system(size: 10))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
                     .help("Project context linked: \(name)")
                     .accessibilityLabel("Project bound to \(name)")
             } else if case .unavailable(let name, let reason) = projectContextState {
                 Image(systemName: "folder.badge.exclamationmark")
-                    .font(.system(size: 10))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(.orange)
                     .help("Project context unavailable for \(name): \(reason)")
                     .accessibilityLabel("Project context unavailable for \(name)")
@@ -188,14 +188,14 @@ struct SessionRow: View {
 
         case .success:
             Text("Topic saved")
-                .font(.system(size: 10, weight: .medium))
+                .font(themeManager.font(.caption2))
                 .foregroundColor(.green)
                 .accessibilityLabel("Topic summary saved")
                 .accessibilityValue("Success")
 
         case .empty:
             Text("No changes to save")
-                .font(.system(size: 10, weight: .medium))
+                .font(themeManager.font(.caption2))
                 .foregroundColor(themeManager.color(.textSecondary))
                 .accessibilityLabel("No durable topic changes found")
                 .accessibilityValue("No changes to save")
@@ -203,11 +203,11 @@ struct SessionRow: View {
         case .failed(let reason):
             Label {
                 Text("Could not save")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(.orange)
             } icon: {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 10))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(.orange)
             }
             .help(reason)
