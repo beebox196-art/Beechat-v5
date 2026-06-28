@@ -160,7 +160,14 @@ struct MainWindow: View {
                 .padding(.vertical, themeManager.spacing(.sm))
                 .animation(themeManager.animation(.micro), value: messageViewModel.selectedTopicId)
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 240, max: 320)
+            .navigationSplitViewColumnWidth(
+                min: 180,
+                // FR-004: ideal scales with fontScale so the sidebar grows
+                // alongside body text. At 1.0 it's unchanged (240).
+                // Max 480 accommodates fontScale 2.0 where body = 28pt.
+                ideal: 240 + 60 * (themeManager.fontScale - 1.0),
+                max: 480
+            )
             .background(themeManager.color(.bgSurface))
             .onKeyPress(.delete) {
                 if let id = messageViewModel.selectedTopicId {
@@ -246,7 +253,7 @@ struct MainWindow: View {
         .sheet(isPresented: $showNewTopicDialog) {
             VStack(spacing: 16) {
                 Text("New Topic")
-                    .font(.headline)
+                    .font(themeManager.font(.subheading))
                 TextField("Topic name", text: $newTopicTitle)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 240)
@@ -583,7 +590,7 @@ struct MainWindow: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Refreshing context...")
-                    .font(.caption)
+                    .font(themeManager.font(.caption))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
             .padding(.horizontal, themeManager.spacing(.md))
@@ -596,7 +603,7 @@ struct MainWindow: View {
                 ProgressView()
                     .controlSize(.small)
                 Text("Resetting session...")
-                    .font(.caption)
+                    .font(themeManager.font(.caption))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
             .padding(.horizontal, themeManager.spacing(.md))
@@ -606,7 +613,7 @@ struct MainWindow: View {
             .transition(.opacity)
         } else if syncBridgeObserver.showAutoResetToast {
             Text("Session refreshed")
-                .font(.caption)
+                .font(themeManager.font(.caption))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(.ultraThinMaterial)
@@ -640,7 +647,7 @@ struct EditTopicSheetWrapper: View {
             } else if let error = loadError {
                 VStack(spacing: 16) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.title)
+                        .font(themeManager.font(.heading))
                         .foregroundColor(themeManager.color(.error))
                     Text("Could not load topic")
                         .font(themeManager.font(.heading))
