@@ -627,6 +627,20 @@ public actor SyncBridge {
         let ok = try await resetSession(sessionKey: effectiveSessionKey)
 
         if ok {
+            // Best-effort: clean up the old session's trajectory file on disk.
+            // The gateway archives the .jsonl transcript on reset (renaming to
+            // .jsonl.reset.<timestamp>) but leaves the .trajectory.jsonl file
+            // (potentially 6+ MB of agentic action traces) orphaned.
+            // cleanupTrajectoryAndLock is non-throwing and best-effort.
+            let locator = SessionFileLocator()
+            let agentId = Self.agentId(fromSessionKey: effectiveSessionKey)
+            let deleted = locator.cleanupTrajectoryAndLock(
+                sessionKey: effectiveSessionKey,
+                agentId: agentId
+            )
+            if !deleted.isEmpty {
+                print("[SyncBridge] manualReset: cleaned up \(deleted.count) orphaned session file(s) for \(effectiveSessionKey)")
+            }
             // Format context and store for next send
             let contextPayload = formatCombinedContext(recentMessages, userMessage: "")
             pendingResetContext[sessionKey] = contextPayload

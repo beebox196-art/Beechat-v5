@@ -16,136 +16,6 @@ public class DatabaseManager {
     private var dbPool: DatabasePool?
     
     public init() {}
-    
-    /// Whether the session key alignment data migration still needs to run.
-    /// Set to true by Migration010 schema changes; cleared once data migration completes.
-    public var sessionKeyAlignmentPending = false
-
-    /// Run the data migration phase of Session Key Alignment.
-    /// Called after SyncBridge.start() populates sessionKeyMap from the gateway.
-    /// If the gateway is unreachable, this should NOT be called — the app runs
-    /// in compatibility mode until the gateway is available.
-    ///
-    /// - Parameter topicToGatewayKey: Inverted sessionKeyMap (local UUID → gateway key).
-    ///   Built by inverting SyncBridge.sessionKeyMap after fetchSessions() succeeds.
-    public func runSessionKeyAlignmentMigration(topicToGatewayKey: [String: String]) throws {
-        guard sessionKeyAlignmentPending else {
-            // Already migrated or not needed
-            return
-        }
-
-        try write { db in
-            // Step 1: Persist the gateway key mapping to session_key_mapping table
-            // (Table created by Migration010 schema phase)
-            if try db.tableExists("session_key_mapping") {
-                for (localId, gatewayKey) in topicToGatewayKey {
-                    try db.execute(
-                        sql: "INSERT OR IGNORE INTO session_key_mapping (localId, gatewayKey) VALUES (?, ?)",
-                        arguments: [localId, gatewayKey]
-                    )
-                }
-            }
-
-            // Step 3: Populate new columns from topics data
-            // For each known mapping, find the topic and copy metadata to the session
-            let allTopics = try Topic.fetchAll(db)
-            let topicById = Dictionary(uniqueKeysWithValues: allTopics.map { ($0.id, $0) })
-
-            for (localId, gatewayKey) in topicToGatewayKey {
-                // Only update sessions that exist in the sessions table
-                let sessionExists = try Bool.fetchOne(db, sql: "SELECT 1 FROM sessions WHERE id = ?", arguments: [gatewayKey]) ?? false
-                guard sessionExists else { continue }
-
-                if let topic = topicById[localId] {
-                    // Only set customName if it differs from the gateway title
-                    let customName: String? = topic.name != (try String.fetchOne(db, sql: "SELECT title FROM sessions WHERE id = ?", arguments: [gatewayKey])) ? topic.name : nil
-
-                    try db.execute(
-                        sql: """
-                        UPDATE sessions SET
-                            customName = ?,
-                            lastMessagePreview = ?,
-                            messageCount = ?,
-                            isArchived = ?,
-                            unreadCount = ?
-                        WHERE id = ?
-                        """,
-                        arguments: [
-                            customName,
-                            topic.lastMessagePreview,
-                            topic.messageCount,
-                            topic.isArchived,
-                            topic.unreadCount,
-                            gatewayKey
-                        ]
-                    )
-                }
-            }
-
-            // Step 4: Rewrite messages.sessionId and delivery_ledger.sessionKey
-            // from local UUIDs to gateway keys
-            for (localId, gatewayKey) in topicToGatewayKey {
-                try db.execute(
-                    sql: "UPDATE messages SET sessionId = ? WHERE sessionId = ?",
-                    arguments: [gatewayKey, localId]
-                )
-                try db.execute(
-                    sql: "UPDATE delivery_ledger SET sessionKey = ? WHERE sessionKey = ?",
-                    arguments: [gatewayKey, localId]
-                )
-            }
-
-            // Handle orphaned messages: sessionId not in mapping and not already a gateway key
-            if try db.tableExists("messages") {
-                let unmappedSessionIds = try String.fetchAll(db, sql: """
-                    SELECT DISTINCT sessionId FROM messages
-                    WHERE sessionId NOT IN (SELECT localId FROM session_key_mapping)
-                    AND sessionId NOT IN (SELECT id FROM sessions)
-                    """)
-
-                for orphanId in unmappedSessionIds {
-                    let syntheticKey = "orphan:\(orphanId)"
-                    let topicName = topicById[orphanId]?.name ?? "Orphaned messages"
-
-                    try db.execute(
-                        sql: """
-                        INSERT OR IGNORE INTO sessions
-                            (id, agentId, title, customName, isArchived, createdAt, updatedAt)
-                        VALUES (?, 'main', ?, ?, 1, datetime('now'), datetime('now'))
-                        """,
-                        arguments: [syntheticKey, topicName, topicName]
-                    )
-                    try db.execute(
-                        sql: "UPDATE messages SET sessionId = ? WHERE sessionId = ?",
-                        arguments: [syntheticKey, orphanId]
-                    )
-                    try db.execute(
-                        sql: "UPDATE delivery_ledger SET sessionKey = ? WHERE sessionKey = ?",
-                        arguments: [syntheticKey, orphanId]
-                    )
-                }
-            }
-
-            // Backfill sessions.messageCount from actual message counts
-            // (ensures accuracy even if topic data was stale)
-            try db.execute(sql: """
-                UPDATE sessions SET messageCount = COALESCE((
-                    SELECT COUNT(*) FROM messages WHERE messages.sessionId = sessions.id
-                ), 0)
-                WHERE sessions.messageCount = 0
-                """)
-        }
-
-        sessionKeyAlignmentPending = false
-
-        // Persist the completion flag so it survives app restarts
-        try? write { db in
-            try db.execute(
-                sql: "INSERT OR REPLACE INTO _migration_metadata (key, value) VALUES (?, ?)",
-                arguments: ["session_key_alignment_pending", "0"]
-            )
-        }
-    }
 
     public func openDatabase(at path: String) throws {
         var config = Configuration()
@@ -157,14 +27,6 @@ public class DatabaseManager {
         self.dbPool = try DatabasePool(path: path, configuration: config)
         
         try migrate()
-
-        // Check if session key alignment data migration is pending
-        if let pool = dbPool {
-            let pending = try? pool.read { db in
-                try String.fetchOne(db, sql: "SELECT value FROM _migration_metadata WHERE key = ?", arguments: ["session_key_alignment_pending"])
-            }
-            sessionKeyAlignmentPending = (pending == "1")
-        }
     }
     
     public func closeDatabase() {
@@ -435,12 +297,10 @@ public class DatabaseManager {
 
         migrator.registerMigration("Migration010_SessionKeyAlignment_Schema") { db in
             // Step 1: Create session_key_mapping table (populated later by runSessionKeyAlignmentMigration)
-            if try !db.tableExists("session_key_mapping") {
-                try db.create(table: "session_key_mapping") { t in
-                    t.column("localId", .text).primaryKey()
-                    t.column("gatewayKey", .text).notNull()
-                }
-            }
+            // NOTE: Migration015 drops this table. The table was never populated in production
+            // because topics.sessionKey already stores the canonical gateway key directly, and
+            // topic_session_bridge maintains the same mapping. The table is dead schema that
+            // would mislead future developers.
 
             // Step 2: Add new columns to sessions table
             if try db.tableExists("sessions") {
@@ -493,20 +353,15 @@ public class DatabaseManager {
                 END
                 """)
 
-            // Mark that the data migration phase still needs to run
-            // (will be cleared by runSessionKeyAlignmentMigration after boot)
-            // We track this in-memory since the flag must survive across app launches
-            // until the gateway is reachable. The flag is stored in a simple metadata table.
+            // _migration_metadata table — kept for future migrations that need to
+            // persist state across app launches. The session_key_alignment_pending
+            // flag has been removed (Migration015).
             if try !db.tableExists("_migration_metadata") {
                 try db.create(table: "_migration_metadata") { t in
                     t.column("key", .text).primaryKey()
                     t.column("value", .text).notNull()
                 }
             }
-            try db.execute(
-                sql: "INSERT OR REPLACE INTO _migration_metadata (key, value) VALUES (?, ?)",
-                arguments: ["session_key_alignment_pending", "1"]
-            )
         }
 
         migrator.registerMigration("Migration011_AddMessageAgentId") { db in
@@ -568,6 +423,28 @@ public class DatabaseManager {
                 4,
                 Date()
             ])
+        }
+
+        // Migration015: Drop the session_key_mapping table.
+        //
+        // This table was created by Migration010 to bridge local UUID topic IDs
+        // and gateway session keys. Production code never populated it (Q's
+        // review found that topics.sessionKey already stores the canonical
+        // gateway key directly, and topic_session_bridge maintains the same
+        // mapping). Removing it eliminates dead schema that would mislead
+        // future developers.
+        migrator.registerMigration("Migration015_DropSessionKeyMapping") { db in
+            if try db.tableExists("session_key_mapping") {
+                try db.drop(table: "session_key_mapping")
+            }
+            // Also clear the legacy metadata flag from Migration010. The flag was
+            // written by Migration010 to track that the data migration phase still
+            // needed to run; since runSessionKeyAlignmentMigration is removed,
+            // the flag is meaningless.
+            try db.execute(
+                sql: "DELETE FROM _migration_metadata WHERE key = ?",
+                arguments: ["session_key_alignment_pending"]
+            )
         }
 
         try migrator.migrate(dbPool!)
