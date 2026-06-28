@@ -162,7 +162,7 @@ struct BeeBoardPinDetailView: View {
             Spacer()
             VStack(spacing: themeManager.spacing(.sm)) {
                 Image(systemName: "arrow.down.doc")
-                    .font(.system(size: 24))
+                    .font(themeManager.font(.display))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.5))
                 Text("Drop files here")
                     .font(themeManager.font(.caption))
@@ -206,7 +206,7 @@ struct BeeBoardPinDetailView: View {
 
             Button(action: { onRemoveAttachment(attachment.id) }) {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14))
+                    .font(themeManager.font(.body))
                     .foregroundColor(themeManager.color(.textSecondary))
                     .background(Circle().fill(themeManager.color(.bgSurface)))
             }
@@ -220,7 +220,7 @@ struct BeeBoardPinDetailView: View {
     private func fallbackFileIcon(for attachment: PinAttachment) -> some View {
         VStack(spacing: themeManager.spacing(.xs)) {
             Image(systemName: fileIconName(for: attachment.fileExtension))
-                .font(.system(size: 32))
+                .font(themeManager.font(.display))
                 .foregroundColor(themeManager.color(.accentPrimary))
             Text(attachment.fileName)
                 .font(themeManager.font(.caption))
@@ -322,7 +322,7 @@ struct BeeBoardPinDetailView: View {
             } label: {
                 HStack(spacing: themeManager.spacing(.sm)) {
                     Image(systemName: "link")
-                        .font(.system(size: 12))
+                        .font(themeManager.font(.caption))
                         .foregroundColor(themeManager.color(.accentPrimary))
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -357,7 +357,7 @@ struct BeeBoardPinDetailView: View {
 
             Button(action: { onRemoveLink(link.id) }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
             .buttonStyle(.plain)
