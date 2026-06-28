@@ -97,7 +97,7 @@ struct BeeBoardPinCard: View {
         HStack(spacing: themeManager.spacing(.sm)) {
             if isInArchiveView {
                 Image(systemName: "archivebox.fill")
-                    .font(.system(size: 8))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.7))
             } else {
                 Circle()
@@ -107,7 +107,7 @@ struct BeeBoardPinCard: View {
 
             if pin.pinType == "rich" {
                 Image(systemName: "paperclip")
-                    .font(.system(size: 8))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
             }
 
@@ -128,7 +128,7 @@ struct BeeBoardPinCard: View {
 
             Button(action: onExpand) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 8))
+                    .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary).opacity(0.6))
             }
             .buttonStyle(.plain)

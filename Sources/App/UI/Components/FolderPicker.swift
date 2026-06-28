@@ -159,7 +159,7 @@ struct FolderCard: View {
     var body: some View {
         VStack(spacing: themeManager.spacing(.sm)) {
             Image(systemName: pathExists ? "\(bookmark.iconName).fill" : "exclamationmark.triangle")
-                .font(.system(size: 28))
+                .font(themeManager.font(.display))
                 .foregroundColor(
                     pathExists
                         ? themeManager.color(.accentPrimary)

@@ -102,7 +102,7 @@ struct BeeBoardCanvasView: View {
     private var emptyState: some View {
         VStack(spacing: themeManager.spacing(.md)) {
             Image(systemName: viewModel.showArchived ? "archivebox" : "pin.square")
-                .font(.system(size: 36))
+                .font(themeManager.font(.display))
                 .foregroundColor(themeManager.color(.textSecondary).opacity(0.55))
 
             Text(viewModel.showArchived ? "No archived pins" : "Double-click the canvas to create a pin")
