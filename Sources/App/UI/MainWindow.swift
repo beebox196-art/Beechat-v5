@@ -11,7 +11,7 @@ struct MainWindow: View {
     @State private var syncBridgeObserver = SyncBridgeObserver()
     @State private var isObserving = false
     @State private var isGatewayWired = false
-    @State private var localTopicCancellable: DatabaseCancellable?
+    @State private var topicCancellable: DatabaseCancellable?
     @State private var showNewTopicDialog = false
     @State private var newTopicTitle = ""
 
@@ -21,6 +21,14 @@ struct MainWindow: View {
     // Separate from `showDeleteAlert`/`deleteErrorMsg` (which are for *post-delete* error reporting).
     @State private var pendingDeleteTopicId: String? = nil
     @State private var showDeleteConfirmAlert: Bool = false
+    // Topic Archiving: segmented Active/Archived toggle and sidebar error state.
+    // `sidebarErrorTitle` / `sidebarErrorMessage` are intentionally separate from
+    // `showDeleteAlert` / `deleteErrorMsg` so the alert title accurately reflects the
+    // operation (Archive Error / Restore Error) instead of misleadingly showing "Delete Error".
+    @State private var showArchived: Bool = false
+    @State private var sidebarErrorTitle: String = ""
+    @State private var sidebarErrorMessage: String = ""
+    @State private var showSidebarError: Bool = false
     @State private var showResetAlert = false
     @State private var resetTargetSessionKey: String? = nil
     @State private var showResetErrorAlert = false
@@ -68,12 +76,29 @@ struct MainWindow: View {
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
+                // Topic Archiving: segmented Active/Archived toggle above sidebarList.
+                // `.onChange(of: showArchived)` cancels the prior topic observer and
+                // starts a new one filtered to active or archived topics. A single
+                // cancellable prevents dual-observer races.
+                Picker("", selection: $showArchived) {
+                    Text("Active").tag(false)
+                    Text("Archived").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, themeManager.spacing(.md))
+                .padding(.vertical, themeManager.spacing(.xs))
+                .onChange(of: showArchived) { _, newValue in
+                    startTopicObservation(archived: newValue)
+                }
+                .accessibilityLabel("Topic view filter")
+                .accessibilityHint("Show active or archived topics")
+
                 sidebarList
 
                 Divider()
 
                 HStack(spacing: 12) {
-                    Button(action: { showNewTopicDialog = true }) {
+                    Button(action: { requestNewTopic() }) {
                         Image(systemName: "plus.circle")
                             .font(themeManager.font(.subheading))
                     }
@@ -139,7 +164,9 @@ struct MainWindow: View {
                     .disabled(messageViewModel.selectedTopicId == nil)
                     .keyboardShortcut("r", modifiers: [.command, .shift])
 
-                    if messageViewModel.selectedTopicId != nil {
+                    if messageViewModel.selectedTopicId != nil && !showArchived {
+                        // Topic Archiving: trash button hidden in Archived view
+                        // (delete is a destructive action; archived = dormant).
                         Button(action: {
                             if let id = messageViewModel.selectedTopicId {
                                 requestDeleteTopic(id)
@@ -170,6 +197,9 @@ struct MainWindow: View {
             )
             .background(themeManager.color(.bgSurface))
             .onKeyPress(.delete) {
+                // Topic Archiving: Delete key disabled in Archived view (v1 decision —
+                // no destructive actions in Archived view).
+                if showArchived { return .ignored }
                 if let id = messageViewModel.selectedTopicId {
                     requestDeleteTopic(id)
                     return .handled
@@ -177,12 +207,14 @@ struct MainWindow: View {
                 return .ignored
             }
             .onReceive(NotificationCenter.default.publisher(for: .deleteSelectedTopic)) { _ in
+                // Same guard for the notification path: archived = read-only.
+                if showArchived { return }
                 if let id = messageViewModel.selectedTopicId {
                     requestDeleteTopic(id)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .newTopic)) { _ in
-                showNewTopicDialog = true
+                requestNewTopic()
             }
         } detail: {
             VStack(spacing: 0) {
@@ -212,7 +244,13 @@ struct MainWindow: View {
                     Color.clear.frame(maxHeight: .infinity)
                 }
                 Divider()
+                // Topic Archiving: Composer is read-only in Archived view (v1 decision).
+                // Wrapping in `.disabled(showArchived)` greys out all interactive controls.
                 Composer(viewModel: composerViewModel, onSend: composerSend)
+                    .disabled(showArchived)
+                    .opacity(showArchived ? 0.5 : 1.0)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(showArchived ? "Composer disabled — archived view is read-only" : "Message input")
             }
             .background(themeManager.color(.bgSurface))
         }
@@ -223,8 +261,8 @@ struct MainWindow: View {
             }
         }
         .onDisappear {
-            localTopicCancellable?.cancel()
-            localTopicCancellable = nil
+            topicCancellable?.cancel()
+            topicCancellable = nil
         }
         .onChange(of: appState.isReady) { _, ready in
             if ready {
@@ -289,6 +327,14 @@ struct MainWindow: View {
         } message: {
             Text(deleteErrorMsg ?? "Unknown error")
         }
+        // Sidebar error alert (Topic Archiving): generic title set by the handler
+        // ("Archive Error" / "Restore Error"). Kept separate from `showDeleteAlert`
+        // so the title accurately reflects the operation (Fix 2).
+        .alert(sidebarErrorTitle, isPresented: $showSidebarError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(sidebarErrorMessage)
+        }
         .alert("Reset Failed", isPresented: $showResetErrorAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -344,7 +390,7 @@ struct MainWindow: View {
         guard !isObserving else { return }
         isObserving = true
 
-        startLocalTopicObservation()
+        startTopicObservation(archived: showArchived)
 
         messageViewModel.startLocalMessageObservation()
 
@@ -408,29 +454,51 @@ struct MainWindow: View {
         }
     }
 
-    private func startLocalTopicObservation() {
-        let observation = ValueObservation.tracking { db in
-            try Topic
-                .filter(Column("isArchived") == false)
-                .order(Column("lastActivityAt").desc)
-                .limit(100)
-                .fetchAll(db)
+    /// Single-cancellable topic observation. `archived: true` shows archived
+    /// topics; `archived: false` shows active topics. The active filter uses
+    /// COALESCE(isArchived, 0) == 0 to keep legacy NULL rows visible (Fix
+    /// for the `isArchived` column not being NOT NULL). Cancels any prior
+    /// observation so the active/archived toggle swaps atomically.
+    /// Replaces the previous `startLocalTopicObservation()` and its
+    /// `localTopicCancellable` — single cancellable prevents dual-observer
+    /// leaks (Fix 1 / R2).
+    private func startTopicObservation(archived: Bool) {
+        topicCancellable?.cancel()
+        topicCancellable = nil
+
+        let observation = ValueObservation.tracking { db -> [Topic] in
+            if archived {
+                return try Topic
+                    .filter(Column("isArchived") == true)
+                    .order(Column("lastActivityAt").desc)
+                    .limit(100)
+                    .fetchAll(db)
+            } else {
+                // COALESCE guard: schema defines `.defaults(to: false)` but
+                // without `.notNull()`, so legacy rows can be NULL and would
+                // disappear from the active view without this.
+                return try Topic
+                    .filter(sql: "COALESCE(isArchived, 0) = 0")
+                    .order(Column("lastActivityAt").desc)
+                    .limit(100)
+                    .fetchAll(db)
+            }
         }
 
         do {
             let writer = try DatabaseManager.shared.writer
-            localTopicCancellable = observation.start(
+            topicCancellable = observation.start(
                 in: writer,
                 scheduling: .mainActor,
                 onError: { error in
-                    print("[MainWindow] Local topic observation error: \(error)")
+                    BeeChatLogger.log("[MainWindow] Topic observation error: \(error)")
                 },
                 onChange: { [weak messageViewModel] topics in
                     messageViewModel?.updateTopics(from: topics)
                 }
             )
         } catch {
-            print("[MainWindow] Failed to start local topic observation: \(error)")
+            BeeChatLogger.log("[MainWindow] Failed to start topic observation: \(error)")
         }
     }
 
@@ -439,6 +507,22 @@ struct MainWindow: View {
         Task {
             await composerViewModel.send()
         }
+    }
+
+    /// Opens the New Topic dialog. If we're in the Archived view, force a
+    /// switch back to Active first (v1 decision — Archived is view-only,
+    /// so creating a new topic from there would be surprising).
+    private func requestNewTopic() {
+        if showArchived {
+            showArchived = false
+            startTopicObservation(archived: false)
+            // Clear orphaned selection: archived topic is no longer visible in Active view
+            if let selected = messageViewModel.selectedTopicId,
+               !messageViewModel.topics.contains(where: { $0.id == selected }) {
+                messageViewModel.selectedTopicId = nil
+            }
+        }
+        showNewTopicDialog = true
     }
 
     private func createNewTopic() {
@@ -518,6 +602,47 @@ struct MainWindow: View {
         }
     }
 
+    // MARK: - Topic Archiving (handlers)
+
+    /// Archive the topic with the given ID. If the archived topic is currently
+    /// selected, fall back to the first remaining topic (mirrors delete behaviour
+    /// — see R1 in the spec). ValueObservation refreshes the sidebar automatically;
+    /// `removeTopic(id:)` is only called to keep selection valid mid-frame.
+    private func archiveTopic(_ id: String) {
+        Task { @MainActor in
+            do {
+                let topicRepo = TopicRepository()
+                try topicRepo.archive(topicId: id)
+                if messageViewModel.selectedTopicId == id {
+                    messageViewModel.removeTopic(id: id)
+                }
+            } catch {
+                BeeChatLogger.log("🔴 Archive topic failed: \(error)")
+                sidebarErrorTitle = "Archive Error"
+                sidebarErrorMessage = "Could not archive topic: \(error.localizedDescription)"
+                showSidebarError = true
+            }
+        }
+    }
+
+    /// Restore the archived topic with the given ID. The sidebar refreshes
+    /// automatically via the active-topic ValueObservation when the row
+    /// reappears in the Active view.
+    private func restoreTopic(_ id: String) {
+        Task { @MainActor in
+            do {
+                let topicRepo = TopicRepository()
+                try topicRepo.restore(topicId: id)
+                // ValueObservation refreshes sidebar automatically
+            } catch {
+                BeeChatLogger.log("🔴 Restore topic failed: \(error)")
+                sidebarErrorTitle = "Restore Error"
+                sidebarErrorMessage = "Could not restore topic: \(error.localizedDescription)"
+                showSidebarError = true
+            }
+        }
+    }
+
     private func saveTopicEdits(_ updatedTopic: Topic) {
         Task { @MainActor in
             do {
@@ -538,7 +663,7 @@ struct MainWindow: View {
                 // Topic sync now via REST endpoint (see TopicServer.swift)
 
                 // Force a refresh of the topics list so the sidebar updates
-                startLocalTopicObservation()
+                startTopicObservation(archived: showArchived)
             } catch {
                 print("🔴 Save topic edits failed: \(error)")
             }
@@ -575,6 +700,12 @@ struct MainWindow: View {
                     onMarkUnread: { markUnread in
                         syncBridgeObserver.setUnread(for: topic.sessionKey, count: markUnread ? 1 : 0)
                     },
+                    onArchive: showArchived ? nil : { archiveTopic(topic.id) },
+                    onRestore: showArchived ? { restoreTopic(topic.id) } : nil,
+                    // Topic Archiving: archived view hides Reset Session and Save Topic
+                    // Summary (v1 decision — archived = dormant). The SessionRow receives
+                    // nil handlers and the menu items disappear.
+                    isArchived: showArchived,
                     isSelected: sidebarSelection.wrappedValue == topic.id,
                     projectContextState: projectState,
                     bridge: appState.syncBridge

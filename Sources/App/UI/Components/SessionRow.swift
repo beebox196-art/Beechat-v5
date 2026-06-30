@@ -10,6 +10,9 @@ struct SessionRow: View {
     var onReset: (() -> Void)? = nil
     var onSelect: (() -> Void)?
     var onMarkUnread: ((Bool) -> Void)? = nil
+    var onArchive: (() -> Void)? = nil
+    var onRestore: (() -> Void)? = nil
+    var isArchived: Bool = false
     var isSelected: Bool = false
     var projectContextState: ProjectContextState = .none
     var bridge: SyncBridge? = nil  // Phase 2: needed for saveTopicSummary
@@ -130,26 +133,30 @@ struct SessionRow: View {
         }
 
         // Save Topic Summary (NEW — Phase 2)
-        Button {
-            Task {
-                guard let bridge = bridge else { return }
-                await topic.saveTopicSummary(bridge: bridge)
+        if !isArchived {
+            Button {
+                Task {
+                    guard let bridge = bridge else { return }
+                    await topic.saveTopicSummary(bridge: bridge)
+                }
+            } label: {
+                if topic.isSaving {
+                    Label("Saving topic...", systemImage: "arrow.triangle.2.circlepath")
+                } else {
+                    Label("Save Topic Summary", systemImage: "doc.badge.plus")
+                }
             }
-        } label: {
-            if topic.isSaving {
-                Label("Saving topic...", systemImage: "arrow.triangle.2.circlepath")
-            } else {
-                Label("Save Topic Summary", systemImage: "doc.badge.plus")
-            }
+            .disabled(topic.isSaving)
+            .accessibilityHint(topic.isSaving ? "Save already in progress" : "Extract durable items from recent conversation and save to project summary file")
         }
-        .disabled(topic.isSaving)
-        .accessibilityHint(topic.isSaving ? "Save already in progress" : "Extract durable items from recent conversation and save to project summary file")
 
-        // Reset Session (existing)
-        Button {
-            onReset?()
-        } label: {
-            Label("Reset Session", systemImage: "arrow.clockwise")
+        // Reset Session (existing) — hidden in Archived view (v1 decision: archived = dormant)
+        if !isArchived {
+            Button {
+                onReset?()
+            } label: {
+                Label("Reset Session", systemImage: "arrow.clockwise")
+            }
         }
 
         // Mark as Unread / Mark as Read (mutually exclusive)
@@ -164,6 +171,21 @@ struct SessionRow: View {
                 onMarkUnread?(false)
             } label: {
                 Label("Mark as Read", systemImage: "circle.slash")
+            }
+        }
+
+        // Archive / Restore (mutually exclusive — parent wires one or the other)
+        if onArchive != nil {
+            Button {
+                onArchive?()
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+        } else if onRestore != nil {
+            Button {
+                onRestore?()
+            } label: {
+                Label("Restore", systemImage: "tray.and.arrow.up")
             }
         }
 

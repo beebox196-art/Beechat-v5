@@ -33,6 +33,10 @@ public class TopicRepository {
     /// Fetch active topics with computed message counts via SQL JOIN.
     /// M010 replaced topic-based triggers with session-based triggers,
     /// so Topic.messageCount must be computed from the messages table.
+    /// COALESCE(t.isArchived, 0) = 0 protects against legacy NULL rows from
+    /// pre-Migration005 inserts (the column has `.defaults(to: false)` but
+    /// is not NOT NULL, so old rows may be NULL and disappear from both views
+    /// without the COALESCE guard).
     public func fetchAllActiveWithCounts(limit: Int = 100) throws -> [Topic] {
         try dbManager.reader.read { db in
             try Topic.fetchAll(db, sql: """
@@ -43,7 +47,28 @@ public class TopicRepository {
                            WHERE b.topicId = t.id
                        ), 0) as messageCount
                 FROM topics t
-                WHERE t.isArchived = 0
+                WHERE COALESCE(t.isArchived, 0) = 0
+                ORDER BY COALESCE(t.lastActivityAt, t.createdAt) DESC
+                LIMIT \(limit)
+            """)
+        }
+    }
+
+    /// Fetch archived topics with computed message counts via SQL JOIN.
+    /// Mirrors `fetchAllActiveWithCounts` but filters by isArchived = 1.
+    /// No COALESCE guard here — the archived view intentionally excludes
+    /// NULL rows (they'd render ambiguously as either archived or active).
+    public func fetchAllArchivedWithCounts(limit: Int = 100) throws -> [Topic] {
+        try dbManager.reader.read { db in
+            try Topic.fetchAll(db, sql: """
+                SELECT t.*,
+                       COALESCE((
+                           SELECT COUNT(*) FROM messages m
+                           JOIN topic_session_bridge b ON b.openclawSessionKey = m.sessionId
+                           WHERE b.topicId = t.id
+                       ), 0) as messageCount
+                FROM topics t
+                WHERE t.isArchived = 1
                 ORDER BY COALESCE(t.lastActivityAt, t.createdAt) DESC
                 LIMIT \(limit)
             """)
@@ -62,6 +87,18 @@ public class TopicRepository {
         try dbManager.write { db in
             try db.execute(
                 sql: "UPDATE topics SET isArchived = 1, updatedAt = ? WHERE id = ?",
+                arguments: [Date(), topicId]
+            )
+        }
+    }
+
+    /// Restore (un-archive) a topic by ID. Mirror of `archive(topicId:)`.
+    /// Sets isArchived = 0; ValueObservation on the sidebar will pick up the
+    /// change and surface the topic in the Active view automatically.
+    public func restore(topicId: String) throws {
+        try dbManager.write { db in
+            try db.execute(
+                sql: "UPDATE topics SET isArchived = 0, updatedAt = ? WHERE id = ?",
                 arguments: [Date(), topicId]
             )
         }
@@ -114,7 +151,7 @@ public class TopicRepository {
     public func fetchAllActive(limit: Int = 100) throws -> [Topic] {
         try dbManager.reader.read { db in
             try Topic
-                .filter(Column("isArchived") == false)
+                .filter(sql: "COALESCE(isArchived, 0) = 0")
                 .order(Column("lastActivityAt").desc)
                 .limit(limit)
                 .fetchAll(db)
