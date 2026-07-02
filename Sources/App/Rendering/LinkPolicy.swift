@@ -22,6 +22,14 @@ import AppKit
 /// rendering path is otherwise unchanged.
 enum LinkPolicy {
 
+    #if DEBUG
+    /// When true, `open(_:)` validates the URL but does NOT call
+    /// `NSWorkspace.shared.open`. Set in unit-test setUp/tearDown to
+    /// prevent tests from opening real browser tabs and email compose windows.
+    /// Production builds strip this flag entirely (no runtime cost).
+    static var suppressOpenInTests = false
+    #endif
+
     /// Schemes allowed for web/mail links. Mirrors `HTMLSanitizer.allowedSchemes`.
     static let allowedWebSchemes: Set<String> = HTMLSanitizer.allowedSchemes
 
@@ -33,9 +41,21 @@ enum LinkPolicy {
 
     // MARK: - Open URL
 
+    /// Whether `open(_:)` should actually call `NSWorkspace.shared.open`.
+    /// In DEBUG builds, respects `suppressOpenInTests`. In RELEASE builds,
+    /// always returns true (the flag doesn't exist).
+    private static var shouldOpenForReal: Bool {
+        #if DEBUG
+        return !suppressOpenInTests
+        #else
+        return true
+        #endif
+    }
+
     /// Open a URL after validating it against the link policy.
     ///
-    /// - Returns: `true` if the URL was opened, `false` if it was blocked.
+    /// - Returns: `true` if the URL was opened (or would have been — in test mode,
+    ///   validation passes but no browser/email window is actually opened).
     @discardableResult
     static func open(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else {
@@ -46,7 +66,9 @@ enum LinkPolicy {
         // Fast path: web/mail schemes (http, https, mailto)
         if allowedWebSchemes.contains(scheme) {
             #if os(macOS)
-            NSWorkspace.shared.open(url)
+            if shouldOpenForReal {
+                NSWorkspace.shared.open(url)
+            }
             #endif
             return true
         }
@@ -61,7 +83,9 @@ enum LinkPolicy {
             }
 
             #if os(macOS)
-            NSWorkspace.shared.open(url)
+            if shouldOpenForReal {
+                NSWorkspace.shared.open(url)
+            }
             #endif
             return true
         }

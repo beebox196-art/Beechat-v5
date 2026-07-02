@@ -28,6 +28,8 @@ final class MessageContentDispatchTests: XCTestCase {
         originalFontScale = UserDefaults.standard.double(forKey: "BeeChat.fontScale")
         UserDefaults.standard.removeObject(forKey: "BeeChat.feature.htmlRendering")
         UserDefaults.standard.removeObject(forKey: "BeeChat.fontScale")
+        // Prevent LinkPolicy.open from opening real browser/email windows
+        LinkPolicy.suppressOpenInTests = true
     }
 
     override func tearDown() {
@@ -38,6 +40,7 @@ final class MessageContentDispatchTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: "BeeChat.fontScale")
         }
         UserDefaults.standard.removeObject(forKey: "BeeChat.feature.htmlRendering")
+        LinkPolicy.suppressOpenInTests = false
     }
 
     // MARK: - Helper: Create Test Messages

@@ -3,6 +3,17 @@ import XCTest
 
 final class LinkPolicyTests: XCTestCase {
 
+    override func setUp() {
+        // Prevent tests from opening real browser tabs / email compose windows.
+        // LinkPolicy.open validates and returns the correct Bool either way;
+        // only the NSWorkspace.shared.open side effect is suppressed.
+        LinkPolicy.suppressOpenInTests = true
+    }
+
+    override func tearDown() {
+        LinkPolicy.suppressOpenInTests = false
+    }
+
     // MARK: - Allowed Web Schemes
 
     func testAllowsHTTP() {
@@ -70,6 +81,8 @@ final class LinkPolicyTests: XCTestCase {
         let url = URL(fileURLWithPath: "~/Documents/notes.txt")
         // After standardizing, this resolves to /Users/<current_user>/Documents/notes.txt
         XCTAssertTrue(LinkPolicy.isAllowed(url))
+        // Also verify open works (suppressed — won't open a real file)
+        XCTAssertTrue(LinkPolicy.open(url))
     }
 
     // MARK: - Blocked Schemes

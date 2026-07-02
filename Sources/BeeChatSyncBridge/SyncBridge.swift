@@ -1141,18 +1141,19 @@ public actor SyncBridge {
         completedContent[sessionKey] = streamingBuffer[sessionKey]
         streamingBuffer.removeValue(forKey: sessionKey)
 
-        // Notify delegate FIRST so the UI transitions out of streaming immediately.
-        // Fetch history in a detached task so a slow/failing RPC never blocks
-        // didStopStreaming — the streaming state must always reset.
-        delegate?.syncBridge(self, didStopStreaming: sessionKey)
-        Task {
-            do {
-                _ = try await fetchHistory(sessionKey: sessionKey)
-                try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
-            } catch {
-                print("[SyncBridge] fetchHistory failed in processChatFinal: \(error)")
-            }
+        // Fetch history FIRST so the message appears in the DB before the UI
+        // transitions out of streaming. This eliminates the timing gap where
+        // the streaming bubble disappears but the settled message isn't in the
+        // list yet, causing a visible "vanish" (only timestamp visible).
+        // A slow/failing RPC is acceptable because completedContent bridges
+        // the gap — the UI can fall back to showing the cached content.
+        do {
+            _ = try await fetchHistory(sessionKey: sessionKey)
+            try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
+        } catch {
+            print("[SyncBridge] fetchHistory failed in processChatFinal: \(error)")
         }
+        delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
 
     internal func processChatError(sessionKey: String, errorMessage: String) async {
@@ -1161,15 +1162,14 @@ public actor SyncBridge {
         streamingBuffer.removeValue(forKey: sessionKey)
         streamingSessionKeys.remove(sessionKey)
 
-        delegate?.syncBridge(self, didStopStreaming: sessionKey)
-        Task {
-            do {
-                _ = try await fetchHistory(sessionKey: sessionKey)
-                try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
-            } catch {
-                print("[SyncBridge] fetchHistory failed in processChatError: \(error)")
-            }
+        // Fetch history FIRST (same race-fix rationale as processChatFinal)
+        do {
+            _ = try await fetchHistory(sessionKey: sessionKey)
+            try? config.persistenceStore.dedupLocalMessages(sessionKey: sessionKey)
+        } catch {
+            print("[SyncBridge] fetchHistory failed in processChatError: \(error)")
         }
+        delegate?.syncBridge(self, didStopStreaming: sessionKey)
     }
 
     // MARK: - Agent event handler (legacy, lower-level format)

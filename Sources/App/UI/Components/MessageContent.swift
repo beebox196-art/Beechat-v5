@@ -10,6 +10,11 @@ struct MessageContent: View {
     /// message.content changes), then reused. When the flag is OFF this
     /// stays nil and the existing FileLinkText path runs unchanged.
     @State private var converted: ConvertedMessage?
+    /// WebView height binding for settled messages that need the WebView path.
+    /// ResizeObserver JS writes the measured content height here, exactly like
+    /// StreamingBubble's $webViewHeight — without a real binding the WebView
+    /// collapses to zero height.
+    @State private var settledWebViewHeight: CGFloat = 40
 
     var body: some View {
         if featureFlags.htmlRenderingEnabled,
@@ -41,13 +46,19 @@ struct MessageContent: View {
         if conversion.needsWebView {
             // Content exceeds native subset (tables, unknown tags, resource caps).
             // Render the original sanitized HTML via WebView.
+            //
+            // BUG FIX: Previously used height: .constant(0) which created a read-only
+            // binding that always returned 0 and silently discarded ResizeObserver writes.
+            // This caused the WebView to collapse to zero height, making messages vanish
+            // on completion (only the timestamp remained visible). Now uses a real
+            // @State binding, identical to StreamingBubble's pattern.
             let htmlContent = MarkdownToHTML.convert(content)
             let sanitized = HTMLSanitizer.sanitize(htmlContent)
             MessageWebView(
                 html: sanitized,
                 themeTokens: themeManager.cssTokens,
                 fontScale: themeManager.fontScale,
-                height: .constant(0), // settled message uses intrinsic sizing
+                height: $settledWebViewHeight,
                 onLink: { url in
                     LinkPolicy.open(url)
                 }
