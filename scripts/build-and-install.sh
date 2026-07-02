@@ -38,6 +38,26 @@ swift build 2>&1 | tail -3
 echo "→ Updating app bundle binary"
 cp -f .build/arm64-apple-macosx/debug/BeeChatApp "$APP_SRC/Contents/MacOS/BeeChatApp"
 
+# Copy SPM resource bundle into app bundle (required for MessageTemplate.html,
+# Assets.xcassets, and any future resources declared in Package.swift).
+# This is the primary fix for P0.0 blocker #1 — without this, Bundle.main and
+# Bundle.module cannot find MessageTemplate.html at runtime.
+SPM_BUNDLE=".build/arm64-apple-macosx/debug/BeeChatPersistence_BeeChatApp.bundle"
+if [ -d "$SPM_BUNDLE" ]; then
+    echo "→ Copying SPM resource bundle"
+    mkdir -p "$APP_SRC/Contents/Resources"
+    cp -R "$SPM_BUNDLE" "$APP_SRC/Contents/Resources/"
+else
+    echo "⚠ SPM resource bundle missing — MessageTemplate.html and other resources may not load" >&2
+    echo "  Run 'swift build' first to generate the bundle" >&2
+fi
+
+# Also copy GRDB's resource bundle if present
+GRDB_BUNDLE=".build/arm64-apple-macosx/debug/GRDB_GRDB.bundle"
+if [ -d "$GRDB_BUNDLE" ]; then
+    cp -R "$GRDB_BUNDLE" "$APP_SRC/Contents/Resources/"
+fi
+
 # Install to /Applications
 echo "→ Installing to $APP_DST"
 rsync -av --delete "$APP_SRC/" "$APP_DST/"
@@ -46,6 +66,15 @@ rsync -av --delete "$APP_SRC/" "$APP_DST/"
 INSTALLED_VERSION=$(plutil -extract CFBundleShortVersionString raw "$APP_DST/Contents/Info.plist")
 INSTALLED_BUILD=$(plutil -extract CFBundleVersion raw "$APP_DST/Contents/Info.plist")
 BINARY_SIZE=$(ls -lh "$APP_DST/Contents/MacOS/BeeChatApp" | awk '{print $5}')
+
+# Verify resource bundle
+if [ -d "$APP_SRC/Contents/Resources/BeeChatPersistence_BeeChatApp.bundle" ]; then
+    if [ -f "$APP_SRC/Contents/Resources/BeeChatPersistence_BeeChatApp.bundle/MessageTemplate.html" ] || [ -f "$APP_SRC/Contents/Resources/BeeChatPersistence_BeeChatApp.bundle/Contents/Resources/MessageTemplate.html" ]; then
+        echo "  ✓ MessageTemplate.html found in SPM bundle"
+    else
+        echo "  ⚠ MessageTemplate.html NOT in SPM bundle — HTML rendering will use embedded fallback"
+    fi
+fi
 
 echo ""
 echo "✅ BeeChat installed"

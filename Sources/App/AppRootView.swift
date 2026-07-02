@@ -9,7 +9,6 @@ import os
 struct BeeChatApp: App {
     @State private var themeManager = ThemeManager()
     @State private var appState = AppState()
-    @State private var featureFlags = FeatureFlags.shared
 
     var body: some Scene {
         WindowGroup {

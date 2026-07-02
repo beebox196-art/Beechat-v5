@@ -35,15 +35,11 @@ struct MessageWebView: NSViewRepresentable {
     /// Callback for link taps — routes through FileLinkText's open logic, never NSWorkspace raw.
     var onLink: (URL) -> Void = { _ in }
 
-    // Static template loaded once from bundle. Fallback is a minimal valid HTML doc.
-    private static let template: String = {
-        guard let url = Bundle.main.url(forResource: "MessageTemplate", withExtension: "html"),
-              let s = try? String(contentsOf: url, encoding: .utf8) else {
-            assertionFailure("MessageTemplate.html missing from bundle — check Resources group")
-            return "<html><body><div id=\"content\"></div></body></html>"
-        }
-        return s
-    }()
+    // Template loaded at init via MessageTemplate.html constant.
+    // This eliminates Bundle.main/module resource lookup — the template is a
+    // compile-time constant that can never crash on a missing file.
+    // See MessageTemplate.swift for the resolution chain (resource bundle → embedded).
+    private static let template: String = MessageTemplate.html
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
