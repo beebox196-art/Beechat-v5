@@ -24,6 +24,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
         .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
+        .package(url: "https://github.com/apple/swift-cmark", branch: "gfm"),
         .package(path: "Vendors/ChatField"),
     ],
     targets: [
@@ -96,6 +97,8 @@ let package = Package(
                 .target(name: "BeeBoard"),
                 .product(name: "ChatField", package: "ChatField"),
                 .product(name: "SwiftSoup", package: "SwiftSoup"),
+                .product(name: "cmark-gfm", package: "swift-cmark"),
+                .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
             ],
             path: "Sources/App",
             resources: [

@@ -30,16 +30,19 @@ struct MessageContent: View {
 
     @ViewBuilder
     private func htmlRenderingPath(content: String) -> some View {
-        // Sanitize once, convert once, cache the result.
+        // Convert markdown→HTML, then sanitize, then convert to native blocks.
+        // Pipeline: content → MarkdownToHTML → HTMLSanitizer → HTMLMessageConverter
         let conversion = converted ?? {
-            let sanitized = HTMLSanitizer.sanitize(content)
+            let htmlContent = MarkdownToHTML.convert(content)
+            let sanitized = HTMLSanitizer.sanitize(htmlContent)
             return HTMLMessageConverter.convert(sanitized)
         }()
 
         if conversion.needsWebView {
             // Content exceeds native subset (tables, unknown tags, resource caps).
             // Render the original sanitized HTML via WebView.
-            let sanitized = HTMLSanitizer.sanitize(content)
+            let htmlContent = MarkdownToHTML.convert(content)
+            let sanitized = HTMLSanitizer.sanitize(htmlContent)
             MessageWebView(
                 html: sanitized,
                 themeTokens: themeManager.cssTokens,

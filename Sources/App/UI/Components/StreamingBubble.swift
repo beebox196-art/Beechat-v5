@@ -25,9 +25,9 @@ struct StreamingBubble: View {
                     .foregroundColor(themeManager.color(.textSecondary))
 
                 if featureFlags.htmlRenderingEnabled && !content.isEmpty {
-                    // HTML path: sanitize → WebView render
+                    // HTML path: markdown→HTML → sanitize → WebView render
                     MessageWebView(
-                        html: HTMLSanitizer.sanitize(content),
+                        html: HTMLSanitizer.sanitize(MarkdownToHTML.convert(content)),
                         themeTokens: themeManager.cssTokens,
                         fontScale: themeManager.fontScale,
                         height: $webViewHeight,
