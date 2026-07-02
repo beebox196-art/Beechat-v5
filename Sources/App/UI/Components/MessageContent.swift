@@ -46,12 +46,6 @@ struct MessageContent: View {
         if conversion.needsWebView {
             // Content exceeds native subset (tables, unknown tags, resource caps).
             // Render the original sanitized HTML via WebView.
-            //
-            // BUG FIX: Previously used height: .constant(0) which created a read-only
-            // binding that always returned 0 and silently discarded ResizeObserver writes.
-            // This caused the WebView to collapse to zero height, making messages vanish
-            // on completion (only the timestamp remained visible). Now uses a real
-            // @State binding, identical to StreamingBubble's pattern.
             let htmlContent = MarkdownToHTML.convert(content)
             let sanitized = HTMLSanitizer.sanitize(htmlContent)
             MessageWebView(
@@ -63,6 +57,7 @@ struct MessageContent: View {
                     LinkPolicy.open(url)
                 }
             )
+            .frame(height: settledWebViewHeight)
             .onAppear {
                 if converted == nil { converted = conversion }
             }

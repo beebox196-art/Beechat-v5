@@ -291,6 +291,7 @@ struct CompletedBridgeBubble: View {
                             height: $webViewHeight,
                             onLink: { url in LinkPolicy.open(url) }
                         )
+                        .frame(height: webViewHeight)
                     } else if !conversion.blocks.isEmpty {
                         ConvertedMessageView(converted: conversion)
                             .environment(\.openURL, OpenURLAction { url in
