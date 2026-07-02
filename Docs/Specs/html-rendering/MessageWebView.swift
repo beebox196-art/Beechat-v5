@@ -31,14 +31,9 @@ struct MessageWebView: NSViewRepresentable {
     // Note: WKProcessPool is a deprecated no-op since macOS 12 — WebKit decides
     // WebContent process allocation itself; the app cannot cap process count.
 
-    private static let template: String = {
-        guard let url = Bundle.main.url(forResource: "MessageTemplate", withExtension: "html"),
-              let s = try? String(contentsOf: url, encoding: .utf8) else {
-            assertionFailure("MessageTemplate.html missing from bundle")
-            return "<html><body><div id=\"content\"></div></body></html>"
-        }
-        return s
-    }()
+    // Template loaded via MessageTemplate.html constant — never crashes on missing file.
+    // See MessageTemplate.swift for the resolution chain (resource bundle → flat bundle → embedded).
+    private static let template: String = MessageTemplate.html
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 

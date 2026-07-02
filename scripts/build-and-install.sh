@@ -55,6 +55,8 @@ fi
 # Also copy GRDB's resource bundle if present
 GRDB_BUNDLE=".build/arm64-apple-macosx/debug/GRDB_GRDB.bundle"
 if [ -d "$GRDB_BUNDLE" ]; then
+    # Remove existing first to avoid permission issues on re-copy
+    rm -rf "$APP_SRC/Contents/Resources/GRDB_GRDB.bundle"
     cp -R "$GRDB_BUNDLE" "$APP_SRC/Contents/Resources/"
 fi
 

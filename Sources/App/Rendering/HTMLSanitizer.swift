@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Sanitizes HTML content for safe rendering in a WKWebView or native converter.
 ///
@@ -32,6 +33,8 @@ import Foundation
 ///   in the native converter. Keeping them here means messages containing these
 ///   tags don't fall through to WebView unnecessarily.
 enum HTMLSanitizer {
+
+    private static let logger = Logger(subsystem: "com.beebox.beechat", category: "HTMLSanitizer")
 
     // MARK: - Configuration
 
@@ -101,6 +104,7 @@ enum HTMLSanitizer {
         // Length cap — DoS protection
         let input: String
         if html.count > maxTextLength {
+            logger.warning("HTML input truncated: \(html.count) chars exceeds maxTextLength \(maxTextLength)")
             input = String(html.prefix(maxTextLength))
         } else {
             input = html

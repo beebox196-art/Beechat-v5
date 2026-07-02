@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import os
 
 /// Renders one message's **pre-sanitized** HTML at intrinsic height inside a bubble.
 ///
@@ -24,6 +25,7 @@ import WebKit
 /// converter path, releasing their WebView.
 #if os(macOS)
 struct MessageWebView: NSViewRepresentable {
+    private static let logger = Logger(subsystem: "com.beebox.beechat", category: "MessageWebView")
     /// Pre-sanitized HTML content (run through HTMLSanitizer before passing here).
     let html: String
     /// Flat CSS token map from the active theme, e.g. ["--bc-text": "#E0E0E0", ...].
@@ -105,20 +107,35 @@ struct MessageWebView: NSViewRepresentable {
             // Theme/scale before content — a fresh document should never paint unthemed.
             if tokens != appliedTokens, let json = Self.json(tokens) {
                 appliedTokens = tokens
-                webView.evaluateJavaScript("window.beechat.setTheme(\(json))")
+                webView.evaluateJavaScript("window.beechat.setTheme(\(json))") { result, error in
+                    if let error = error {
+                        MessageWebView.logger.error("setTheme JS error: \(error.localizedDescription)")
+                    }
+                }
             }
             if fontScale != appliedScale {
                 appliedScale = fontScale
-                webView.evaluateJavaScript("window.beechat.setFontScale(\(Double(fontScale)))")
+                webView.evaluateJavaScript("window.beechat.setFontScale(\(Double(fontScale)))") { result, error in
+                    if let error = error {
+                        MessageWebView.logger.error("setFontScale JS error: \(error.localizedDescription)")
+                    }
+                }
             }
             if html != appliedHTML, let json = Self.json(html) {
                 appliedHTML = html
-                webView.evaluateJavaScript("window.beechat.setContent(\(json))")
+                webView.evaluateJavaScript("window.beechat.setContent(\(json))") { result, error in
+                    if let error = error {
+                        MessageWebView.logger.error("setContent JS error: \(error.localizedDescription)")
+                    }
+                }
             }
         }
 
         private static func json(_ value: some Encodable) -> String? {
-            guard let data = try? JSONEncoder().encode(value) else { return nil }
+            guard let data = try? JSONEncoder().encode(value) else {
+                MessageWebView.logger.error("Failed to encode value for JS bridge")
+                return nil
+            }
             return String(data: data, encoding: .utf8)
         }
 
@@ -160,7 +177,9 @@ struct MessageWebView: NSViewRepresentable {
 
         // WebContent process died (crash/memory pressure): bubble goes blank.
         // Reload template and re-inject content on next update cycle.
+        // This is a non-fatal recovery — the WebView will re-render on next update.
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            MessageWebView.logger.error("WebContent process terminated — resetting WebView state for recovery")
             templateReady = false
             appliedHTML = nil; appliedTokens = nil; appliedScale = nil
             webView.loadHTMLString(MessageWebView.template, baseURL: nil)

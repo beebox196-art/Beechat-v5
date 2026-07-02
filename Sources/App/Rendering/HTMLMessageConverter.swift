@@ -6,6 +6,7 @@
 #if canImport(SwiftSoup)
 
 import Foundation
+import os
 import SwiftSoup
 import SwiftUI // underlineStyle attribute scope; the block model is UI-adjacent anyway
 
@@ -33,6 +34,8 @@ struct ConvertedMessage: Equatable {
 
 enum HTMLMessageConverter {
 
+    private static let logger = Logger(subsystem: "com.beebox.beechat", category: "HTMLMessageConverter")
+
     // MARK: Native subset
 
     /// Tags the converter maps with full fidelity. Anything else trips needsWebView —
@@ -59,14 +62,23 @@ enum HTMLMessageConverter {
     // MARK: Entry point
 
     static func convert(_ sanitizedHTML: String) -> ConvertedMessage {
-        guard sanitizedHTML.count <= maxTextLength,
-              let doc = try? SwiftSoup.parseBodyFragment(sanitizedHTML),
+        guard sanitizedHTML.count <= maxTextLength else {
+            logger.warning("HTML exceeds maxTextLength (\(sanitizedHTML.count)/\(maxTextLength)) — falling back to WebView")
+            return ConvertedMessage(blocks: [], needsWebView: true)
+        }
+        guard let doc = try? SwiftSoup.parseBodyFragment(sanitizedHTML),
               let body = doc.body()
-        else { return ConvertedMessage(blocks: [], needsWebView: true) }
+        else {
+            logger.error("SwiftSoup parse failed — falling back to WebView")
+            return ConvertedMessage(blocks: [], needsWebView: true)
+        }
 
         var state = WalkState()
         let blocks = convertChildren(of: body, depth: 0, state: &state)
-        if state.bailedOut { return ConvertedMessage(blocks: [], needsWebView: true) }
+        if state.bailedOut {
+            logger.warning("HTML walk bailed out (nodes/depth cap exceeded) — falling back to WebView")
+            return ConvertedMessage(blocks: [], needsWebView: true)
+        }
         return ConvertedMessage(blocks: blocks, needsWebView: false)
     }
 

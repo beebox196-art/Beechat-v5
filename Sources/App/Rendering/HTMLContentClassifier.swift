@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Classifies HTML content as native-renderable or WebView-required.
 ///
@@ -22,6 +23,8 @@ import Foundation
 /// ```
 enum HTMLContentClassifier {
 
+    private static let logger = Logger(subsystem: "com.beebox.beechat", category: "HTMLContentClassifier")
+
     /// Returns `true` if the HTML content should be rendered via WebView
     /// (contains tables, unknown tags, or exceeds resource caps).
     ///
@@ -30,8 +33,13 @@ enum HTMLContentClassifier {
     /// For the full conversion including block model, use `HTMLMessageConverter.convert()`.
     static func needsWebView(html: String) -> Bool {
         // Quick pre-checks before parsing
-        guard !html.isEmpty, html.count <= HTMLMessageConverter.maxTextLength else {
-            return true // Empty content or over cap → WebView (or plain text for empty)
+        guard !html.isEmpty else {
+            logger.debug("Empty HTML content — falling back to WebView")
+            return true
+        }
+        guard html.count <= HTMLMessageConverter.maxTextLength else {
+            logger.warning("HTML content exceeds maxTextLength (\(html.count)/\(HTMLMessageConverter.maxTextLength)) — falling back to WebView")
+            return true
         }
 
         // Use the converter's full convert method, which already computes needsWebView

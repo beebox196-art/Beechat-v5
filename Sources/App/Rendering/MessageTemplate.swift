@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Embedded HTML template for MessageWebView.
 ///
@@ -21,8 +22,10 @@ import Foundation
 /// preferable to runtime bundle resolution which is fragile in hand-assembled app bundles.
 enum MessageTemplate {
 
+    private static let logger = Logger(subsystem: "com.beebox.beechat", category: "MessageTemplate")
+
     /// The complete HTML template as a string. Loaded at init time (once per process).
-    /// Resolution chain: SPM resource bundle → embedded fallback constant.
+    /// Resolution chain: SPM resource bundle → flat Bundle.main → embedded fallback constant.
     /// Never crashes — if no resource file is found, the embedded constant is used.
     static let html: String = {
         // Try SPM resource bundle by scanning Resources/ for .bundle directories.
@@ -34,6 +37,7 @@ enum MessageTemplate {
                     if let bundle = Bundle(url: url),
                        let htmlURL = bundle.url(forResource: "MessageTemplate", withExtension: "html"),
                        let content = try? String(contentsOf: htmlURL, encoding: .utf8) {
+                        logger.info("Template loaded from SPM resource bundle: \(url.lastPathComponent)")
                         return content
                     }
                 }
@@ -43,12 +47,14 @@ enum MessageTemplate {
         // Try Bundle.main directly (for hand-assembled .app bundles that copy the file flat)
         if let url = Bundle.main.url(forResource: "MessageTemplate", withExtension: "html"),
            let content = try? String(contentsOf: url, encoding: .utf8) {
+            logger.info("Template loaded from Bundle.main flat resource")
             return content
         }
 
         // Embedded fallback — guaranteed available, never crashes.
         // KEEP IN SYNC WITH: Sources/App/Resources/MessageTemplate.html
         // REGENERATE WITH: swift scripts/embed-template.swift
+        logger.warning("No resource bundle or flat file found for MessageTemplate.html — using embedded fallback")
         return embeddedTemplate
     }()
 
