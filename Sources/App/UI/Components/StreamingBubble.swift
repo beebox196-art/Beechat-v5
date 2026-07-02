@@ -3,14 +3,15 @@ import WebKit
 
 /// Streaming bubble — renders the live AI response as it arrives.
 ///
-/// When `FeatureFlags.htmlRenderingEnabled` is true, the streaming content is
-/// sanitized and rendered in a WebView (MessageWebView) for rich formatting
-/// (bold, code, links, etc.). When false, plain Text is used as before.
+/// When `FeatureFlags.htmlRenderingEnabled` is true (read from environment),
+/// the streaming content is sanitized and rendered in a WebView for rich
+/// formatting (bold, code, links, etc.). When false, plain Text is used as before.
 ///
 /// The feature flag wraps the new path; if anything breaks, we flip it off and
 /// we're back to plain text. Zero risk to the current chat experience.
 struct StreamingBubble: View {
     @Environment(ThemeManager.self) var themeManager
+    @Environment(FeatureFlags.self) var featureFlags
     let content: String
 
     /// WebView height, driven by ResizeObserver JS bridge.
@@ -23,7 +24,7 @@ struct StreamingBubble: View {
                     .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
 
-                if FeatureFlags.shared.htmlRenderingEnabled && !content.isEmpty {
+                if featureFlags.htmlRenderingEnabled && !content.isEmpty {
                     // HTML path: sanitize → WebView render
                     MessageWebView(
                         html: HTMLSanitizer.sanitize(content),

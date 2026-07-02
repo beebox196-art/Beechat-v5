@@ -658,9 +658,12 @@ extension Color {
 
     /// Returns the hex color string (e.g. "#E0E0E0") for this Color.
     /// Uses the current color scheme to resolve adaptive colors.
+    /// Converts Display P3 colors to sRGB before hex conversion so that
+    /// wide-gamut colors don't produce incorrect hex values (e.g. #FFFFFF
+    /// for colors that aren't actually white).
     func toHex() -> String {
-        // Use NSColor for macOS to get RGB components
         #if os(macOS)
+        // NSColor(usingColorSpace:) handles P3 → sRGB conversion correctly.
         guard let nsColor = NSColor(self).usingColorSpace(.sRGB) else {
             return "#FFFFFF"
         }
@@ -669,8 +672,12 @@ extension Color {
         let b = Int(nsColor.blueComponent * 255)
         return String(format: "#%02X%02X%02X", r, g, b)
         #else
-        guard let uiColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light)),
-              let components = uiColor.cgColor?.components, components.count >= 3 else {
+        // Convert P3 colors to sRGB before extracting components.
+        // Without this, UIColor in Display P3 color space returns component
+        // values in the P3 gamut, which produce incorrect hex strings.
+        let resolvedColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light))
+        guard let srgbColor = resolvedColor.cgColor?.converted(to: CGColorSpace.sRGB, intent: .default, options: nil),
+              let components = srgbColor.components, components.count >= 3 else {
             return "#FFFFFF"
         }
         let r = Int(components[0] * 255)
@@ -688,8 +695,9 @@ extension Color {
         let luminance = 0.299 * nsColor.redComponent + 0.587 * nsColor.greenComponent + 0.114 * nsColor.blueComponent
         return luminance < 0.5
         #else
-        guard let uiColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light)),
-              let components = uiColor.cgColor?.components, components.count >= 3 else { return false }
+        let resolvedColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light))
+        guard let srgbColor = resolvedColor.cgColor?.converted(to: CGColorSpace.sRGB, intent: .default, options: nil),
+              let components = srgbColor.components, components.count >= 3 else { return false }
         let luminance = 0.299 * components[0] + 0.587 * components[1] + 0.114 * components[2]
         return luminance < 0.5
         #endif
@@ -706,8 +714,9 @@ extension Color {
             alpha: nsColor.alphaComponent
         ))
         #else
-        guard let uiColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light)),
-              let components = uiColor.cgColor?.components, components.count >= 3 else { return self }
+        let resolvedColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light))
+        guard let srgbColor = resolvedColor.cgColor?.converted(to: CGColorSpace.sRGB, intent: .default, options: nil),
+              let components = srgbColor.components, components.count >= 3 else { return self }
         return Color(
             red: max(0, Double(components[0]) * (1 - factor)),
             green: max(0, Double(components[1]) * (1 - factor)),

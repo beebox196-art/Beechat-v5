@@ -3,6 +3,7 @@ import BeeChatPersistence
 
 struct MessageContent: View {
     @Environment(ThemeManager.self) var themeManager
+    @Environment(FeatureFlags.self) var featureFlags
     let message: Message
 
     /// Cached conversion result. Computed once on first render (or when
@@ -11,7 +12,7 @@ struct MessageContent: View {
     @State private var converted: ConvertedMessage?
 
     var body: some View {
-        if FeatureFlags.shared.htmlRenderingEnabled,
+        if featureFlags.htmlRenderingEnabled,
            let content = message.content, !content.isEmpty {
             htmlRenderingPath(content: content)
         } else if let content = message.content, !content.isEmpty {

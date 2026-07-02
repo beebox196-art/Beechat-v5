@@ -8,12 +8,14 @@ import os
 @main
 struct BeeChatApp: App {
     @State private var themeManager = ThemeManager()
+    @State private var featureFlags = FeatureFlags()
     @State private var appState = AppState()
 
     var body: some Scene {
         WindowGroup {
             MainWindow()
                 .environment(themeManager)
+                .environment(featureFlags)
                 .environment(appState)
                 .onAppear {
                     appState.startup()
@@ -62,6 +64,7 @@ struct BeeChatApp: App {
         Settings {
             FontSizeSettingsView()
                 .environment(themeManager)
+                .environment(featureFlags)
         }
     }
 }

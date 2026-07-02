@@ -5,12 +5,16 @@ import SwiftUI
 final class ThemeManager {
     static let shared = ThemeManager()
 
-    var currentTheme: Theme
+    var currentTheme: Theme {
+        didSet { _cssTokensCache = nil }
+    }
     var availableThemes: [ThemeMetadata]
 
     /// Global text-scale multiplier applied to every typography token.
     /// Range: 0.7 ... 2.0. Default 1.0. Persisted to UserDefaults.
-    var fontScale: CGFloat = 1.0
+    var fontScale: CGFloat = 1.0 {
+        didSet { _cssTokensCache = nil }
+    }
 
     init() {
         self.currentTheme = .artisanalTech
@@ -99,13 +103,27 @@ final class ThemeManager {
 
     // MARK: - CSS Token Export (for WebView theming)
 
+    /// Cached CSS tokens — invalidated when currentTheme or fontScale changes
+    /// via property observers (didSet), so the dict is computed once per theme
+    /// change rather than on every streaming call.
+    private var _cssTokensCache: [String: String]?
+
     /// Returns a flat dictionary of CSS custom properties from the current theme,
     /// suitable for injection into MessageWebView via `window.beechat.setTheme()`.
     ///
     /// Maps ColorTokens and typography/spacing tokens to `--bc-*` variables
     /// that MessageTemplate.html consumes. Includes `--bc-appearance` ("light"/"dark")
     /// so the WebView can match its `color-scheme` meta.
+    ///
+    /// Cached: recomputed only when `currentTheme` or `fontScale` changes.
     var cssTokens: [String: String] {
+        if let cached = _cssTokensCache { return cached }
+        let computed = computeCSSTokens()
+        _cssTokensCache = computed
+        return computed
+    }
+
+    private func computeCSSTokens() -> [String: String] {
         var tokens: [String: String] = [:]
 
         // Appearance — derived from the theme's background brightness
