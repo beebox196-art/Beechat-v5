@@ -96,4 +96,64 @@ final class ThemeManager {
     private func persistFontScale(_ value: CGFloat) {
         UserDefaults.standard.set(Double(value), forKey: "BeeChat.fontScale")
     }
+
+    // MARK: - CSS Token Export (for WebView theming)
+
+    /// Returns a flat dictionary of CSS custom properties from the current theme,
+    /// suitable for injection into MessageWebView via `window.beechat.setTheme()`.
+    ///
+    /// Maps ColorTokens and typography/spacing tokens to `--bc-*` variables
+    /// that MessageTemplate.html consumes. Includes `--bc-appearance` ("light"/"dark")
+    /// so the WebView can match its `color-scheme` meta.
+    var cssTokens: [String: String] {
+        var tokens: [String: String] = [:]
+
+        // Appearance — derived from the theme's background brightness
+        let bgColor = currentTheme.colors[.bgSurface] ?? Color.white
+        let isDark = bgColor.isDarkAppearance
+        tokens["--bc-appearance"] = isDark ? "dark" : "light"
+
+        // Color tokens → hex strings
+        let colorMapping: [ColorToken: String] = [
+            .bgSurface:      "--bc-bg-surface",
+            .bgPanel:         "--bc-bg-panel",
+            .bgElevated:      "--bc-bg-elevated",
+            .textPrimary:    "--bc-text",
+            .textSecondary:  "--bc-text-dim",
+            .textOnAccent:   "--bc-text-on-accent",
+            .accentPrimary:  "--bc-accent",
+            .accentSecondary:"--bc-accent-secondary",
+            .accentTertiary: "--bc-accent-tertiary",
+            .borderSubtle:   "--bc-code-border",
+            .borderDefault:  "--bc-table-border",
+        ]
+
+        for (token, cssVar) in colorMapping {
+            if let color = currentTheme.colors[token] {
+                tokens[cssVar] = color.toHex()
+            }
+        }
+
+        // Derived tokens from theme colors
+        if let accent = currentTheme.colors[.accentPrimary] {
+            tokens["--bc-accent"] = accent.toHex()
+            // Link color: slightly darker accent for readability
+            tokens["--bc-link"] = isDark ? accent.toHex() : accent.darken(by: 0.2).toHex()
+        }
+        if let bgPanel = currentTheme.colors[.bgPanel] {
+            // Code background: subtle tint of panel background
+            tokens["--bc-code-bg"] = bgPanel.toHex()
+        }
+        if let accent = currentTheme.colors[.accentPrimary] {
+            tokens["--bc-quote-bar"] = accent.toHex()
+        }
+        if let border = currentTheme.colors[.borderDefault] {
+            tokens["--bc-hr"] = border.toHex()
+        }
+
+        // Font scale — already handled by setFontScale(), but include for completeness
+        tokens["--bc-font-scale"] = String(format: "%.1f", fontScale)
+
+        return tokens
+    }
 }

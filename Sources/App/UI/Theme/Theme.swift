@@ -655,4 +655,64 @@ extension Color {
         let b = Double(value & 0xFF) / 255.0
         self.init(red: r, green: g, blue: b)
     }
+
+    /// Returns the hex color string (e.g. "#E0E0E0") for this Color.
+    /// Uses the current color scheme to resolve adaptive colors.
+    func toHex() -> String {
+        // Use NSColor for macOS to get RGB components
+        #if os(macOS)
+        guard let nsColor = NSColor(self).usingColorSpace(.sRGB) else {
+            return "#FFFFFF"
+        }
+        let r = Int(nsColor.redComponent * 255)
+        let g = Int(nsColor.greenComponent * 255)
+        let b = Int(nsColor.blueComponent * 255)
+        return String(format: "#%02X%02X%02X", r, g, b)
+        #else
+        guard let uiColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light)),
+              let components = uiColor.cgColor?.components, components.count >= 3 else {
+            return "#FFFFFF"
+        }
+        let r = Int(components[0] * 255)
+        let g = Int(components[1] * 255)
+        let b = Int(components[2] * 255)
+        return String(format: "#%02X%02X%02X", r, g, b)
+        #endif
+    }
+
+    /// Whether this color represents a dark appearance (background).
+    /// Used to determine if the WebView should use dark mode CSS.
+    var isDarkAppearance: Bool {
+        #if os(macOS)
+        guard let nsColor = NSColor(self).usingColorSpace(.sRGB) else { return false }
+        let luminance = 0.299 * nsColor.redComponent + 0.587 * nsColor.greenComponent + 0.114 * nsColor.blueComponent
+        return luminance < 0.5
+        #else
+        guard let uiColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light)),
+              let components = uiColor.cgColor?.components, components.count >= 3 else { return false }
+        let luminance = 0.299 * components[0] + 0.587 * components[1] + 0.114 * components[2]
+        return luminance < 0.5
+        #endif
+    }
+
+    /// Returns a darker version of the color by the given factor (0.0 to 1.0).
+    func darken(by factor: CGFloat) -> Color {
+        #if os(macOS)
+        guard let nsColor = NSColor(self).usingColorSpace(.sRGB) else { return self }
+        return Color(NSColor(
+            red: max(0, nsColor.redComponent * (1 - factor)),
+            green: max(0, nsColor.greenComponent * (1 - factor)),
+            blue: max(0, nsColor.blueComponent * (1 - factor)),
+            alpha: nsColor.alphaComponent
+        ))
+        #else
+        guard let uiColor = UIColor(self).resolvedColor(with: .init(userInterfaceStyle: .light)),
+              let components = uiColor.cgColor?.components, components.count >= 3 else { return self }
+        return Color(
+            red: max(0, Double(components[0]) * (1 - factor)),
+            green: max(0, Double(components[1]) * (1 - factor)),
+            blue: max(0, Double(components[2]) * (1 - factor))
+        )
+        #endif
+    }
 }

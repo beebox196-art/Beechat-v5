@@ -1,8 +1,20 @@
 import SwiftUI
+import WebKit
 
+/// Streaming bubble — renders the live AI response as it arrives.
+///
+/// When `FeatureFlags.htmlRenderingEnabled` is true, the streaming content is
+/// sanitized and rendered in a WebView (MessageWebView) for rich formatting
+/// (bold, code, links, etc.). When false, plain Text is used as before.
+///
+/// The feature flag wraps the new path; if anything breaks, we flip it off and
+/// we're back to plain text. Zero risk to the current chat experience.
 struct StreamingBubble: View {
     @Environment(ThemeManager.self) var themeManager
     let content: String
+
+    /// WebView height, driven by ResizeObserver JS bridge.
+    @State private var webViewHeight: CGFloat = 40 // sensible minimum for first paint
 
     var body: some View {
         HStack {
@@ -11,16 +23,44 @@ struct StreamingBubble: View {
                     .font(themeManager.font(.caption2))
                     .foregroundColor(themeManager.color(.textSecondary))
 
-                HStack(spacing: 0) {
-                    Text(content)
-                        .font(themeManager.font(.body))
-                        .textSelection(.enabled)
+                if FeatureFlags.shared.htmlRenderingEnabled && !content.isEmpty {
+                    // HTML path: sanitize → WebView render
+                    MessageWebView(
+                        html: HTMLSanitizer.sanitize(content),
+                        themeTokens: themeManager.cssTokens,
+                        fontScale: themeManager.fontScale,
+                        height: $webViewHeight,
+                        onLink: { url in
+                            // Route through the same logic as FileLinkText
+                            NSWorkspace.shared.open(url)
+                        }
+                    )
+                    .frame(height: webViewHeight)
+                    // Cursor blink overlay — the WebView handles its own text,
+                    // but we still show the blinking cursor to indicate streaming
+                    .overlay(alignment: .bottomTrailing) {
+                        Text("▌")
+                            .font(themeManager.font(.body))
+                            .foregroundColor(themeManager.color(.accentPrimary))
+                            .opacity(cursorVisible ? 1 : 0)
+                            .animation(themeManager.animation(.slow).repeatForever(autoreverses: true), value: cursorVisible)
+                            .padding(.trailing, 4)
+                            .padding(.bottom, 2)
+                            .allowsHitTesting(false)
+                    }
+                } else {
+                    // Plain text path (original behaviour)
+                    HStack(spacing: 0) {
+                        Text(content)
+                            .font(themeManager.font(.body))
+                            .textSelection(.enabled)
 
-                    Text("▌")
-                        .font(themeManager.font(.body))
-                        .foregroundColor(themeManager.color(.accentPrimary))
-                        .opacity(cursorVisible ? 1 : 0)
-                        .animation(themeManager.animation(.slow).repeatForever(autoreverses: true), value: cursorVisible)
+                        Text("▌")
+                            .font(themeManager.font(.body))
+                            .foregroundColor(themeManager.color(.accentPrimary))
+                            .opacity(cursorVisible ? 1 : 0)
+                            .animation(themeManager.animation(.slow).repeatForever(autoreverses: true), value: cursorVisible)
+                    }
                 }
             }
             .padding(.horizontal, themeManager.spacing(.lg))

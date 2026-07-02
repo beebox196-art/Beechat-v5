@@ -23,6 +23,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift", from: "7.0.0"),
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.7.0"),
         .package(path: "Vendors/ChatField"),
     ],
     targets: [
@@ -94,10 +95,12 @@ let package = Package(
                 .target(name: "BeeChatSyncBridge"),
                 .target(name: "BeeBoard"),
                 .product(name: "ChatField", package: "ChatField"),
+                .product(name: "SwiftSoup", package: "SwiftSoup"),
             ],
             path: "Sources/App",
             resources: [
                 .process("Assets.xcassets"),
+                .process("Resources"),
             ],
             swiftSettings: [.swiftLanguageVersion(.v5)]
         ),

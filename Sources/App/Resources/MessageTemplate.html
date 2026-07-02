@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Declares both schemes so WebKit never paints a default-white canvas before CSS -->
+<meta name="color-scheme" content="light dark">
+<style>
+  /* BeeChat-v5 has eight custom themes (ThemeManager token palettes), so the real theming
+     mechanism is beechat.setTheme({tokens}) — Swift pushes hex values into these variables.
+     The values below are only the pre-injection fallback (≈ .light / .dark themes) so a
+     bubble never paints unthemed. */
+  :root {
+    color-scheme: light dark;
+    --bc-font-base: 13;                 /* pt; multiplied by --bc-font-scale */
+    --bc-font-scale: 1;                 /* ThemeManager.fontScale, via setFontScale() */
+    --bc-accent:       #D4A574;
+    --bc-text:         #212121;
+    --bc-text-dim:     rgba(33, 33, 33, 0.55);
+    --bc-link:         #8A6420;
+    --bc-code-bg:      rgba(33, 33, 33, 0.06);
+    --bc-code-border:  rgba(33, 33, 33, 0.12);
+    --bc-quote-bar:    var(--bc-accent);
+    --bc-table-border: rgba(33, 33, 33, 0.18);
+    --bc-hr:           rgba(33, 33, 33, 0.15);
+    --bc-img-broken:   rgba(33, 33, 33, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bc-text:         #E0E0E0;
+      --bc-text-dim:     rgba(224, 224, 224, 0.55);
+      --bc-link:         #E8C583;
+      --bc-code-bg:      rgba(224, 224, 224, 0.10);
+      --bc-code-border:  rgba(224, 224, 224, 0.16);
+      --bc-table-border: rgba(224, 224, 224, 0.22);
+      --bc-hr:           rgba(224, 224, 224, 0.18);
+      --bc-img-broken:   rgba(224, 224, 224, 0.10);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: transparent;  /* bubble chrome is SwiftUI's; needs drawsBackground=false Swift-side */
+    height: auto;
+    overflow: hidden;         /* the transcript scrolls, not the bubble (wheel forwarding in Swift) */
+  }
+  body {
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    /* No Dynamic Type on macOS — size comes from the app's own fontScale setting */
+    font-size: calc(var(--bc-font-base) * var(--bc-font-scale) * 1px);
+    color: var(--bc-text);
+    line-height: 1.45;
+    overflow-wrap: break-word;
+    word-break: break-word;   /* long tokens/URLs must never widen the bubble */
+    -webkit-user-select: text;
+    cursor: default;          /* desktop: text areas get I-beam via selection, not the whole doc */
+  }
+
+  #content > :first-child { margin-top: 0; }
+  #content > :last-child  { margin-bottom: 0; }
+
+  p { margin: 0 0 0.6em; }
+  a {
+    color: var(--bc-link);
+    text-decoration: none;
+    cursor: pointer;          /* desktop hover affordances — parity with FileLinkText */
+  }
+  a:hover { text-decoration: underline; text-underline-offset: 2px; }
+  strong, b { font-weight: 600; }
+
+  /* Headings capped for chat context */
+  h1, h2, h3, h4, h5, h6 { margin: 0.7em 0 0.35em; line-height: 1.25; font-weight: 700; }
+  h1 { font-size: 1.35em; } h2 { font-size: 1.25em; } h3 { font-size: 1.15em; }
+  h4, h5, h6 { font-size: 1.0em; }
+
+  ul, ol { margin: 0.4em 0; padding-left: 1.4em; }
+  li { margin: 0.15em 0; }
+  li > ul, li > ol { margin: 0.15em 0; }
+
+  blockquote {
+    margin: 0.6em 0;
+    padding: 2px 0 2px 10px;
+    border-left: 3px solid var(--bc-quote-bar);
+    color: var(--bc-text-dim);
+  }
+
+  code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; }
+  code { background: var(--bc-code-bg); border-radius: 4px; padding: 1px 4px; }
+  pre {
+    background: var(--bc-code-bg);
+    border: 1px solid var(--bc-code-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    overflow-x: auto;         /* horizontal wheel events stay in-document (Swift forwards vertical only) */
+    white-space: pre;
+  }
+  pre code { background: none; padding: 0; }
+
+  img {
+    max-width: 100%;
+    height: auto;             /* keeps aspect even when width/height attrs disagree */
+    display: block;
+    border-radius: 8px;
+    margin: 0.4em 0;
+  }
+  img.bc-broken { min-width: 44px; min-height: 44px; background: var(--bc-img-broken); }
+
+  .bc-scroll-x { overflow-x: auto; margin: 0.6em 0; }
+  table { border-collapse: collapse; font-size: 0.92em; }
+  th, td { border: 1px solid var(--bc-table-border); padding: 4px 8px; text-align: left; }
+  th { font-weight: 600; }
+
+  hr { border: none; border-top: 1px solid var(--bc-hr); margin: 0.8em 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<!-- dir=auto: per-message RTL/LTR without native involvement -->
+<div id="content" dir="auto"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const content = document.getElementById('content');
+
+  const bridge = (name, payload) => {
+    try { window.webkit.messageHandlers[name].postMessage(payload); } catch (_) { /* not in WKWebView */ }
+  };
+
+  // ---- Height reporting ------------------------------------------------
+  // Measure #content, not documentElement/body: those can stretch to the current
+  // viewport height, creating a feedback loop once SwiftUI sizes the web view
+  // from our own report. ResizeObserver also fires on window-resize-driven
+  // width changes, which is what keeps heights honest during live resize.
+  let lastHeight = -1;
+  const reportHeight = () => {
+    const h = Math.ceil(content.getBoundingClientRect().height);
+    if (h !== lastHeight) {
+      lastHeight = h;
+      bridge('bcHeight', h);
+    }
+  };
+  new ResizeObserver(reportHeight).observe(content);
+
+  // ---- Content hydration -----------------------------------------------
+  const hydrate = () => {
+    // Wide tables: wrap in a horizontal scroller so they can't widen the bubble.
+    content.querySelectorAll('table').forEach((t) => {
+      if (t.parentElement.classList.contains('bc-scroll-x')) return;
+      const w = document.createElement('div');
+      w.className = 'bc-scroll-x';
+      t.replaceWith(w);
+      w.appendChild(t);
+    });
+    // Images: re-report height when they resolve; mark failures.
+    content.querySelectorAll('img').forEach((img) => {
+      if (img.complete) return;
+      img.addEventListener('load', reportHeight, { once: true });
+      img.addEventListener('error', () => {
+        img.classList.add('bc-broken');
+        if (!img.alt) img.alt = 'Image unavailable';
+        reportHeight();
+      }, { once: true });
+    });
+    reportHeight();
+  };
+
+  // ---- Interaction -----------------------------------------------------
+  // All links go native; nothing navigates inside the bubble. This includes the
+  // app's file-path links — Swift routes them through FileLinkText's open logic.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (a) {
+      e.preventDefault();
+      bridge('bcLink', a.href);
+      return;
+    }
+    const img = e.target.closest('img:not(.bc-broken)');
+    if (img && img.src) bridge('bcImage', img.src);
+  });
+
+  // Kill WebKit's own context menu ("Reload" etc.); Swift's willOpenMenu is the
+  // belt-and-braces layer. Bubble menus stay native.
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // ---- Public API (called from Swift via evaluateJavaScript) ------------
+  window.beechat = {
+    // html MUST already be sanitized natively (tag/attribute allowlist).
+    // innerHTML won't run <script>, but inline handlers like onerror WOULD.
+    setContent(html) {
+      content.innerHTML = html;
+      hydrate();
+    },
+    // tokens: flat map of CSS custom properties from ThemeManager's palette,
+    // e.g. { "--bc-text": "#FFCC99", "--bc-accent": "#FF9900", ... }.
+    // Called on creation (before setContent) and on every theme switch.
+    setTheme(tokens) {
+      for (const [k, v] of Object.entries(tokens || {})) {
+        if (k.startsWith('--bc-')) document.documentElement.style.setProperty(k, v);
+      }
+    },
+    // ThemeManager.fontScale — the app's own text-size setting (no Dynamic Type on macOS).
+    setFontScale(scale) {
+      document.documentElement.style.setProperty('--bc-font-scale', String(scale));
+    },
+  };
+
+  bridge('bcReady', true);   // Swift injects theme + pending content on this signal
+})();
+</script>
+</body>
+</html>
