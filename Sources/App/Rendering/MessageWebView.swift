@@ -157,7 +157,7 @@ struct MessageWebView: NSViewRepresentable {
             case "bcLink":
                 guard let raw = message.body as? String,
                       let url = URL(string: raw),
-                      HTMLSanitizer.allowedSchemes.contains(url.scheme?.lowercased() ?? "")
+                      LinkPolicy.isAllowed(url)
                 else { return }
                 Task { @MainActor [parent] in parent.onLink(url) }
             case "bcImage":

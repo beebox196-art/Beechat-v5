@@ -31,12 +31,7 @@ struct StreamingBubble: View {
                         fontScale: themeManager.fontScale,
                         height: $webViewHeight,
                         onLink: { url in
-                            // TODO: Wire through FileLinkText's OpenURLAction policy.
-                            // Currently uses NSWorkspace.shared.open as stopgap.
-                            // Must be unified before flag goes ON.
-                            if let scheme = url.scheme, HTMLSanitizer.allowedSchemes.contains(scheme.lowercased()) {
-                                NSWorkspace.shared.open(url)
-                            }
+                            LinkPolicy.open(url)
                         }
                     )
                     .frame(height: webViewHeight)

@@ -45,14 +45,7 @@ struct MessageContent: View {
                 fontScale: themeManager.fontScale,
                 height: .constant(0), // settled message uses intrinsic sizing
                 onLink: { url in
-                    // TODO: Wire through FileLinkText's OpenURLAction policy.
-                    // Currently uses NSWorkspace.shared.open as stopgap.
-                    if let scheme = url.scheme,
-                       HTMLSanitizer.allowedSchemes.contains(scheme.lowercased()) {
-                        #if os(macOS)
-                        NSWorkspace.shared.open(url)
-                        #endif
-                    }
+                    LinkPolicy.open(url)
                 }
             )
             .onAppear {
@@ -66,6 +59,10 @@ struct MessageContent: View {
                 .textSelection(.enabled)
         } else {
             ConvertedMessageView(converted: conversion)
+                .environment(\.openURL, OpenURLAction { url in
+                    LinkPolicy.open(url)
+                    return .handled
+                })
                 .onAppear {
                     if converted == nil { converted = conversion }
                 }

@@ -170,7 +170,7 @@ struct FileLinkText: View {
                 .font(themeManager.font(.body))
                 .textSelection(.enabled)
                 .environment(\.openURL, OpenURLAction { url in
-                    NSWorkspace.shared.open(url)
+                    LinkPolicy.open(url)
                     return .handled
                 })
                 .onDisappear { cache.invalidate() }
