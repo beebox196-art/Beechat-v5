@@ -1,5 +1,6 @@
 import Foundation
 import os
+import SwiftSoup
 
 /// Sanitizes HTML content for safe rendering in a WKWebView or native converter.
 ///
@@ -12,6 +13,12 @@ import os
 /// can't handle natively will trip `needsWebView` instead of crashing or rendering
 /// dangerously.
 ///
+/// ## Implementation
+///
+/// Uses SwiftSoup to parse the input HTML, then walks the parsed DOM tree emitting
+/// only allowlisted tags and attributes. Unknown harmless tags are unwrapped
+/// (children kept, tag removed). Dangerous tags are removed with all their content.
+///
 /// ## Threat model
 ///
 /// - **Script execution**: Stripped by removing `<script>` and event handlers.
@@ -20,7 +27,7 @@ import os
 /// - **Style injection**: Stripped by removing `<style>` and inline `style` attributes.
 /// - **Resource amplification**: Mitigated by text-length cap (200K chars).
 ///   The converter's node/depth caps provide additional DoS protection.
-/// - **Phishing**: URL scheme allowlist (http, https, mailto, tel, file).
+/// - **Phishing**: URL scheme allowlist (http, https, mailto).
 ///
 /// ## Design notes
 ///
@@ -29,20 +36,15 @@ import os
 ///   here would break WebView rendering of legitimate tabular content.
 /// - `<div>` is kept but its `class`/`id`/`style` attributes are stripped (theme
 ///   owns presentation). The native converter treats it as a paragraph boundary.
-/// - `<sub>`, `<sup>`, `<small>`, `<mark>` are kept as plain-text passthrough
-///   in the native converter. Keeping them here means messages containing these
-///   tags don't fall through to WebView unnecessarily.
+/// - `<sub>`, `<sup>` are kept as plain-text passthrough in the native converter.
 enum HTMLSanitizer {
 
     private static let logger = Logger(subsystem: "com.beebox.beechat", category: "HTMLSanitizer")
 
     // MARK: - Configuration
 
-    /// Tags that survive sanitization. Everything else is stripped (content kept, tag removed).
-    /// This is a superset of the native converter's `nativeTags` because the WebView path
-    /// can render richer HTML than the native path — tags like `<table>`, `<thead>`, `<tbody>`,
-    /// `<tfoot>`, `<th>`, `<caption>`, `<details>`, `<summary>` are kept for WebView but
-    /// will trip `needsWebView` in the native converter.
+    /// Tags that survive sanitization. Everything else is either unwrapped (content
+    /// kept, tag removed) or removed entirely with content (if dangerous).
     static let allowedTags: Set<String> = [
         // Paragraphs & structure
         "p", "div", "br", "hr",
@@ -61,15 +63,22 @@ enum HTMLSanitizer {
         "pre",
         // Images
         "img",
-        // Tables (WebView-only in native converter, but kept here for WebView rendering)
+        // Tables (WebView-only in native converter, but kept for WebView rendering)
         "table", "thead", "tbody", "tfoot", "tr", "th", "td", "caption",
         "colgroup", "col",
         // Interactive (limited)
         "details", "summary",
     ]
 
+    /// Tags that are removed **with all their content**. These are dangerous
+    /// (script execution, style injection, navigation, form hijacking, etc.).
+    private static let dangerousTags: Set<String> = [
+        "script", "style", "iframe", "object", "embed", "form",
+        "input", "textarea", "select", "button",
+        "meta", "link", "noscript",
+    ]
+
     /// Attributes allowed on specific tags. Unlisted attributes are stripped.
-    /// Global attributes (allowed on any tag): none by default.
     private static let tagAttributes: [String: Set<String>] = [
         "a": ["href", "title"],
         "img": ["src", "alt", "width", "height"],
@@ -81,8 +90,14 @@ enum HTMLSanitizer {
         "details": ["open"],
     ]
 
+    /// Global attributes allowed on any tag.
+    private static let globalAttributes: Set<String> = ["class", "id"]
+
     /// URL schemes allowed in `href` and `src` attributes.
-    static let allowedSchemes: Set<String> = ["http", "https", "mailto", "tel", "file"]
+    static let allowedSchemes: Set<String> = ["http", "https", "mailto"]
+
+    /// URL attributes that need scheme validation.
+    private static let urlAttributes: Set<String> = ["href", "src"]
 
     /// Maximum input text length. Inputs exceeding this are truncated before parsing.
     /// This is a DoS mitigation, not a content policy.
@@ -95,11 +110,12 @@ enum HTMLSanitizer {
     /// - Parameter html: Raw HTML content (typically from gateway message).
     /// - Returns: Sanitized HTML with only allowed tags and attributes.
     ///
-    /// Tags not in `allowedTags` are removed but their text content is preserved.
-    /// Attributes not in `tagAttributes` for a given tag are stripped.
+    /// Tags in `allowedTags` are kept with allowlisted attributes.
+    /// Tags in `dangerousTags` are removed with ALL their content.
+    /// All other tags are unwrapped (children kept, tag itself removed).
+    /// Attributes not in the allowlist are stripped.
     /// Event handlers (`on*` attributes) are always removed.
-    /// `javascript:` and `data:` URLs are always removed.
-    /// `<script>`, `<style>`, `<iframe>`, `<form>` (and their content) are removed entirely.
+    /// `javascript:`, `data:`, and other disallowed URL schemes are removed.
     static func sanitize(_ html: String) -> String {
         // Length cap — DoS protection
         let input: String
@@ -110,96 +126,188 @@ enum HTMLSanitizer {
             input = html
         }
 
-        // We use a simple tag-walking approach rather than pulling in an HTML parser
-        // for sanitization. SwiftSoup is the converter's parser; the sanitizer strips
-        // dangerous content *before* SwiftSoup sees it, ensuring the converter never
-        // encounters script tags, event handlers, or javascript: URLs.
-        //
-        // For v1, we use regex-based stripping for the dangerous elements that must be
-        // removed entirely (script, style, iframe, form), then a second pass to strip
-        // dangerous attributes. This is sufficient because:
-        // 1. The converter (SwiftSoup) will re-parse the output and enforce its own limits.
-        // 2. The WebView receives only pre-sanitized content via setContent().
-        // 3. Navigation is blocked by the WKNavigationDelegate (only .other allowed).
-        //
-        // Future improvement: use SwiftSoup for sanitization too (it's already a dep).
+        guard !input.isEmpty else { return "" }
 
-        var result = input
+        do {
+            let doc = try SwiftSoup.parse(input)
+            doc.outputSettings().prettyPrint(pretty: false)
 
-        // Pass 1: Remove dangerous elements and ALL their content
-        result = stripDangerousElements(result)
+            guard let body = doc.body() else {
+                // If there's no body, return empty — the input was likely malformed
+                return ""
+            }
 
-        // Pass 2: Strip dangerous attributes (on* handlers, javascript:/data: URLs)
-        result = stripDangerousAttributes(result)
-
-        return result
-    }
-
-    // MARK: - Private helpers
-
-    /// Remove `<script>`, `<style>`, `<iframe>`, `<form>`, `<object>`, `<embed>`,
-    /// `<noscript>`, `<template>` elements and ALL their content.
-    private static func stripDangerousElements(_ html: String) -> String {
-        let dangerousTags = [
-            "script", "style", "iframe", "form", "object", "embed",
-            "noscript", "template", "applet", "base", "link", "meta"
-        ]
-        var result = html
-        for tag in dangerousTags {
-            // Remove self-closing and open+content+close
-            // Regex explanation: <tag...> (anything, including newlines, non-greedy) </tag>
-            // Also handles self-closing: <tag ... />
-            let openClosePattern = "<\(tag)(?:\\s[^>]*)?>.*?</\(tag)>"
-            result = result.replacingOccurrences(
-                of: openClosePattern,
-                with: "",
-                options: [.regularExpression, .caseInsensitive]
-            )
-            // Also remove standalone/self-closing tags that weren't caught above
-            let selfClosingPattern = "<\(tag)(?:\\s[^>]*)?\\s*/?>"
-            result = result.replacingOccurrences(
-                of: selfClosingPattern,
-                with: "",
-                options: [.regularExpression, .caseInsensitive]
-            )
+            let sanitized = walk(node: body)
+            // Extract just the inner HTML (we don't want <body> tags in the output)
+            return sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            logger.error("SwiftSoup parse error: \(error.localizedDescription)")
+            // On parse failure, return empty string rather than potentially unsafe content
+            return ""
         }
-        return result
     }
 
-    /// Strip `on*` event-handler attributes and `javascript:`/`data:` URLs.
-    /// Also strip `style` attributes (theme owns presentation).
-    private static func stripDangerousAttributes(_ html: String) -> String {
-        var result = html
+    // MARK: - Tree Walking
 
-        // Remove on* event handlers (onclick, onload, onerror, etc.)
-        result = result.replacingOccurrences(
-            of: "\\s+on\\w+\\s*=\\s*(?:\"[^\"]*\"|'[^']*'|\\S+)",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
+    /// Walk a parsed DOM tree and emit only allowed content.
+    /// - Parameter node: A SwiftSoup Node (Element, TextNode, etc.)
+    /// - Returns: Sanitized HTML string.
+    private static func walk(node: Node) -> String {
+        switch node {
+        case let element as Element:
+            return walkElement(element)
+        case let textNode as TextNode:
+            // Text nodes: emit their text, escaped for HTML
+            return escapeHtml(textNode.getWholeText())
+        case is Comment:
+            // Strip all comments
+            return ""
+        case is DataNode:
+            // Strip data nodes (e.g., <script> content, <style> content)
+            return ""
+        case is DocumentType:
+            return ""
+        default:
+            // Unknown node types — recurse into children if any
+            return node.getChildNodes().map { walk(node: $0) }.joined()
+        }
+    }
 
-        // Remove style attributes
-        result = result.replacingOccurrences(
-            of: "\\s+style\\s*=\\s*(?:\"[^\"]*\"|'[^']*')",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
+    /// Process an Element node: keep if allowed, unwrap if unknown, remove if dangerous.
+    private static func walkElement(_ element: Element) -> String {
+        let tag = element.tagName().lowercased()
 
-        // Remove javascript: and data: URLs in href/src attributes
-        // Pattern: href="javascript:..." or src="data:..."
-        result = result.replacingOccurrences(
-            of: "(href|src)\\s*=\\s*(?:\"(?:javascript|data):[^\"]*\"|'(?:javascript|data):[^']*')",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
+        // Dangerous tags: remove entirely with all content
+        if dangerousTags.contains(tag) {
+            return ""
+        }
 
-        // Also catch unquoted javascript:/data: URLs
-        result = result.replacingOccurrences(
-            of: "(href|src)\\s*=\\s*(?:javascript|data):\\S+",
-            with: "",
-            options: [.regularExpression, .caseInsensitive]
-        )
+        // Allowed tags: emit with filtered attributes
+        if allowedTags.contains(tag) {
+            return emitAllowedElement(element, tag: tag)
+        }
 
-        return result
+        // Unknown/harmless tags: unwrap — keep children, discard the tag itself
+        let childrenHTML = element.getChildNodes().map { walk(node: $0) }.joined()
+        return childrenHTML
+    }
+
+    /// Emit an allowed element with its allowlisted attributes.
+    private static func emitAllowedElement(_ element: Element, tag: String) -> String {
+        let allowedAttrs = allowedAttributes(for: tag)
+        var attrString = ""
+
+        guard let attributes = element.getAttributes() else {
+            // No attributes — just emit the tag with children
+            let childrenHTML = element.getChildNodes().map { walk(node: $0) }.joined()
+            let voidElements: Set<String> = ["br", "hr", "img", "col"]
+            if voidElements.contains(tag) {
+                return "<\(tag)>"
+            }
+            return "<\(tag)>\(childrenHTML)</\(tag)>"
+        }
+
+        for attr in attributes {
+            let key = attr.getKey().lowercased()
+
+            // Skip event handlers always
+            if key.hasPrefix("on") {
+                continue
+            }
+
+            // Skip style attribute always
+            if key == "style" {
+                continue
+            }
+
+            // Check if attribute is allowed for this tag
+            guard allowedAttrs.contains(key) else {
+                continue
+            }
+
+            // Validate URL attributes
+            if urlAttributes.contains(key) {
+                let value = attr.getValue()
+                if !isURLAllowed(value) {
+                    continue
+                }
+            }
+
+            // Emit the attribute
+            let value = attr.getValue()
+            attrString += " \(key)=\"\(escapeAttribute(value))\""
+        }
+
+        // Void elements (self-closing)
+        let voidElements: Set<String> = ["br", "hr", "img", "col"]
+        if voidElements.contains(tag) {
+            return "<\(tag)\(attrString)>"
+        }
+
+        let childrenHTML = element.getChildNodes().map { walk(node: $0) }.joined()
+        return "<\(tag)\(attrString)>\(childrenHTML)</\(tag)>"
+    }
+
+    /// Get the set of allowed attributes for a given tag.
+    /// This combines tag-specific attributes with global attributes.
+    private static func allowedAttributes(for tag: String) -> Set<String> {
+        let tagSpecific = tagAttributes[tag] ?? []
+        return tagSpecific.union(globalAttributes)
+    }
+
+    // MARK: - URL Validation
+
+    /// Check if a URL is allowed based on its scheme.
+    /// Entity-decodes the URL before checking to defeat obfuscation like
+    /// `&#106;avascript:...` or `java&#115;cript:...`.
+    private static func isURLAllowed(_ urlString: String) -> Bool {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Entity-decode before checking scheme to defeat obfuscation
+        let decoded: String
+        do {
+            decoded = try Entities.unescape(trimmed)
+        } catch {
+            // If entity decoding fails, use the trimmed version
+            decoded = trimmed
+        }
+
+        // Check for scheme
+        if let colonRange = decoded.range(of: ":", options: .literal) {
+            let scheme = String(decoded[decoded.startIndex..<colonRange.lowerBound])
+                .trimmingCharacters(in: .whitespaces)
+
+            // Scheme must be in the allowlist
+            return allowedSchemes.contains(scheme)
+        }
+
+        // No scheme found — could be a relative URL, anchor (#), or query (?)
+        // Allow relative paths, anchors, and query strings
+        // Block anything that looks like a dangerous scheme without a colon
+        if decoded.hasPrefix("//") || decoded.hasPrefix("/") || decoded.hasPrefix("#") || decoded.hasPrefix("?") {
+            return true
+        }
+
+        // No colon and doesn't start with / # ? — could be a bare path or text.
+        // Allow it (e.g., "example.com/path" or just "path")
+        return true
+    }
+
+    // MARK: - HTML Escaping
+
+    /// Escape text for safe inclusion in HTML content.
+    private static func escapeHtml(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    /// Escape a value for safe inclusion in an HTML attribute.
+    private static func escapeAttribute(_ value: String) -> String {
+        value.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
     }
 }
