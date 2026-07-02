@@ -21,7 +21,6 @@ struct MessageContent: View {
            let content = message.content, !content.isEmpty {
             htmlRenderingPath(content: content)
         } else if let content = message.content, !content.isEmpty {
-            // Flag OFF: existing plain-text path — completely unchanged
             FileLinkText(content: content)
                 .font(themeManager.font(.body))
                 .textSelection(.enabled)
@@ -40,7 +39,8 @@ struct MessageContent: View {
         let conversion = converted ?? {
             let htmlContent = MarkdownToHTML.convert(content)
             let sanitized = HTMLSanitizer.sanitize(htmlContent)
-            return HTMLMessageConverter.convert(sanitized)
+            let result = HTMLMessageConverter.convert(sanitized)
+            return result
         }()
 
         if conversion.needsWebView {

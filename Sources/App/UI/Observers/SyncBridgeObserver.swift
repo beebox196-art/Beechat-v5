@@ -8,6 +8,11 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
     var isStreaming: Bool = false
     var streamingSessionKey: String?
     var streamingContent: String = ""
+    /// Bridge content: the final assistant response captured when streaming ends.
+    /// Used by MessageCanvas to fill the gap between streaming stopping and
+    /// GRDB ValueObservation delivering the settled message to the UI.
+    /// Cleared when the GRDB observation delivers an update containing the content.
+    var completedContent: String = ""
     var connectionState: ConnectionState = .disconnected
     var thinkingState: ThinkingState = .idle
 
@@ -170,6 +175,14 @@ final class SyncBridgeObserver: SyncBridgeDelegate {
 
     /// Reset all streaming state back to idle
     private func resetStreamingState() {
+        // Capture completed content BEFORE clearing streaming state.
+        // This bridges the gap where isStreaming=false but GRDB hasn't
+        // delivered the updated message array yet.
+        if let key = streamingSessionKey, !streamingContent.isEmpty {
+            completedContent = streamingContent
+        } else {
+            completedContent = ""
+        }
         isStreaming = false
         streamingSessionKey = nil
         streamingContent = ""

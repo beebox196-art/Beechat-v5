@@ -14,6 +14,10 @@ struct MessageCanvas: View {
     let messages: [Message]
     let isStreaming: Bool
     var streamingContent: String = ""
+    /// Bridge content from SyncBridgeObserver.completedContent — the final response
+    /// captured when streaming ends. Fills the gap between streaming stopping and
+    /// GRDB delivering the settled message to the UI.
+    var completedContent: String = ""
     var thinkingState: ThinkingState = .idle
     var canLoadEarlier: Bool = false
     var topicId: String? = nil
@@ -25,6 +29,20 @@ struct MessageCanvas: View {
            let content = lastAssistant.content,
            !content.isEmpty,
            content == streamingContent {
+            return false
+        }
+        return true
+    }
+
+    /// Whether to show the completed-content bridge bubble.
+    /// This fills the gap between streaming ending (isStreaming=false) and
+    /// GRDB delivering the settled message to the messages array.
+    private var showCompletedBridge: Bool {
+        guard !isStreaming, !completedContent.isEmpty else { return false }
+        // Only show if the last assistant message is missing or has stale content
+        if let lastAssistant = messages.last(where: { $0.role == "assistant" }),
+           let content = lastAssistant.content, !content.isEmpty {
+            // The settled message already has content — bridge not needed
             return false
         }
         return true
@@ -77,6 +95,14 @@ struct MessageCanvas: View {
                         } else if showStreamingBubble {
                             StreamingBubble(content: streamingContent)
                                 .id("streaming-bubble")
+                        }
+
+                        // Completed-content bridge bubble: fills the gap between
+                        // streaming ending and GRDB delivering the settled message.
+                        // Renders identically to a settled assistant message.
+                        if showCompletedBridge {
+                            CompletedBridgeBubble(content: completedContent)
+                                .id("completed-bridge")
                         }
 
                         // 4px anchor — enough for LazyVStack to render reliably,
@@ -228,5 +254,80 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+/// Completed-content bridge bubble — renders final assistant content as a settled
+/// message during the gap between streaming ending and GRDB delivering the update.
+/// Uses the same styling as a regular assistant MessageBubble but without a cursor
+/// or streaming indicator. Disappears as soon as the GRDB observation delivers the
+/// settled message (completedContent is cleared by MainWindow).
+struct CompletedBridgeBubble: View {
+    @Environment(ThemeManager.self) var themeManager
+    @Environment(FeatureFlags.self) var featureFlags
+    let content: String
+
+    /// WebView height binding for rich content (same pattern as MessageContent).
+    @State private var webViewHeight: CGFloat = 40
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Bee")
+                    .font(themeManager.font(.caption2))
+                    .foregroundColor(themeManager.color(.textSecondary))
+
+                if featureFlags.htmlRenderingEnabled && !content.isEmpty {
+                    // Rich HTML path — same rendering pipeline as MessageContent
+                    let htmlContent = MarkdownToHTML.convert(content)
+                    let sanitized = HTMLSanitizer.sanitize(htmlContent)
+                    let conversion = HTMLMessageConverter.convert(sanitized)
+
+                    if conversion.needsWebView {
+                        MessageWebView(
+                            html: sanitized,
+                            themeTokens: themeManager.cssTokens,
+                            fontScale: themeManager.fontScale,
+                            height: $webViewHeight,
+                            onLink: { url in LinkPolicy.open(url) }
+                        )
+                    } else if !conversion.blocks.isEmpty {
+                        ConvertedMessageView(converted: conversion)
+                            .environment(\.openURL, OpenURLAction { url in
+                                LinkPolicy.open(url)
+                                return .handled
+                            })
+                    } else {
+                        FileLinkText(content: content)
+                            .font(themeManager.font(.body))
+                            .textSelection(.enabled)
+                    }
+                } else {
+                    // Plain text path
+                    FileLinkText(content: content)
+                        .font(themeManager.font(.body))
+                        .textSelection(.enabled)
+                }
+            }
+            .padding(.horizontal, themeManager.spacing(.lg))
+            .padding(.vertical, themeManager.spacing(.md))
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                RoundedRectangle(cornerRadius: themeManager.radius(.xl), style: .continuous)
+                    .fill(themeManager.color(.bgPanel))
+            )
+            .foregroundColor(themeManager.color(.textPrimary))
+            .shadow(
+                color: themeManager.color(.shadowMedium).opacity(0.1),
+                radius: 4, x: 0, y: 2
+            )
+            .modifier(BubbleWidthModifier())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Assistant message")
+
+            Spacer(minLength: 34)
+        }
+        .padding(.horizontal, themeManager.spacing(.lg))
+        .padding(.vertical, themeManager.spacing(.xs))
     }
 }

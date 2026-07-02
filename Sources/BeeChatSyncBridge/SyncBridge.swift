@@ -1135,7 +1135,10 @@ public actor SyncBridge {
 
     internal func processChatFinal(sessionKey: String) async {
         // Idempotency guard — skip if already finalized
-        guard streamingSessionKeys.remove(sessionKey) != nil else { return }
+        guard streamingSessionKeys.remove(sessionKey) != nil else {
+            print("[SyncBridge] processChatFinal: already finalized, skipping \(sessionKey)")
+            return
+        }
         cancelStallTimer(for: sessionKey)
         // Capture final content BEFORE clearing the buffer (Phase 2 race fix)
         completedContent[sessionKey] = streamingBuffer[sessionKey]

@@ -232,6 +232,7 @@ struct MainWindow: View {
                             messages: messageViewModel.messages,
                             isStreaming: isActiveTopicStreaming,
                             streamingContent: activeTopicStreamingContent,
+                            completedContent: syncBridgeObserver.completedContent,
                             thinkingState: syncBridgeObserver.thinkingState,
                             canLoadEarlier: messageViewModel.canLoadEarlier,
                             topicId: messageViewModel.selectedTopicId,
@@ -270,6 +271,8 @@ struct MainWindow: View {
             }
         }
         .onChange(of: messageViewModel.selectedTopicId) { _, _ in
+            // Clear stale completedContent bridge when switching topics
+            syncBridgeObserver.completedContent = ""
             // Clear stale pending reset context when switching topics
             if let bridge = appState.syncBridge {
                 Task {
@@ -282,6 +285,24 @@ struct MainWindow: View {
                     }
                     await bridge.clearPendingResetContext(except: messageViewModel.selectedTopic?.sessionKey, exceptAdditional: additionalExcept)
                 }
+            }
+        }
+        // Clear completedContent bridge when GRDB delivers the settled message.
+        // When messages change and the last assistant message has content,
+        // the bridge is stale and should be cleared.
+        .onChange(of: messageViewModel.messages) { _, messages in
+            if !syncBridgeObserver.completedContent.isEmpty {
+                if let lastAssistant = messages.last(where: { $0.role == "assistant" }),
+                   let content = lastAssistant.content, !content.isEmpty {
+                    syncBridgeObserver.completedContent = ""
+                }
+            }
+        }
+        // Clear completedContent bridge when streaming starts — the new stream
+        // replaces any stale bridge content from a previous response.
+        .onChange(of: syncBridgeObserver.isStreaming) { _, streaming in
+            if streaming {
+                syncBridgeObserver.completedContent = ""
             }
         }
         .onChange(of: appState.connectionState) { _, newState in
