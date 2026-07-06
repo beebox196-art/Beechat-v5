@@ -1,0 +1,34 @@
+=== BASELINE (ScrollView { LazyVStack }) EVIDENCE ===
+Date: 2026-07-06
+Run by: Bee (automated via Peekaboo + CANVAS_SCROLL_METRICS=1)
+Topic: Openclaw (7 messages, AI agent conversation)
+
+Screenshots: beechat-streaming-1.png, beechat-streaming-2.png (visible whitespace confirmed)
+
+Trace analysis:
+Phase distribution across all events: 111 thinking, 38 settled
+
+Frames with bottomGap > 2pt (white-space jumps):
+  thinking  4176
+  thinking  4175
+  thinking  4172
+  thinking  3377
+  thinking  26
+  thinking  20
+  thinking  2728
+  settled   2724
+
+All these were SUSTAINED >= 2 FRAMES, meeting the Fable metric threshold.
+
+=== SPIKE A (List) EVIDENCE ===
+Cases 1-4 all ran: 0 frames with bottomGap > 2pt
+
+Case 3 (long streaming, 21 frames):
+  All bottomGap values negative, tracking smooth content growth
+  -17983 → -17315 → -18422 → -18595 → -17926 → -18150 → -17214 → -16545...
+
+Case 4 (rapid send x4, 19 frames):
+  All bottomGap values negative, smooth transitions
+  -17372 → -18041 → -14339 → -14803 → -14134 → -10944 → -11408 → -10739...
+
+Verdict: A (List) passes all four cases with zero white-space jumps.
