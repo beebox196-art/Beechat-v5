@@ -21,6 +21,7 @@ Initially a personal tool for Adam. Medium-term aspiration: evaluate whether Bee
 - **Cross-device continuity:** task state syncs between Mac and iPhone — start a subagent on desktop, monitor on mobile, act from either
 - **Hands-off operation:** scheduled digests report back, autonomous subagents complete work, notifications only when Adam needs to act
 - **Beelinks integration (future):** alternative viewing of captured knowledge via Beelinks knowledge graph. Not built yet, but BeeChat should be ready to surface Beelinks context queries when Phase 2 visualisation ships.
+- **Message container architecture:** ScrollView + LazyVStack. SwiftUI List is architecturally incompatible with macOS 26 (PreferenceKey propagation failure). Verified via SPIKE-A (Jul 6, 2026). Do not use List for message containers.
 - Bug fixes and stability for existing chat functionality
 - UI polish that serves the control surface (not cosmetic for its own sake)
 - Example in-scope PRs: "Add agent status sidebar with live task timeline", "Show per-topic token spend in topic list", "Add context panel with file/decision/token summary", "Wire approval queue for elevated exec actions", "Add BeeBoard pin creation from topic context menu", "Surface research pipeline results in topic sidebar"
