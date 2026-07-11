@@ -141,8 +141,19 @@ enum MessageTemplate {
   'use strict';
   const content = document.getElementById('content');
   const bridge = (name, payload) => { try { window.webkit.messageHandlers[name].postMessage(payload); } catch (_) {} };
-  let lastHeight = -1;
-  const reportHeight = () => { const h = Math.ceil(content.getBoundingClientRect().height); if (h !== lastHeight) { lastHeight = h; bridge('bcHeight', h); } };
+  let generation = 0;      // bumped by setContent
+  let hasContent = false;  // no report until real content exists
+  let lastReport = { h: -1, w: -1, gen: -1 };
+  const reportHeight = () => {
+    if (!hasContent) return;          // R1 gate — silent until setContent has run.
+    const rect = content.getBoundingClientRect();
+    const w = Math.round(rect.width);
+    if (w <= 0) return;               // R2 gate — never report at zero width.
+    const h = Math.ceil(rect.height);
+    if (h === lastReport.h && w === lastReport.w && generation === lastReport.gen) return;
+    lastReport = { h, w, gen: generation };
+    bridge('bcHeight', { h, w, gen: generation });
+  };
   new ResizeObserver(reportHeight).observe(content);
   const hydrate = () => {
     content.querySelectorAll('table').forEach((t) => { if (t.parentElement.classList.contains('bc-scroll-x')) return; const w = document.createElement('div'); w.className = 'bc-scroll-x'; t.replaceWith(w); w.appendChild(t); });
@@ -152,7 +163,7 @@ enum MessageTemplate {
   document.addEventListener('click', (e) => { const a = e.target.closest('a[href]'); if (a) { e.preventDefault(); bridge('bcLink', a.href); return; } const img = e.target.closest('img:not(.bc-broken)'); if (img && img.src) bridge('bcImage', img.src); });
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   window.beechat = {
-    setContent(html) { content.innerHTML = html; hydrate(); },
+    setContent(html) { generation += 1; hasContent = true; content.innerHTML = html; hydrate(); },
     setTheme(tokens) { for (const [k, v] of Object.entries(tokens || {})) { if (k.startsWith('--bc-')) document.documentElement.style.setProperty(k, v); } },
     setFontScale(scale) { document.documentElement.style.setProperty('--bc-font-scale', String(scale)); },
   };

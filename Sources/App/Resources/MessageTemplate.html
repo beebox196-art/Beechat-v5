@@ -138,13 +138,28 @@
   // viewport height, creating a feedback loop once SwiftUI sizes the web view
   // from our own report. ResizeObserver also fires on window-resize-driven
   // width changes, which is what keeps heights honest during live resize.
-  let lastHeight = -1;
+  // Reports are transactional and self-describing (Change 1 of v0.9.5f):
+  //  - never report before the first setContent (the empty document's geometry
+  //    is not information — ResizeObserver fires on observe() and again on
+  //    every fresh document after a WebContent process reload);
+  //  - never report a zero-width layout (its height is garbage);
+  //  - tag every report with the width it was measured at and a content
+  //    generation, so Swift can reject reports describing layouts that no
+  //    longer exist. The image load/error re-reports in hydrate() and the
+  //    ResizeObserver's width-change firing (live-resize honesty) both flow
+  //    through the same gate unchanged.
+  let generation = 0;      // bumped by setContent
+  let hasContent = false;  // no report until real content exists
+  let lastReport = { h: -1, w: -1, gen: -1 };
   const reportHeight = () => {
-    const h = Math.ceil(content.getBoundingClientRect().height);
-    if (h !== lastHeight) {
-      lastHeight = h;
-      bridge('bcHeight', h);
-    }
+    if (!hasContent) return;          // R1 gate — silent until setContent has run.
+    const rect = content.getBoundingClientRect();
+    const w = Math.round(rect.width);
+    if (w <= 0) return;               // R2 gate — never report at zero width.
+    const h = Math.ceil(rect.height);
+    if (h === lastReport.h && w === lastReport.w && generation === lastReport.gen) return;
+    lastReport = { h, w, gen: generation };
+    bridge('bcHeight', { h, w, gen: generation });
   };
   new ResizeObserver(reportHeight).observe(content);
 
@@ -194,6 +209,8 @@
     // html MUST already be sanitized natively (tag/attribute allowlist).
     // innerHTML won't run <script>, but inline handlers like onerror WOULD.
     setContent(html) {
+      generation += 1;
+      hasContent = true;
       content.innerHTML = html;
       hydrate();
     },

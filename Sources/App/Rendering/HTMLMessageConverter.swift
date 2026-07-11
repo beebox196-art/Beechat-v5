@@ -5,6 +5,7 @@
 // (in-memory keyed by message id, or a GRDB column) so conversion happens once per message.
 #if canImport(SwiftSoup)
 
+import CryptoKit
 import Foundation
 import os
 import SwiftSoup
@@ -59,11 +60,27 @@ enum HTMLMessageConverter {
     static let maxTextLength = 200_000
     private static let allowedLinkSchemes: Set<String> = ["http", "https", "mailto", "tel", "file"]
 
+    /// Number of SHA-256 bytes to keep when logging content identity (4 bytes = 8 hex chars).
+    /// Sufficient to distinguish distinct HTML strings within a single conversation; collision
+    /// rate is negligible at the bail-out warning sites (1–78 fires / 26 min in the v0.9.5e
+    /// session). Log-safe: pure ASCII hex, no PII.
+    private static let hashLogBytes = 4
+
+    /// SHA-256 → first 4 bytes as 8 hex chars. In-process stable (no per-launch seed).
+    /// Used to label bail-out warnings so expected re-entry reconversion can be
+    /// distinguished from identity churn without topic switches.
+    private static func shortContentHash(_ s: String) -> String {
+        var hasher = SHA256()
+        hasher.update(data: Data(s.utf8))
+        let digest = hasher.finalize()
+        return digest.prefix(hashLogBytes).map { String(format: "%02x", $0) }.joined()
+    }
+
     // MARK: Entry point
 
     static func convert(_ sanitizedHTML: String) -> ConvertedMessage {
         guard sanitizedHTML.count <= maxTextLength else {
-            logger.warning("HTML exceeds maxTextLength (\(sanitizedHTML.count)/\(maxTextLength)) — falling back to WebView")
+            logger.warning("HTML exceeds maxTextLength (\(sanitizedHTML.count)/\(maxTextLength)) — falling back to WebView [hash:\(Self.shortContentHash(sanitizedHTML))]")
             return ConvertedMessage(blocks: [], needsWebView: true)
         }
         guard let doc = try? SwiftSoup.parseBodyFragment(sanitizedHTML),
@@ -76,7 +93,7 @@ enum HTMLMessageConverter {
         var state = WalkState()
         let blocks = convertChildren(of: body, depth: 0, state: &state)
         if state.bailedOut {
-            logger.warning("HTML walk bailed out (nodes/depth cap exceeded) — falling back to WebView")
+            logger.warning("HTML walk bailed out (nodes/depth cap exceeded) — falling back to WebView [hash:\(Self.shortContentHash(sanitizedHTML))]")
             return ConvertedMessage(blocks: [], needsWebView: true)
         }
         return ConvertedMessage(blocks: blocks, needsWebView: false)
