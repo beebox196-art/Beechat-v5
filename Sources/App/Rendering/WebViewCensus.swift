@@ -14,6 +14,7 @@ import os
 /// R3 (WebContent kills) is empirically resolved.
 enum WebViewCensus {
     private static let lock = OSAllocatedUnfairLock<State>(initialState: State())
+    private static let logger = Logger(subsystem: "com.beebox.beechat", category: "WebViewCensus")
     private struct State { var totalMounts = 0; var totalTeardowns = 0 }
 
     /// Called from MessageWebView's `makeNSView`. Increments totalMounts and
@@ -25,8 +26,7 @@ enum WebViewCensus {
             return (state.totalMounts, state.totalMounts - state.totalTeardowns)
         }
         if snapshot.mounts % 1000 == 0 {
-            Logger(subsystem: "com.beebox.beechat", category: "WebViewCensus")
-                .info("CENSUS mounts=\(snapshot.mounts) alive=\(snapshot.alive)")
+            logger.info("CENSUS mounts=\(snapshot.mounts) alive=\(snapshot.alive)")
         }
     }
 
