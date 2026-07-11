@@ -143,28 +143,40 @@ struct MessageWebView: NSViewRepresentable {
                                    didReceive message: WKScriptMessage) {
             switch message.name {
             case "bcReady":
+                if appliedHTML != nil {
+                    // A fresh document exists but we never saw the process die — the
+                    // WebContent process was replaced without the delegate firing.
+                    // Reset applied state so apply() re-injects instead of skipping.
+                    MessageWebView.logger.fault("bcReady with content already applied — WebContent replaced without didTerminate")
+                    appliedHTML = nil; appliedTokens = nil; appliedScale = nil
+                }
                 templateReady = true
                 if let webView = message.webView {
                     apply(html: parent.html, tokens: parent.themeTokens,
                           fontScale: parent.fontScale, to: webView)
                 }
             case "bcHeight":
-                guard let h = message.body as? Double else { return }
-                // Fix 3c: coalesce bcHeight reports to calm layout under scroll.
-                // - Sub-point deltas (< 0.5pt) ignored — they're resize-observer jitter.
-                // - Tiny shrinks (< 8pt) ignored — settle oscillation around a true
-                //   height. 8pt ≈ half a line at default scale; real reflow (window
-                //   widen, font-scale decrease) is at least a line, so it always
-                //   passes. Rejecting only the band, not all shrinks, is critical:
-                //   the previous "monotonic forever" guard locked settled bubbles
-                //   at their tall narrow-window height, turning Bug 3's transient
-                //   whitespace into permanent whitespace inside the bubble.
-                // - Heights snap, never animate (Transaction.disablesAnimations).
+                // Transactional report from the template: {h, w, gen} (Change 1).
+                guard let body = message.body as? [String: Any],
+                      let h = body["h"] as? Double,
+                      let w = body["w"] as? Double else { return }
+                let gen = body["gen"] as? Int ?? -1
+                // Delivered on the main thread; capture the live layout width now.
+                let viewWidth = message.webView?.bounds.width ?? 0
                 let rounded = (h * 2).rounded() / 2
                 Task { @MainActor [parent] in
+                    // Accept only reports that describe the layout we are currently
+                    // sizing. A mismatched width means the report is stale (measured
+                    // pre-first-layout or mid-resize); the ResizeObserver fires again
+                    // at the new width, so a matching report always follows — dropping
+                    // is safe, never lossy.
+                    guard abs(w - viewWidth) <= 1.5 else {
+                        MessageWebView.logger.debug("bcHeight REJECT stale-width h=\(h) w=\(w) viewW=\(viewWidth) gen=\(gen)")
+                        return
+                    }
                     let current = parent.height
-                    if abs(rounded - current) < 0.5 { return }
-                    if rounded < current, current > 40, current - rounded < 8 { return }
+                    if abs(rounded - current) < 0.5 { return }  // sub-point jitter
+                    MessageWebView.logger.debug("bcHeight ACCEPT h=\(rounded) (was \(current)) w=\(w) gen=\(gen)")
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
