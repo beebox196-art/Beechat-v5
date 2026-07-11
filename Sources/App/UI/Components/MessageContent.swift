@@ -14,7 +14,17 @@ struct MessageContent: View {
     /// ResizeObserver JS writes the measured content height here, exactly like
     /// StreamingBubble's $webViewHeight — without a real binding the WebView
     /// collapses to zero height.
-    @State private var settledWebViewHeight: CGFloat = 40
+    @State private var settledWebViewHeight: CGFloat
+
+    /// Custom init seeds the @State from `WebViewHeightCache`. Settled bubbles
+    /// we've measured before mount at their true height instead of the 40pt
+    /// floor; first-time bubbles still fall back to 40 until the WebView spins
+    /// up and the transactional reporter writes the honest value.
+    init(message: Message) {
+        self.message = message
+        _settledWebViewHeight = State(initialValue:
+            WebViewHeightCache.shared.seed(id: message.id) ?? 40)
+    }
 
     var body: some View {
         if featureFlags.htmlRenderingEnabled,
@@ -55,7 +65,8 @@ struct MessageContent: View {
                 height: $settledWebViewHeight,
                 onLink: { url in
                     LinkPolicy.open(url)
-                }
+                },
+                cacheKey: message.id
             )
             .frame(height: settledWebViewHeight)
             .onAppear {

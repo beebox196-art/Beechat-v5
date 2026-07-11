@@ -36,6 +36,11 @@ struct MessageWebView: NSViewRepresentable {
     @Binding var height: CGFloat
     /// Callback for link taps — routes through FileLinkText's open logic, never NSWorkspace raw.
     var onLink: (URL) -> Void = { _ in }
+    /// When non-nil, the bcHeight accept path records the measured height into
+    /// `WebViewHeightCache` keyed by this string. Settled bubbles (MessageContent)
+    /// pass `message.id`; streaming/bridge bubbles leave it nil so the cache never
+    /// stores heights for content that changes per tick.
+    var cacheKey: String? = nil
 
     // Template loaded at init via MessageTemplate.html constant.
     // This eliminates Bundle.main/module resource lookup — the template is a
@@ -181,6 +186,17 @@ struct MessageWebView: NSViewRepresentable {
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
                         parent.height = CGFloat(rounded)
+                    }
+                    // Record the settled height for next cold-mount. Only runs
+                    // when the call site opted in via cacheKey; streaming/bridge
+                    // paths leave cacheKey nil and skip the cache entirely.
+                    if let key = parent.cacheKey {
+                        WebViewHeightCache.shared.record(
+                            id: key,
+                            height: CGFloat(rounded),
+                            width: viewWidth,
+                            fontScale: parent.fontScale
+                        )
                     }
                 }
             case "bcLink":
