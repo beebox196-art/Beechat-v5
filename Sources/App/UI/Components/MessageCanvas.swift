@@ -63,8 +63,10 @@ struct MessageCanvas: View {
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String? = nil
     /// Fix 2: hysteresis thresholds (enter bottom zone / leave bottom zone).
-    /// Entering is generous (50pt) so streaming doesn't hide the button.
-    /// Leaving is tight (120pt) so a small upward drag keeps the button visible.
+    /// Entering is generous (50pt) so streaming growth re-latches at bottom and
+    /// doesn't flash the jump button. Leaving requires a deliberate scroll
+    /// (>120pt) so layout settle and small drags don't flash the button.
+    /// Field-tested pre-2c507d5 values — restored.
     private let enterBottomThreshold: CGFloat = 50
     private let leaveBottomThreshold: CGFloat = 120
 
@@ -282,9 +284,11 @@ private struct WidthPreferenceKey: PreferenceKey {
 @available(macOS 15.0, *)
 struct MacOS15ScrollPositionChrome<Content: View>: View {
     @State private var scrollPosition = ScrollPosition()
+    let topicId: String?
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(topicId: String?, @ViewBuilder content: () -> Content) {
+        self.topicId = topicId
         self.content = content()
     }
 
@@ -305,12 +309,28 @@ struct MacOS15ScrollPositionChrome<Content: View>: View {
                     binding.wrappedValue = current
                 }
             })
+            // F3 hardening: chrome `@State` survives `.id(topicId)` (which sits
+            // inside the wrapped content), so a user-scrolled position from the
+            // previous topic could leak into the fresh scroll view and silently
+            // resurrect Bug 1 on macOS 15. Reset in the same update transaction
+            // as the identity swap so the new ScrollView mounts at the bottom.
+            .onChange(of: topicId) { _, _ in
+                binding.wrappedValue = ScrollPosition(edge: .bottom)
+            }
     }
 }
 
 /// Environment key carrying the macOS 15+ Jump-to-Latest action closure.
-struct MacOS15JumpAction {
+/// Equatable-as-always-equal: the closure captures a Binding to the chrome's
+/// `@State` storage, which is stable across renders — any instance is
+/// interchangeable, so re-injection must not invalidate readers. Without this,
+/// the chrome re-creates a fresh value on every body evaluation, and SwiftUI
+/// (which uses `Equatable` to skip environment writes that haven't changed)
+/// would invalidate every view that reads `\.macOS15JumpAction` — including
+/// `MessageCanvas` itself, potentially per scroll event.
+struct MacOS15JumpAction: Equatable {
     let perform: () -> Void
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
 }
 
 private struct MacOS15JumpActionKey: EnvironmentKey {

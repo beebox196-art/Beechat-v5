@@ -971,7 +971,7 @@ func canvasWithMacOS15Chrome(
         onLoadEarlier: onLoadEarlier
     )
     if #available(macOS 15.0, *) {
-        MacOS15ScrollPositionChrome { canvas }
+        MacOS15ScrollPositionChrome(topicId: topicId) { canvas }
     } else {
         canvas
     }

@@ -151,15 +151,20 @@ struct MessageWebView: NSViewRepresentable {
             case "bcHeight":
                 guard let h = message.body as? Double else { return }
                 // Fix 3c: coalesce bcHeight reports to calm layout under scroll.
-                // Sub-point deltas (< 0.5pt) ignored — they're resize-observer jitter.
-                // Monotonic during settle — once a WebView reports its final height,
-                // don't accept smaller values (prevents rounding-driven thrash).
-                // Height writes snap, never animate (Transaction.disablesAnimations).
+                // - Sub-point deltas (< 0.5pt) ignored — they're resize-observer jitter.
+                // - Tiny shrinks (< 8pt) ignored — settle oscillation around a true
+                //   height. 8pt ≈ half a line at default scale; real reflow (window
+                //   widen, font-scale decrease) is at least a line, so it always
+                //   passes. Rejecting only the band, not all shrinks, is critical:
+                //   the previous "monotonic forever" guard locked settled bubbles
+                //   at their tall narrow-window height, turning Bug 3's transient
+                //   whitespace into permanent whitespace inside the bubble.
+                // - Heights snap, never animate (Transaction.disablesAnimations).
                 let rounded = (h * 2).rounded() / 2
                 Task { @MainActor [parent] in
                     let current = parent.height
                     if abs(rounded - current) < 0.5 { return }
-                    if rounded < current, current > 40 { return } // monotonic during settle
+                    if rounded < current, current > 40, current - rounded < 8 { return }
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
