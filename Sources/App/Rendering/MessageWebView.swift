@@ -70,6 +70,7 @@ struct MessageWebView: NSViewRepresentable {
         webView.underPageBackgroundColor = .clear
         webView.allowsMagnification = false
         webView.loadHTMLString(Self.template, baseURL: nil)
+        WebViewCensus.recordMount()
         return webView
     }
 
@@ -83,6 +84,7 @@ struct MessageWebView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ webView: BubbleWebView, coordinator: Coordinator) {
+        WebViewCensus.recordTeardown()
         let controller = webView.configuration.userContentController
         for name in ["bcHeight", "bcLink", "bcImage", "bcReady"] {
             controller.removeScriptMessageHandler(forName: name)
