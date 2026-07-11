@@ -5,8 +5,8 @@
 // (in-memory keyed by message id, or a GRDB column) so conversion happens once per message.
 #if canImport(SwiftSoup)
 
-import CryptoKit
 import Foundation
+import CryptoKit
 import os
 import SwiftSoup
 import SwiftUI // underlineStyle attribute scope; the block model is UI-adjacent anyway
