@@ -228,7 +228,10 @@ struct MainWindow: View {
                         ? syncBridgeObserver.streamingContent : ""
 
                     ZStack(alignment: .top) {
-                        MessageCanvas(
+                        // Fix 2 + 3a: macOS 15+ chrome applies scrollPosition binding
+                        // and anchor roles. On macOS 14 the chrome is unavailable and
+                        // MessageCanvas uses its built-in ScrollViewProxy fallback.
+                        canvasWithMacOS15Chrome(
                             messages: messageViewModel.messages,
                             isStreaming: isActiveTopicStreaming,
                             streamingContent: activeTopicStreamingContent,
@@ -940,5 +943,36 @@ extension View {
             messageCount: messageCount,
             onConfirm: onConfirm
         ))
+    }
+}
+
+/// Wraps MessageCanvas in the macOS 15+ scroll-position chrome when available.
+/// On macOS 14 the chrome is absent and MessageCanvas uses its ScrollViewProxy
+/// fallback (jump button hidden, single-arg `.defaultScrollAnchor(.bottom)`).
+@ViewBuilder
+func canvasWithMacOS15Chrome(
+    messages: [Message],
+    isStreaming: Bool,
+    streamingContent: String,
+    completedContent: String,
+    thinkingState: ThinkingState,
+    canLoadEarlier: Bool,
+    topicId: String?,
+    onLoadEarlier: @escaping () -> Void
+) -> some View {
+    let canvas = MessageCanvas(
+        messages: messages,
+        isStreaming: isStreaming,
+        streamingContent: streamingContent,
+        completedContent: completedContent,
+        thinkingState: thinkingState,
+        canLoadEarlier: canLoadEarlier,
+        topicId: topicId,
+        onLoadEarlier: onLoadEarlier
+    )
+    if #available(macOS 15.0, *) {
+        MacOS15ScrollPositionChrome { canvas }
+    } else {
+        canvas
     }
 }
