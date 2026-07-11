@@ -190,7 +190,11 @@ struct MessageWebView: NSViewRepresentable {
                     // Record the settled height for next cold-mount. Only runs
                     // when the call site opted in via cacheKey; streaming/bridge
                     // paths leave cacheKey nil and skip the cache entirely.
-                    if let key = parent.cacheKey {
+                    // Height > 0 guard mirrors the width gate: a transient h=0
+                    // report (e.g. mid-collapse, scroll-driven zero) would
+                    // otherwise poison the cache and future seeds would render
+                    // the bubble at 0pt for a frame.
+                    if let key = parent.cacheKey, rounded > 0 {
                         WebViewHeightCache.shared.record(
                             id: key,
                             height: CGFloat(rounded),
