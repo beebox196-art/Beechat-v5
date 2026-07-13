@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 import BeeChatPersistence
 
 /// Scrollable message canvas — displays messages and typing indicator.
@@ -62,10 +63,16 @@ struct MessageCanvas: View {
     @State private var isAtBottom: Bool = true
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String? = nil
-    /// Phase 1: Tracks consecutive frames where distFromBottom is deeply negative
-    /// while isAtBottom is true (stranded past content). Used by the self-healing
-    /// clamp to re-anchor without fighting the user.
+    /// Phase 1: Self-healing bottom clamp state.
+    /// When distFromBottom is deeply negative (viewport stranded past content)
+    /// while isAtBottom is true, counts consecutive geometry callbacks. Once the
+    /// threshold is reached, re-anchors to bottom via macOS15JumpAction.
+    /// After firing, stays disarmed until distanceFromBottom >= 0 to prevent
+    /// re-triggering during the 0.2s scrollTo animation (Kieran F1 review).
     @State private var strandedFrameCount: Int = 0
+    /// Phase 1: Whether the clamp has fired and is awaiting distanceFromBottom >= 0
+    /// before re-arming. Prevents the animation re-trigger loop.
+    @State private var clampDisarmed: Bool = false
     /// Fix 2: hysteresis thresholds (enter bottom zone / leave bottom zone).
     /// Entering is generous (50pt) so streaming growth re-latches at bottom and
     /// doesn't flash the jump button. Leaving requires a deliberate scroll
@@ -163,20 +170,32 @@ struct MessageCanvas: View {
                             if isAtBottom { isAtBottom = false }
                         }
                         // Phase 1: Self-healing bottom clamp.
-                        // When distFromBottom is deeply negative AND we're classified as "at bottom",
-                        // the viewport is stranded past the end of content (M1 overshoot correction).
-                        // The user cannot legitimately dwell past content — the only transient cause
-                        // is rubber-band overscroll, which a 2-frame debounce skips. Re-anchor to
-                        // the true bottom via the chrome's ScrollPosition.scrollTo(edge: .bottom).
-                        if distanceFromBottom < -8 {
-                            if isAtBottom {
-                                strandedFrameCount += 1
-                                if strandedFrameCount >= 2 {
-                                    strandedFrameCount = 0
-                                    macOS15JumpAction?.perform()
-                                }
+                        // distFromBottom is negative when the viewport is past the end of content
+                        // (overscroll / stranded). A deeply negative value (< -8pt, ignoring
+                        // sub-point FP jitter at content edge) while isAtBottom is true means
+                        // LazyVStack estimation overshoot has stranded the viewport (M1).
+                        //
+                        // Debounce: 15 geometry callbacks (~250ms at 60fps) to skip both
+                        // rubber-band overscroll (which resolves in ~6-10 frames on slow drags)
+                        // and transient layout jitter during settle. Once the clamp fires, it
+                        // stays disarmed until distanceFromBottom >= 0 to prevent re-triggering
+                        // during the chrome's 0.2s withAnimation scrollTo (Kieran F1 review).
+                        if distanceFromBottom < -8 && isAtBottom && !clampDisarmed {
+                            strandedFrameCount += 1
+                            if strandedFrameCount >= 15 {
+                                strandedFrameCount = 0
+                                clampDisarmed = true
+                                let logger = Logger(subsystem: "com.beebox.beechat", category: "ScrollClamp")
+                                logger.info("clamp FIRED distFromBottom=\(distanceFromBottom)")
+                                macOS15JumpAction?.perform()
                             }
+                        } else if distanceFromBottom >= 0 {
+                            // Content edge reached — safe to re-arm the clamp.
+                            strandedFrameCount = 0
+                            clampDisarmed = false
                         } else {
+                            // Negative but not deeply negative, or not at bottom, or disarmed —
+                            // don't accumulate toward a fire, but don't reset the disarmed flag.
                             strandedFrameCount = 0
                         }
                     }
@@ -217,6 +236,7 @@ struct MessageCanvas: View {
                     isAtBottom = true
                     anchorMessageId = nil
                     strandedFrameCount = 0
+                    clampDisarmed = false
                 }
                 .overlay(alignment: .bottomTrailing) {
                     jumpToLatestButton(proxy: proxy)
