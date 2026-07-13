@@ -183,7 +183,7 @@ struct MessageWebView: NSViewRepresentable {
                     }
                     let current = parent.height
                     if abs(rounded - current) < 0.5 { return }  // sub-point jitter
-                    MessageWebView.logger.debug("bcHeight ACCEPT h=\(rounded) (was \(current)) w=\(w) gen=\(gen) dir=\(rounded < current ? "shrink" : "grow")")
+                    MessageWebView.logger.debug("bcHeight ACCEPT h=\(rounded) (was \(current)) w=\(w) gen=\(gen)")
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
