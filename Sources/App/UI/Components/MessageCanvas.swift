@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 import BeeChatPersistence
 
 /// Scrollable message canvas — displays messages and typing indicator.
@@ -62,6 +63,11 @@ struct MessageCanvas: View {
     @State private var isAtBottom: Bool = true
     @State private var measuredWidth: CGFloat = 1200
     @State private var anchorMessageId: String? = nil
+    /// Phase 0 diagnostic: when true, the geometry action logs scroll geometry
+    /// for the first 3 seconds after a topic switch. Confirms whether the
+    /// viewport is stranded past content (M1/M2/M3 hypothesis check).
+    @State private var isTopicEntry: Bool = false
+    @State private var topicEntryTask: Task<Void, Never>? = nil
     /// Fix 2: hysteresis thresholds (enter bottom zone / leave bottom zone).
     /// Entering is generous (50pt) so streaming growth re-latches at bottom and
     /// doesn't flash the jump button. Leaving requires a deliberate scroll
@@ -69,6 +75,17 @@ struct MessageCanvas: View {
     /// Field-tested pre-2c507d5 values — restored.
     private let enterBottomThreshold: CGFloat = 50
     private let leaveBottomThreshold: CGFloat = 120
+
+    /// Phase 0 diagnostic snapshot: bundles distance-from-bottom with the raw
+    /// geometry fields so the action closure can log them when `isTopicEntry`.
+    /// Struct (not tuple) so it can conform to `Equatable`, which
+    /// `onScrollGeometryChangeCompat` requires for its `T` parameter.
+    private struct GeometrySnapshot: Equatable {
+        let distanceFromBottom: CGFloat
+        let contentSize: CGFloat
+        let offset: CGFloat
+        let container: CGFloat
+    }
 
     /// Fix 2: macOS 15+ chrome-supplied jump action, set via environment.
     /// Nil when no chrome is wrapping this canvas (macOS 14 build, or direct use).
@@ -139,18 +156,36 @@ struct MessageCanvas: View {
                 .id(topicId)                           // Fix 1: rebuild scroll view per topic
                 .scrollBounceBehaviorCompat(axes: .vertical)
                 .onScrollGeometryChangeCompat(
-                    transform: { geo in
+                    transform: { geo -> GeometrySnapshot in
                         guard geo.contentSize.height > 0, geo.containerSize.height > 0 else {
                             // Before any layout: treat as "at bottom" (distance 0)
                             // so the jump button doesn't flash during cold start.
-                            return CGFloat(0)
+                            return GeometrySnapshot(
+                                distanceFromBottom: 0,
+                                contentSize: geo.contentSize.height,
+                                offset: geo.contentOffset.y,
+                                container: geo.containerSize.height
+                            )
                         }
                         // Distance from reading-edge bottom (live, may be negative
                         // during overscroll).
                         let distanceFromBottom = geo.contentSize.height - geo.contentOffset.y - geo.containerSize.height
-                        return distanceFromBottom
+                        return GeometrySnapshot(
+                            distanceFromBottom: distanceFromBottom,
+                            contentSize: geo.contentSize.height,
+                            offset: geo.contentOffset.y,
+                            container: geo.containerSize.height
+                        )
                     },
-                    action: { _, distanceFromBottom in
+                    action: { _, newValue in
+                        let distanceFromBottom = newValue.distanceFromBottom
+                        // Phase 0 diagnostic: log scroll geometry for the first 3s
+                        // after topic entry. Persistent negative distanceFromBottom
+                        // would confirm M1/M2/M3 (viewport stranded past content).
+                        if isTopicEntry {
+                            let logger = Logger(subsystem: "com.beebox.beechat", category: "ScrollGeometry")
+                            logger.info("TOPIC-ENTRY contentSize=\(newValue.contentSize) offset=\(newValue.offset) container=\(newValue.container) distFromBottom=\(distanceFromBottom) isAtBottom=\(isAtBottom)")
+                        }
                         // Fix 2 hysteresis: enter at < 50pt, leave at > 120pt.
                         // Prevents button flicker during streaming/layout settle.
                         if distanceFromBottom < enterBottomThreshold {
@@ -195,6 +230,17 @@ struct MessageCanvas: View {
                     // Reset transient state so the new view starts clean.
                     isAtBottom = true
                     anchorMessageId = nil
+                    // Phase 0 diagnostic: open a 3-second logging window so the
+                    // geometry probe captures the topic-switch settle. Cancels any
+                    // previous window to handle rapid topic switching.
+                    isTopicEntry = true
+                    topicEntryTask?.cancel()
+                    topicEntryTask = Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(3))
+                        if !Task.isCancelled {
+                            isTopicEntry = false
+                        }
+                    }
                 }
                 .overlay(alignment: .bottomTrailing) {
                     jumpToLatestButton(proxy: proxy)
