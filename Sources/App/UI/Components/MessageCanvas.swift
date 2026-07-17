@@ -2,6 +2,9 @@ import SwiftUI
 import os
 import BeeChatPersistence
 
+/// File-scoped logger for the self-healing scroll clamp.
+private let scrollClampLogger = Logger(subsystem: "com.beebox.beechat", category: "ScrollClamp")
+
 /// Scrollable message canvas — displays messages and typing indicator.
 ///
 /// Scroll philosophy (v5, 2026-07-11): Three orthogonal fixes layered on top of the
@@ -80,6 +83,10 @@ struct MessageCanvas: View {
     /// Field-tested pre-2c507d5 values — restored.
     private let enterBottomThreshold: CGFloat = 50
     private let leaveBottomThreshold: CGFloat = 120
+    /// Phase 1: Debounce threshold for the self-healing clamp.
+    /// 15 geometry callbacks ≈ 250ms at 60fps, safely exceeding the ~6-10 frame
+    /// rubber-band overscroll window on slow drags.
+    private let clampDebounceFrames: Int = 15
 
     /// Fix 2: macOS 15+ chrome-supplied jump action, set via environment.
     /// Nil when no chrome is wrapping this canvas (macOS 14 build, or direct use).
@@ -182,20 +189,26 @@ struct MessageCanvas: View {
                         // during the chrome's 0.2s withAnimation scrollTo (Kieran F1 review).
                         if distanceFromBottom < -8 && isAtBottom && !clampDisarmed {
                             strandedFrameCount += 1
-                            if strandedFrameCount >= 15 {
+                            if strandedFrameCount >= clampDebounceFrames {
                                 strandedFrameCount = 0
                                 clampDisarmed = true
-                                let logger = Logger(subsystem: "com.beebox.beechat", category: "ScrollClamp")
-                                logger.info("clamp FIRED distFromBottom=\(distanceFromBottom)")
-                                macOS15JumpAction?.perform()
+                                if let action = macOS15JumpAction {
+                                    action.perform()
+                                    scrollClampLogger.info("clamp FIRED distFromBottom=\(distanceFromBottom)")
+                                } else {
+                                    scrollClampLogger.warning("clamp TRIGGERED but macOS15JumpAction is nil — clamp non-functional without chrome wrapper")
+                                }
                             }
                         } else if distanceFromBottom >= 0 {
                             // Content edge reached — safe to re-arm the clamp.
                             strandedFrameCount = 0
                             clampDisarmed = false
                         } else {
-                            // Negative but not deeply negative, or not at bottom, or disarmed —
-                            // don't accumulate toward a fire, but don't reset the disarmed flag.
+                            // Negative but not deeply negative, or not at bottom, or disarmed.
+                            // clampDisarmed is NOT reset here: a re-stranding after the user
+                            // scrolls up must wait for distanceFromBottom >= 0 before re-arming.
+                            // This is intentional — the clamp won't re-fire until the viewport
+                            // actually reaches the content edge, preventing animation loops.
                             strandedFrameCount = 0
                         }
                     }
