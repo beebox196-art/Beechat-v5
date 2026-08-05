@@ -15,15 +15,52 @@ final class FeatureFlags {
         didSet { UserDefaults.standard.set(htmlRenderingEnabled, forKey: Keys.htmlRendering) }
     }
 
+    /// WP-1 (Transcript Boundary Refactor): selects which transcript rendering
+    /// engine is active.
+    ///
+    /// - `.native` (default): the existing SwiftUI/MessageCanvas stack.
+    /// - `.web`: stub for now (EmptyView); WP-3 ships the WKWebView-backed
+    ///   renderer. Flipping the flag should NOT crash — the web stub renders
+    ///   nothing in the transcript area.
+    ///
+    /// Persisted as a `String` raw value in UserDefaults. Default on first
+    /// launch is `.native`. Kieran flag: this MUST use `object(forKey:)` +
+    /// nil-coalesce, NOT `bool(forKey:)` (which returns false for missing
+    /// keys and would silently default an enum value to its "false" raw value).
+    var transcriptEngine: TranscriptEngine {
+        didSet {
+            UserDefaults.standard.set(transcriptEngine.rawValue, forKey: Keys.transcriptEngine)
+        }
+    }
+
     private enum Keys {
         static let htmlRendering = "BeeChat.feature.htmlRendering"
+        static let transcriptEngine = "BeeChat.feature.transcriptEngine"
     }
 
     /// Creates a FeatureFlags instance. By default, reads persisted values from
     /// UserDefaults. Pass explicit values in previews/tests to override.
-    init(htmlRenderingEnabled: Bool? = nil) {
+    ///
+    /// Kieran note (WP-1 §4.3): tests must not be order-dependent on
+    /// persisted values. The transcript-engine read uses `object(forKey:)`
+    /// + nil-coalesce so a fresh defaults store reads `.native` (the
+    /// documented default), not a false-positive zero value.
+    init(
+        htmlRenderingEnabled: Bool? = nil,
+        transcriptEngine: TranscriptEngine? = nil,
+        defaults: UserDefaults = .standard
+    ) {
         self.htmlRenderingEnabled = htmlRenderingEnabled
-            ?? UserDefaults.standard.bool(forKey: Keys.htmlRendering)
+            ?? defaults.bool(forKey: Keys.htmlRendering)
+
+        if let explicit = transcriptEngine {
+            self.transcriptEngine = explicit
+        } else if let raw = defaults.string(forKey: Keys.transcriptEngine),
+                  let parsed = TranscriptEngine(rawValue: raw) {
+            self.transcriptEngine = parsed
+        } else {
+            self.transcriptEngine = .native
+        }
     }
 }
 

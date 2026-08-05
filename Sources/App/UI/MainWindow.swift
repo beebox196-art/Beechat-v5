@@ -6,6 +6,7 @@ import GRDB
 struct MainWindow: View {
     @Environment(ThemeManager.self) var themeManager
     @Environment(AppState.self) var appState
+    @Environment(FeatureFlags.self) var featureFlags
     @State private var messageViewModel = MessageViewModel()
     @State private var composerViewModel = ComposerViewModel()
     @State private var syncBridgeObserver = SyncBridgeObserver()
@@ -228,18 +229,31 @@ struct MainWindow: View {
                         ? syncBridgeObserver.streamingContent : ""
 
                     ZStack(alignment: .top) {
-                        // Fix 2 + 3a: macOS 15+ chrome applies scrollPosition binding
-                        // and anchor roles. On macOS 14 the chrome is unavailable and
-                        // MessageCanvas uses its built-in ScrollViewProxy fallback.
-                        canvasWithMacOS15Chrome(
-                            messages: messageViewModel.messages,
-                            isStreaming: isActiveTopicStreaming,
-                            streamingContent: activeTopicStreamingContent,
-                            completedContent: syncBridgeObserver.completedContent,
-                            thinkingState: syncBridgeObserver.thinkingState,
-                            canLoadEarlier: messageViewModel.canLoadEarlier,
-                            topicId: messageViewModel.selectedTopicId,
-                            onLoadEarlier: { messageViewModel.loadEarlierMessages() }
+                        // WP-1 (Transcript Boundary Refactor): call `transcriptView(...)`
+                        // instead of `canvasWithMacOS15Chrome(...)`. Dispatch is on
+                        // `featureFlags.transcriptEngine` — `.native` (default) uses
+                        // the existing MessageCanvas path unchanged; `.web` renders
+                        // the EmptyView stub (real WKWebView host lands in WP-3).
+                        //
+                        // Fix 2 + 3a (preserved): the macOS 15+ scroll-position chrome
+                        // is now wrapped inside `NativeTranscriptView`, so it still
+                        // applies on macOS 15+ and falls back to the ScrollViewProxy
+                        // path on macOS 14. Behavioural equivalence: see B1 evidence.
+                        transcriptView(
+                            engine: featureFlags.transcriptEngine,
+                            state: TranscriptState(
+                                messages: messageViewModel.messages,
+                                isStreaming: isActiveTopicStreaming,
+                                streamingContent: activeTopicStreamingContent,
+                                completedContent: syncBridgeObserver.completedContent,
+                                thinkingState: syncBridgeObserver.thinkingState,
+                                canLoadEarlier: messageViewModel.canLoadEarlier,
+                                topicId: messageViewModel.selectedTopicId
+                            ),
+                            callbacks: TranscriptCallbacks(
+                                onLoadEarlier: { messageViewModel.loadEarlierMessages() },
+                                onOpenLink: { url in LinkPolicy.open(url) }
+                            )
                         )
                         resetIndicator
                             .padding(.top, 4)
