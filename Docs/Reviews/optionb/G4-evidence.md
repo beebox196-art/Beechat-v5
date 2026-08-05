@@ -64,3 +64,8 @@ G4 criterion verdict_logic_evaluates_each_criterion_above_explicitly (E8 complia
 ## Prior attempts
 
 None. (Deviation 4's documented-performance-target decision stands — rAF delta is not a binary gate.)
+
+## Verifier sign-off
+**Verifier:** Mel
+**Date:** 2026-08-05
+**Result:** SIGNED WITH CAVEAT — fontScale swap PASS; visual parity DEFERRED to WP-2 (production-template screenshot + full 8-theme side-by-side pending, re-verify there)

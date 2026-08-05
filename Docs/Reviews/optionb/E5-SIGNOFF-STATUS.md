@@ -13,7 +13,7 @@
 | G1 — Memory soak | Q | **Adam** | ⏳ PENDING | G1 evidence is from 2026-08-05 runs; C-9 plateau window correction still open. Pls review. |
 | G2 — Scroll feasibility | Q | **Adam** | ⏳ PENDING | G2 re-run this round (2026-08-05) — all 10 criteria PASS including bounce probe. Pls review. |
 | G3 — Selection feasibility | Q | **Adam** | ⏳ PENDING | G3 evidence from 2026-08-05T16:16 — paste-verified at pasteboard layer. TextEdit consumer clarification added this round. Pls review. |
-| G4 — Theme + fontScale | Q | **Mel** | ⏳ PENDING | G4 restated this round: FONT_SCALE_SWAP=PASS; VISUAL_PARITY=NOT_ASSESSED (production-template screenshot + Mel sign-off pending). |
+| G4 — Theme + fontScale | Q | **Mel** | ✅ **SIGNED WITH CAVEAT 2026-08-05** | FONT_SCALE_SWAP=PASS; VISUAL_PARITY=DEFERRED to WP-2 (production-template screenshot + full 8-theme side-by-side pending; Mel to re-verify there). |
 | G5 — Topic swap | Q | **Kieran** | ⏳ PENDING (assigned in prior round) | G5 evidence from 2026-08-05 11:51 — methodology assessment requested. |
 | G6 — Input feasibility | Q | **Adam** | ⏳ PENDING | G6 evidence from 2026-08-05 — deterministic keystroke harness; verdict PASS at the time. |
 
@@ -58,8 +58,8 @@ Fable's re-check concluded: "Now that the single remaining process blocker is E5
 | G1 — Memory soak | Adam | ✅ **SIGNED 2026-08-05** |
 | G2 — Scroll feasibility | Adam | ✅ **SIGNED 2026-08-05** |
 | G3 — Selection feasibility | Adam | ✅ **SIGNED 2026-08-05** |
-| G4 — Theme + fontScale | Mel | ⏳ PENDING (nudge sent 2026-08-05) — parity NOT_ASSESSED deferred to WP-2 |
+| G4 — Theme + fontScale | Mel | ✅ **SIGNED WITH CAVEAT 2026-08-05** — fontScale swap PASS; visual parity deferred to WP-2 production-template screenshot + full 8-theme side-by-side |
 | G5 — Topic swap | Kieran | ⏳ PENDING (nudge sent 2026-08-05) — timings reviewed, methodology sign pending |
 | G6 — Input feasibility | Adam | ✅ **SIGNED 2026-08-05** |
 
-**Remaining for full WP-0 closure:** G4 (Mel) + G5 (Kieran).
+**Remaining for full WP-0 closure:** G5 (Kieran). G4 is signed with caveat; visual parity remains deferred to WP-2.
