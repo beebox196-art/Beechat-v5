@@ -163,6 +163,49 @@
  * ========================================================================= */
 
 const $transcript = document.getElementById('transcript');
+const $scroller = document.scrollingElement || document.documentElement;
+
+/* ============================================================================
+ * Scroll engine — route plan §4.4 (the ~15 lines that replace two months of fighting).
+ *
+ * Field-tested hysteresis: enter at 50 px / leave at 120 px from the bottom edge.
+ * ResizeObserver on the transcript keeps the view pinned when content grows
+ * underneath (streaming appends, late-loading images, fontScale restyle).
+ * window.resize handles outer-viewport size changes.
+ * ========================================================================= */
+let pinned = true;
+let lastPinTransition = performance.now();
+function _distFromBottom() {
+  return $scroller.scrollHeight - $scroller.scrollTop - $scroller.clientHeight;
+}
+$scroller.addEventListener('scroll', () => {
+  const d = _distFromBottom();
+  if (d < 50) { if (!pinned) { lastPinTransition = performance.now(); } pinned = true; }
+  else if (d > 120) { if (pinned) { lastPinTransition = performance.now(); } pinned = false; }
+  if (jump) jump.hidden = pinned;
+}, { passive: true });
+const repin = () => {
+  if (pinned) {
+    $scroller.scrollTop = $scroller.scrollHeight;
+    lastPinTransition = performance.now();
+  }
+};
+new ResizeObserver(repin).observe($transcript);
+window.addEventListener('resize', repin);
+
+/* Optional jump-to-latest button (hidden when pinned). Created lazily. */
+let jump = null;
+function ensureJump() {
+  if (jump) return jump;
+  jump = document.createElement('button');
+  jump.id = 'jump-to-latest';
+  jump.textContent = 'Jump to latest';
+  jump.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:6px 10px;border:1px solid var(--bc-tbl-bd);border-radius:8px;background:var(--bc-bg);color:var(--bc-text);font:inherit;cursor:pointer;z-index:99;';
+  jump.addEventListener('click', () => { pinned = true; repin(); jump.hidden = true; });
+  jump.hidden = pinned;
+  document.body.appendChild(jump);
+  return jump;
+}
 
 const state = {
   loadedCount: 0,        // messages currently in the document
@@ -224,15 +267,22 @@ window.bc = {
   },
 
   /* Swap topics — clear + load. Measures wall-clock + paint. Stores the swap_ms
-     into window.bc.lastSwapMs / lastSwapCount so Swift can poll after rAF. */
+     into window.bc.lastSwapMs / lastSwapCount so Swift can poll after rAF.
+     Atomic-pin-then-load: pinned=true + scrollTop=max in the same JS task
+     so no intermediate frame can paint (the whole topic-switch fix). */
   swapTopic(messages) {
     window.bc.lastSwapMs = -1;
     window.bc.lastSwapCount = messages.length;
     const t0 = performance.now();
+    // Pre-arm pin before mutating DOM so ResizeObserver callback fires post-paint.
+    pinned = true;
     $transcript.innerHTML = '';
     const frag = document.createDocumentFragment();
     for (const m of messages) frag.appendChild(buildBubble(m));
     $transcript.appendChild(frag);
+    // Snap scrollTop synchronously; ResizeObserver would normally do this but
+    // we want the swap measurement to see the same-frame pin.
+    $scroller.scrollTop = $scroller.scrollHeight;
     // Force a layout flush so Swift can measure first composited frame.
     void document.body.offsetHeight;
     state.loadedCount = messages.length;
@@ -245,12 +295,14 @@ window.bc = {
     return { count: messages.length, swapMs: state.lastSwapAt };
   },
 
-  /* Pin-to-bottom: scroll the document so the pin sentinel sits flush at bottom. */
+  /* Pin-to-bottom: explicit jump (used by recovery, tests, jump-to-latest button).
+     Sets pinned=true so subsequent content growth will continue to repin via
+     the scroll engine — does NOT call scrollIntoView imperatively. */
   pinToBottom() {
     state.pinAttempts += 1;
-    const sentinel = document.getElementById('pin-sentinel');
-    if (!sentinel) return false;
-    sentinel.scrollIntoView({ block: 'end' });
+    pinned = true;
+    $scroller.scrollTop = $scroller.scrollHeight;
+    lastPinTransition = performance.now();
     state.lastAction = 'pin';
     return true;
   },
@@ -275,7 +327,7 @@ window.bc = {
 
   /* Returns a snapshot Swift polls at sample intervals. */
   state() {
-    const doc = document.documentElement;
+    const doc = $scroller;
     return {
       loadedCount: state.loadedCount,
       appendedCount: state.appendedCount,
@@ -289,17 +341,24 @@ window.bc = {
       pasteEvents: state.pasteEvents,
       lastAction: state.lastAction,
       // Scroll measurements — Swift uses these for G2/G5 assertions.
-      scrollTop: window.scrollY || doc.scrollTop || 0,
+      scrollTop: Math.round(doc.scrollTop),
       scrollHeight: doc.scrollHeight,
       clientHeight: doc.clientHeight,
-      distanceFromBottom: (doc.scrollHeight - (window.scrollY || doc.scrollTop) - doc.clientHeight),
+      distanceFromBottom: Math.round(_distFromBottom()),
+      // The scroll engine's pinned state — G2 reads this to verify the engine
+      // is actively maintaining pin during content growth (not just an imperative
+      // scrollIntoView). See route plan §4.4.
+      pinned: pinned,
+      lastPinTransitionMs: Math.round(lastPinTransition),
       // The selection range as plain text — for the G3 paste-verify oracle.
       selection: String(window.getSelection() || ''),
     };
   },
 
   /* Inject an <img> with a local fixture URL into a bubble by id, or append a new
-     bubble if id is null. Used by G2 to simulate late-loading images. */
+     bubble if id is null. Used by G2 to simulate late-loading images.
+     load/error hooks call repin() per route plan §4.4 so post-paint image
+     reflow keeps the view pinned. */
   injectImage({ bubbleIndex, url, alt }) {
     let target;
     if (bubbleIndex == null) {
@@ -313,7 +372,8 @@ window.bc = {
     const img = document.createElement('img');
     img.src = url;
     img.alt = alt || '';
-    img.addEventListener('error', () => img.classList.add('broken'));
+    img.addEventListener('load', () => repin());
+    img.addEventListener('error', () => { img.classList.add('broken'); repin(); });
     body.appendChild(img);
     return target.children.length;
   },
