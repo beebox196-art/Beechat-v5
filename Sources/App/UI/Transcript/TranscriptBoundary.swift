@@ -172,6 +172,12 @@ struct NativeTranscriptView: View {
         let canvas = MessageCanvas(
             messages: state.messages,
             isStreaming: state.isStreaming,
+            streamingHTML: state.streamingHTML,
+            settledBridgeHTML: state.settledBridgeHTML,
+            // Raw content still passed through for the typing-indicator
+            // transition guard (`isStreaming && streamingContent.isEmpty`),
+            // which is NOT part of the §4.5 policy move — only the streaming
+            // bubble and completed-bridge visibility decisions move.
             streamingContent: state.streamingContent,
             completedContent: state.completedContent,
             thinkingState: state.thinkingState,
