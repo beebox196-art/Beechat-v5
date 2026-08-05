@@ -76,8 +76,17 @@ enum TranscriptTemplate {
      img-src https: data: covers https image URLs (LinkPolicy already allow-lists these)
      and data: URIs for inline base64 (some markdown renderers emit them). Same posture
      as MessageTemplate.html — Sanitizer is the real trust boundary; this meta is
-     belt-and-braces. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none';">
+     belt-and-braces.
+
+     NOTE — frame-ancestors is INTENTIONALLY ABSENT from this meta CSP.
+     Per CSP spec, frame-ancestors is ignored when the policy is delivered via a
+     <meta> tag; it only takes effect via an HTTP response header. Since this
+     template ships its policy as a meta tag, frame-ancestors would deliver a
+     false sense of protection. Embedding protection for this WKWebView is
+     provided instead by the Swift-side loadHTMLString(_, baseURL: nil) load +
+     the WKNavigationDelegate navigation-policy handler in MessageWebView (which
+     rejects navigation to non-file/about URLs). Do not add frame-ancestors here. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';">
 <title>BeeChat Transcript</title>
 <style>
   /* ============================================================================
