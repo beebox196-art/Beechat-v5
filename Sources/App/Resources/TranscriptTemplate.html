@@ -57,8 +57,6 @@
     --bc-pad-h-bubble: 16px;
     --bc-pad-v-bubble: 12px;
     --bc-gap-msg: 4px;
-    /* Bubble width matches native MessageBubble.BubbleWidthModifier (66% of canvas). */
-    --bc-bubble-max: 66%;
     /* Scrollbar reserved space so the jump-to-latest button stays clear of the gutter. */
     --bc-scrollbar-w: 16px;
   }
@@ -166,7 +164,9 @@
   .bubble {
     border-radius: var(--bc-radius-bubble);
     padding: var(--bc-pad-v-bubble) var(--bc-pad-h-bubble);
-    max-width: var(--bc-bubble-max);
+    /* Native parity: MessageBubble.BubbleWidthModifier uses canvasWidth * 0.66
+       with no per-theme variation. Hardcoded here for the same parity. */
+    max-width: 66%;
     box-shadow: var(--bc-shadow-bubble);
     /* Selection must include the bubble's text content (A1/A4). */
     -webkit-user-select: text;
@@ -283,7 +283,8 @@
   #thinking {
     text-align: left;
     padding: var(--bc-pad-v-bubble) var(--bc-pad-h-bubble);
-    max-width: var(--bc-bubble-max);
+    /* Native parity: see .bubble — 66% matches MessageBubble.BubbleWidthModifier. */
+    max-width: 66%;
     color: var(--bc-text-dim);
     font-size: 0.92em;
     margin: 0 0 var(--bc-gap-msg) 0;

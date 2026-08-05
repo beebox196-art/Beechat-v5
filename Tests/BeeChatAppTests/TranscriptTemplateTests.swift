@@ -202,12 +202,18 @@ final class TranscriptTemplateTests: XCTestCase {
 
     func testEmbeddedTemplateHasGeometryTokens() {
         // Route plan §3.2 — geometry token group added by ThemeManager.
+        // (--bc-bubble-max was removed in WP-2 Kieran-conditions correction;
+        // bubble width is hardcoded 66% in CSS for native parity with
+        // MessageBubble.BubbleWidthModifier, which has no theme variation.)
         let html = TranscriptTemplate.html
         for token in ["--bc-radius-bubble", "--bc-pad-h-bubble", "--bc-pad-v-bubble",
-                      "--bc-gap-msg", "--bc-shadow-bubble", "--bc-bubble-max"] {
+                      "--bc-gap-msg", "--bc-shadow-bubble"] {
             XCTAssertTrue(html.contains(token),
                           "template must consume geometry token \(token)")
         }
+        // Sanity guard against re-introducing the removed token by accident.
+        XCTAssertFalse(html.contains("--bc-bubble-max"),
+                       "--bc-bubble-max was removed (native parity); hardcoded 66% in CSS instead")
     }
 
     // MARK: - T1 — setTopic lands scrollTop == scrollHeight − clientHeight before first paint
@@ -536,7 +542,6 @@ final class TranscriptTemplateTests: XCTestCase {
             "--bc-pad-v-bubble": "12px",
             "--bc-gap-msg": "4px",
             "--bc-shadow-bubble": "rgba(0,0,0,0.05) 0px 1px 2px",
-            "--bc-bubble-max": "66%",
             "--bc-font-scale": "1.0",
         ]
         _ = try await eval("window.bc.setTheme(\(asJSON(tokens)));")
