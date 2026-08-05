@@ -57,6 +57,32 @@ feature/* (feature branches, from develop)
 4. Re-review if findings were significant
 5. Review doc saved to `Docs/Reviews/`
 
+## ⭐ Development Workflow (Adam-approved 2026-08-05) — the standing process
+
+Adam codified the exact delivery loop that works well. This is the process for all BeeChat work going forward (supersedes loose interpretations):
+
+```
+1. Bee writes the spec
+2. Kieran + Q validate the spec is sound
+3. Once all agreed → dispatch to Q to build
+4. Kieran checks the work is done and correct
+5. Bee validates before coming back to Adam
+6. At a MAJOR piece of work / MILESTONE MOMENT only:
+   → Bee creates a detailed review prompt as a .md file
+   → Adam copies it manually to Claude/Fable (the external super-checker)
+   → Claude/Fable responds: sign-off OR improvements/corrections
+```
+
+### Rules (binding)
+- **The super-checker is MANUAL.** Bee writes the `.md` prompt; Adam copies it to Claude/Fable. No automation, no invented sub-agents.
+- Fable/Claude is invoked at **major milestones only**, not per-task — it's the external final review gate.
+- E5 evidence rule still applies within the loop: implementer cannot sign their own gate.
+- This process guarantees work is done properly with the minimum of errors, and every gate has a second-party verifier.
+
+### Where this is tracked
+- Option B programme tracker: `/Users/openclaw/Desktop/BEECHAT-BUILD-PROGRESS.html` (Evidence tab + footer) — the single source of truth for gate sign-off.
+- Evidence files: `Docs/Reviews/optionb/<GATE-ID>-evidence.md` per E1–E7.
+
 ## Build Record
 
 Every deploy gets a row in `Docs/Status/STATUS.md` build history table. Fields: build version, date, commit hash, description.
