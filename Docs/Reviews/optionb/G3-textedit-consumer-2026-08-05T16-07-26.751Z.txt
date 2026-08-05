@@ -1,0 +1,14 @@
+Here is the table:
+
+Component	Tests	Status
+Persistence	27	OK
+Gateway	48	OK
+SyncBridge	37	OK
+App	14	OK
+And the code block:
+
+func hello() {
+    print("hello, world")
+    return 0
+}
+Got it, thanks!

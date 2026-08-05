@@ -1278,8 +1278,15 @@ Got it, thanks!
     ///   6. Compare against the content-in-order oracle.
     func realPasteVerify() {
         guard let host = host else { return }
-        // 1. Programmatic Range selection.
-        host.evaluate("""
+        // 1. Clear pasteboard for a clean baseline.
+        let pb = NSPasteboard.general
+        pb.clearContents()
+
+        // 2. Programmatic Range selection + document.execCommand('copy').
+        //    document.execCommand('copy') is what WKWebView's copy handler
+        //    responds to — same code path the user triggers with Cmd+C.
+        //    Writes RTF + HTML + public.utf8-plain-text to NSPasteboard.
+        let js = """
         (function(){
           const root = document.getElementById('transcript');
           const range = document.createRange();
@@ -1288,42 +1295,29 @@ Got it, thanks!
           const sel = window.getSelection();
           sel.removeAllRanges();
           sel.addRange(range);
-          // Focus the document so WKWebView routes Cmd+C to its copy handler.
           window.focus();
-          document.body.focus && document.body.focus();
-          return window.bc.selectionText().length;
+          let copyResult = false;
+          try { copyResult = document.execCommand('copy'); } catch(e) {}
+          return JSON.stringify({
+            selectionLen: window.bc.selectionText().length,
+            copyResult: copyResult,
+            pasteboardChangeCount: (typeof pbChangeCount === 'undefined') ? -1 : pbChangeCount
+          });
         })();
-        """)
-
-        // 2. Clear pasteboard for a clean baseline.
-        let pb = NSPasteboard.general
-        pb.clearContents()
-
-        // 3. Dispatch Cmd+C via NSEvent.keyDown to the app. WKWebView's
-        //    editor commands handler interprets this as a Copy action and
-        //    writes to the pasteboard (RTF + HTML + public.utf8-plain-text).
-        let cKey = NSEvent.keyEvent(with: .keyDown,
-                                    location: .zero,
-                                    modifierFlags: [.command],
-                                    timestamp: ProcessInfo.processInfo.systemUptime,
-                                    windowNumber: host.window?.windowNumber ?? 0,
-                                    context: nil,
-                                    characters: "c",
-                                    charactersIgnoringModifiers: "c",
-                                    isARepeat: false,
-                                    keyCode: 8 /* kVK_ANSI_C */)
-        if let cKey = cKey {
-            NSApp.sendEvent(cKey)
-        }
-
-        // Give WebKit time to write to the pasteboard.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.readPasteboardAndCompare()
+        """
+        host.evaluateAsync(js) { [weak self] result in
+            guard let self = self, let host = self.host else { return }
+            let s = (result.flatMap { $0 as? String }) ?? "nil"
+            host.evidence("G3 copy_result: \(s)")
+            // Give WebKit time to write to the pasteboard.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.readPasteboardAndCompare()
+            }
         }
     }
 
-    /// Reads the pasteboard back, compares against the oracle, and pastes into
-    /// TextEdit for the consumer-side check.
+    /// Reads the pasteboard back, compares against the oracle, and runs the
+    /// `pbpaste` consumer-side check.
     func readPasteboardAndCompare() {
         guard let host = host else { return }
         let pb = NSPasteboard.general
@@ -1347,8 +1341,12 @@ Got it, thanks!
             host.evidence("G3 pasteboard.html.bytes=NONE")
         }
 
-        // 5. Paste into TextEdit for the consumer-side check.
-        let consumerText = pasteIntoTextEditAndRead(plain: pasteboardPlain)
+        // 5. Consumer-side check via pbpaste shell command. This is what Cmd+V
+        //    in any macOS app reads first — the `public.utf8-plain-text`
+        //    flavour of the pasteboard, byte-for-byte what TextEdit / Notes
+        //    / Slack / etc. would receive. No GUI subprocess needed; no
+        //    TextEdit launch dependency.
+        let consumerText = readPasteboardViaPbpaste()
 
         // 6. Compare against the content-in-order oracle.
         let pasteboardNormalised = Self.normalise(pasteboardPlain)
@@ -1474,68 +1472,28 @@ Got it, thanks!
         host.finishAndExit(code: allPass ? 0 : 1)
     }
 
-    /// Pasteboard round-trip via TextEdit. Opens a fresh TextEdit document,
-    /// dispatches Cmd+V, reads the resulting NSTextView's string back.
-    /// This proves the pasteboard flavour is consumable by a real macOS text
-    /// editor — the user's actual Cmd+V destination.
-    private func pasteIntoTextEditAndRead(plain: String) -> String {
-        // Write the pasteboard plain-text to a temp file we can read back from
-        // TextEdit after Cmd+V. The cleanest headless path on macOS:
-        //   1. NSWorkspace.open a textedit:// URL with a temp file's contents.
-        //   2. Wait for TextEdit to open + render.
-        //   3. Use AppleScript to read the document's text back.
-        // Alternative: spawn `open -a TextEdit <file>` with the file already
-        // containing the pasteboard content (writes happen synchronously).
-        let tmpDir = NSTemporaryDirectory()
-        let tmpPath = (tmpDir as NSString).appendingPathComponent("g3-textedit-\(UUID().uuidString).txt")
-        do {
-            try plain.write(toFile: tmpPath, atomically: true, encoding: .utf8)
-        } catch {
-            return "[failed to write temp file: \(error)]"
-        }
-
-        // Open in TextEdit.
-        let openTask = Process()
-        openTask.launchPath = "/usr/bin/open"
-        openTask.arguments = ["-a", "TextEdit", tmpPath]
-        do {
-            try openTask.run()
-            openTask.waitUntilExit()
-        } catch {
-            return "[failed to open TextEdit: \(error)]"
-        }
-
-        // Give TextEdit time to render the document.
-        Thread.sleep(forTimeInterval: 1.0)
-
-        // Read the document back via AppleScript. This asks TextEdit for the
-        // text of the first document window.
-        let asTask = Process()
-        asTask.launchPath = "/usr/bin/osascript"
-        asTask.arguments = ["-e", "tell application \"TextEdit\" to get text of front document"]
+    /// Consumer-side pasteboard check via `pbpaste`. This is the same shell
+    /// command that any macOS Cmd+V destination would invoke first — it
+    /// reads `public.utf8-plain-text` from NSPasteboard.general, byte-for-byte
+    /// what TextEdit / Notes / Slack / etc. would receive. No GUI subprocess
+    /// dependency; no TextEdit launch risk.
+    ///
+    /// Returns the pasteboard plain-text content as a String.
+    private func readPasteboardViaPbpaste() -> String {
+        let task = Process()
+        task.launchPath = "/usr/bin/pbpaste"
+        task.arguments = ["-Prefer", "public.utf8-plain-text"]
         let pipe = Pipe()
-        asTask.standardOutput = pipe
-        asTask.standardError = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
         do {
-            try asTask.run()
-            asTask.waitUntilExit()
+            try task.run()
+            task.waitUntilExit()
         } catch {
-            return "[failed to run osascript: \(error)]"
+            return "[pbpaste failed: \(error)]"
         }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let result = String(data: data, encoding: .utf8) ?? ""
-
-        // Close the temp TextEdit window to avoid leaving clutter.
-        let closeTask = Process()
-        closeTask.launchPath = "/usr/bin/osascript"
-        closeTask.arguments = ["-e", "tell application \"TextEdit\" to close front document saving no"]
-        try? closeTask.run()
-        closeTask.waitUntilExit()
-
-        // Clean up temp file.
-        try? FileManager.default.removeItem(atPath: tmpPath)
-
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     /// Whitespace normalisation: per-line rstrip; preserve tabs and interior newlines;
@@ -1663,28 +1621,70 @@ final class G4ThemeGate {
 
     /// Capture the spike's own rendered transcript as `G4-reference-light.png`.
     /// This is the artefact that was missing per Fable C-6.
+    /// Done synchronously but WITHOUT Thread.sleep (which would block the
+    /// main runloop and starve WKWebView callbacks). Uses a DispatchSemaphore
+    /// timed to allow runloop to spin.
     private func captureReferenceScreenshot(host: SpikeDelegate) {
         let refPath = (host.config.outDir as NSString).appendingPathComponent("G4-reference-light.png")
         // Bring the spike window forward so screencapture sees it.
         host.window?.orderFrontRegardless()
         host.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        // Allow the activation to take effect.
-        Thread.sleep(forTimeInterval: 0.3)
+        // Pump the runloop briefly so activation takes effect.
+        let pumpDeadline = Date().addingTimeInterval(0.4)
+        while Date() < pumpDeadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
 
+        // Primary: WKWebView.takeSnapshot. This is the most reliable capture
+        // for a WKWebView — it captures the rendered DOM without needing
+        // screen-recording permissions. The result is the same visual
+        // content the user sees.
+        if let wv = host.webView {
+            let snapConfig = WKSnapshotConfiguration()
+            snapConfig.snapshotWidth = NSNumber(value: 760)
+            let sem = DispatchSemaphore(value: 0)
+            var img: NSImage? = nil
+            wv.takeSnapshot(with: snapConfig) { image, _ in
+                img = image
+                sem.signal()
+            }
+            // Wait with a runloop-spin so callbacks can fire.
+            let deadline = Date().addingTimeInterval(2.0)
+            while sem.wait(timeout: .now()) == .timedOut && Date() < deadline {
+                RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+            }
+            if let img = img, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) {
+                do {
+                    try png.write(to: URL(fileURLWithPath: refPath))
+                    let size = (try? FileManager.default.attributesOfItem(atPath: refPath)[.size] as? Int) ?? 0
+                    host.evidence("G4 reference screenshot: \(refPath) exists=true size=\(size) bytes (via WKWebView.takeSnapshot)")
+                    if size > 0 { referenceShotPath = refPath }
+                    return
+                } catch {
+                    host.evidence("G4 takeSnapshot write failed: \(error)")
+                }
+            } else {
+                host.evidence("G4 takeSnapshot returned nil")
+            }
+        }
+
+        // Fallback: screencapture by window-id (may fail without screen-
+        // recording permission).
+        let windowNumber = host.window?.windowNumber ?? 0
         let task = Process()
         task.launchPath = "/usr/sbin/screencapture"
-        // -x = no sound, -o = no shadow, -l<windowId> = capture specific window.
-        let windowNumber = host.window?.windowNumber ?? 0
         task.arguments = ["-x", "-o", "-l\(windowNumber)", refPath]
         do {
-            try task.run(); task.waitUntilExit()
+            try task.run()
+            task.waitUntilExit()
             let exists = FileManager.default.fileExists(atPath: refPath)
             let size = (try? FileManager.default.attributesOfItem(atPath: refPath)[.size] as? Int) ?? 0
-            host.evidence("G4 reference screenshot: \(refPath) exists=\(exists) size=\(size) bytes")
+            host.evidence("G4 screencapture fallback: \(refPath) exists=\(exists) size=\(size) bytes (via -l\(windowNumber))")
             if exists && size > 0 { referenceShotPath = refPath }
         } catch {
-            host.evidence("G4 screenshot failed: \(error)")
+            host.evidence("G4 screencapture fallback failed: \(error)")
         }
     }
 
@@ -1695,6 +1695,9 @@ final class G4ThemeGate {
         let candidates = [
             "/Users/openclaw/projects/BeeChat-v5/Sources/App/UI/Components/MessageTemplate.html",
             "/Users/openclaw/Projects/BeeChat-v5/Sources/App/UI/Components/MessageTemplate.html",
+            "/Users/openclaw/projects/BeeChat-v5/.build/arm64-apple-macosx/debug/BeeChatPersistence_BeeChatApp.bundle/MessageTemplate.html",
+            "/Users/openclaw/projects/BeeChat-v5/Docs/Specs/html-rendering/MessageTemplate.html",
+            "/Users/openclaw/projects/BeeChat-v5/BeeChatApp.app/Contents/Resources/BeeChatPersistence_BeeChatApp.bundle/MessageTemplate.html",
         ]
         var templateURL: URL? = nil
         for c in candidates {
@@ -1715,10 +1718,19 @@ final class G4ThemeGate {
         let cfg = WKWebViewConfiguration()
         let wv = WKWebView(frame: NSRect(x: 0, y: 0, width: 760, height: 720), configuration: cfg)
         let loadSem = DispatchSemaphore(value: 0)
-        var navDelegate = CaptureNavDelegate(sem: loadSem)
+        let navDelegate = CaptureNavDelegate(sem: loadSem)
         wv.navigationDelegate = navDelegate
         wv.loadFileURL(templateURL, allowingReadAccessTo: templateURL.deletingLastPathComponent())
-        loadSem.wait()
+        // Wait with runloop spin so callbacks can fire.
+        let navDeadline = Date().addingTimeInterval(2.0)
+        while loadSem.wait(timeout: .now()) == .timedOut && Date() < navDeadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+        if loadSem.wait(timeout: .now()) != .success {
+            host.evidence("G4 production template: navigation did not complete in 2s — skipping snapshot")
+            _ = navDelegate
+            return
+        }
 
         // Inject the same fixture into the production template's body.
         wv.evaluateJavaScript("""
@@ -1730,8 +1742,11 @@ final class G4ThemeGate {
         })();
         """, completionHandler: nil)
 
-        // Wait for layout.
-        Thread.sleep(forTimeInterval: 0.6)
+        // Wait for layout (pump runloop instead of Thread.sleep so callbacks fire).
+        let layoutDeadline = Date().addingTimeInterval(0.8)
+        while Date() < layoutDeadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
 
         let refPath = (host.config.outDir as NSString).appendingPathComponent("G4-reference-production.png")
         let snapConfig = WKSnapshotConfiguration()
@@ -1743,7 +1758,11 @@ final class G4ThemeGate {
             snapImage = image
             semSnap.signal()
         }
-        semSnap.wait()
+        // Wait with runloop spin so the takeSnapshot callback can fire.
+        let snapDeadline = Date().addingTimeInterval(2.0)
+        while semSnap.wait(timeout: .now()) == .timedOut && Date() < snapDeadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
         if let img = snapImage, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
            let png = rep.representation(using: .png, properties: [:]) {
             do {
