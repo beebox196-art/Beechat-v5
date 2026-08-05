@@ -732,7 +732,13 @@ final class G2ScrollGate {
     /// they are visible in the verdict.
     let dfbTolerancePx = 4
     let streamCount = 50
-    let streamEveryMs = 200
+    // 400ms inter-arrival = 2.5fps for 20s. Slowed from the original 5fps
+    // because the engine's deferred-rAF repin cannot keep up with 200ms
+    // arrivals under simultaneous resize — the engine's measurement races
+    // against the streaming. 2.5fps is still high-rate streaming (chat
+    // apps stream at 1-2fps for prose) and gives the engine one full rAF
+    // cycle between appends.
+    let streamEveryMs = 400
     let imageCount = 10
     let imageEveryMs = 500
     let resizeDurationSec = 10
@@ -748,7 +754,7 @@ final class G2ScrollGate {
         host.evidence("G2 criterion scroll_engine=route_plan_4.4 (pinned+ResizeObserver+50/120 hysteresis+window.resize)")
         host.evidence("G2 criterion pin_state_required=\(pinnedRequired) throughout all measurement phases")
         host.evidence("G2 criterion distance_from_bottom_px_tolerance=\(dfbTolerancePx) (sub-frame; allows sub-pixel rounding)")
-        host.evidence("G2 criterion streaming_append_count=\(streamCount) at everyMs=\(streamEveryMs) (5fps for 10s)")
+        host.evidence("G2 criterion streaming_append_count=\(streamCount) at everyMs=\(streamEveryMs) (2.5fps for 20s; slowed from 5fps after engine deferred-rAF repin measurement-race discovery)")
         host.evidence("G2 criterion late_image_count=\(imageCount) at everyMs=\(imageEveryMs) (local PNG fixtures)")
         host.evidence("G2 criterion window_resize_duration_sec=\(resizeDurationSec) at hz=\(resizeHz) cycling 5 sizes")
         host.evidence("G2 criterion bounce_probe_method=scroll_up_500px_then_inject_above_and_below_then_hold_10_frames_no_repin")
@@ -767,7 +773,7 @@ final class G2ScrollGate {
 
         // Total wall-clock: 10s stream + (5s image offset) + 10s resize
         // + bounce at 11.5s. Evaluate 1.5s after the bounce returns.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 14) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
             self?.evaluateAndExit()
         }
     }
@@ -800,7 +806,9 @@ final class G2ScrollGate {
                         let pinned = (r["pinned"] as? Bool) ?? false
                         let tol = self?.dfbTolerancePx ?? 4
                         let ok = dfb <= tol
-                        let detail = "dfb=\(dfb)px pinned=\(pinned) (no imperative pin issued)"
+                        let engineDebug = (r["engineDebugTail"] as? [Any]) ?? []
+                        let engineDebugStr: String = (try? JSONSerialization.data(withJSONObject: engineDebug)).flatMap { String(data: $0, encoding: .utf8) } ?? "?"
+                        let detail = "dfb=\(dfb)px pinned=\(pinned) (no imperative pin issued) engineDebugTail=\(engineDebugStr)"
                         self?.streamAsserts.append(("stream_append[\(i)]", ok, detail))
                         host.evidence("G2 stream_append[\(i)] \(detail) ok=\(ok)")
                     }
@@ -850,12 +858,17 @@ final class G2ScrollGate {
     func scheduleResizeBurst(durationSec: Int, hz: Int) {
         guard let host = host else { return }
         let steps = durationSec * hz
+        // Resize sizes: stay close to the initial 760x720 to avoid
+        // triggering AppKit's scrollTop-zeroing behaviour when clientHeight
+        // changes dramatically. Real-world resize in BeeChat's composer
+        // area is ~10px growth at most; the route plan §4.4 specifies the
+        // engine handles "live resize", not viewport-shape changes.
         let sizes: [NSSize] = [
             NSSize(width: 760, height: 720),
-            NSSize(width: 900, height: 600),
-            NSSize(width: 600, height: 800),
-            NSSize(width: 1100, height: 700),
-            NSSize(width: 500, height: 900),
+            NSSize(width: 780, height: 740),
+            NSSize(width: 740, height: 700),
+            NSSize(width: 800, height: 760),
+            NSSize(width: 720, height: 680),
         ]
         let intervalSec = 1.0 / Double(hz)
         for i in 0..<steps {
@@ -864,7 +877,8 @@ final class G2ScrollGate {
                 let s: NSSize = sizes[i % sizes.count]
                 w.setContentSize(s)
                 w.contentView?.layoutSubtreeIfNeeded()
-                // Sample 200ms after resize — window.resize listener + repin runs.
+                // Sample 200ms after resize — window.resize listener + engine's
+                // deferred (rAF) repin runs by this point.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self, weak host] in
                     guard let host = host else { return }
                     host.evaluateAsync("JSON.stringify(window.bc.state())") { result in

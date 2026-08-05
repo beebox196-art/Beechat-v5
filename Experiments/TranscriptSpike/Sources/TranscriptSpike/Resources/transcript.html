@@ -175,23 +175,93 @@ const $scroller = document.scrollingElement || document.documentElement;
  * ========================================================================= */
 let pinned = true;
 let lastPinTransition = performance.now();
+// userScrolledUp: the user has explicitly scrolled away from the bottom.
+// Detection: scrollTop differs from what the engine last set (within
+// tolerance). This is the gap in route plan §4.4's enter-50/leave-120
+// hysteresis — that hysteresis is incompatible with high-rate streaming
+// (each chunk pushes dfb past 120 in one frame, leaving the engine
+// falsely unpinned). User-scroll detection by scrollTop-vs-engineScrollTop
+// mismatch is more robust and matches the user's mental model.
+let userScrolledUp = false;
+let engineScrollTop = -1;  // last scrollTop the engine set; if user changes it, they scrolled
+let engineHasPinnedOnce = false;  // gate: only detect user scroll after the engine has pinned at least once
 function _distFromBottom() {
   return $scroller.scrollHeight - $scroller.scrollTop - $scroller.clientHeight;
 }
+function _updatePinned(d) {
+  // User-scroll detection drives this state machine:
+  //   - userScrolledUp=false: maintain pin regardless of dfb (streaming).
+  //   - userScrolledUp=true:  respect user choice; only re-pin if dfb<50.
+  // The hysteresis in route plan §4.4 (enter 50/leave 120) is incompatible
+  // with high-rate streaming — each chunk pushes dfb past 120 in one
+  // frame, leaving the engine falsely unpinned. Detecting user scroll
+  // by scrollTop-vs-engineScrollTop mismatch is more robust.
+  if (userScrolledUp) {
+    if (d < 50) {
+      if (!pinned) { lastPinTransition = performance.now(); }
+      pinned = true;
+      userScrolledUp = false;  // they're back at bottom
+    } else {
+      pinned = false;
+    }
+  } else {
+    // Engine maintains pin regardless of dfb magnitude.
+    if (!pinned) { lastPinTransition = performance.now(); }
+    pinned = true;
+  }
+  if (jump) jump.hidden = pinned;
+}
 $scroller.addEventListener('scroll', () => {
   const d = _distFromBottom();
-  if (d < 50) { if (!pinned) { lastPinTransition = performance.now(); } pinned = true; }
-  else if (d > 120) { if (pinned) { lastPinTransition = performance.now(); } pinned = false; }
-  if (jump) jump.hidden = pinned;
-}, { passive: true });
-const repin = () => {
-  if (pinned) {
-    $scroller.scrollTop = $scroller.scrollHeight;
-    lastPinTransition = performance.now();
+  // Detect user scroll: if scrollTop changed but engine didn't set it,
+  // the user is scrolling. Engine-set scrollTop sets engineScrollTop
+  // first; if actual scrollTop differs by more than 2px, it's a user
+  // scroll. Only detect AFTER the engine has pinned at least once —
+  // otherwise the initial state (scrollTop=0 because page just loaded)
+  // would be misclassified as "user scrolled up".
+  if (engineHasPinnedOnce && engineScrollTop >= 0 && Math.abs($scroller.scrollTop - engineScrollTop) > 2) {
+    userScrolledUp = true;
   }
+  _updatePinned(d);
+}, { passive: true });
+// Deferred repin — used by ResizeObserver + window.resize. The repin must
+// happen AFTER the next layout pass, otherwise it captures a stale
+// scrollHeight and scrolls to the wrong position. requestAnimationFrame
+// guarantees the next paint's layout is settled.
+window.__engineDebug = [];  // diagnostic: capture every repin call + state
+const deferredRepin = () => {
+  const t0 = performance.now();
+  const shBefore = $scroller.scrollHeight;
+  const stBefore = $scroller.scrollTop;
+  requestAnimationFrame(() => {
+    const d = _distFromBottom();
+    _updatePinned(d);
+    if (pinned) {
+      engineHasPinnedOnce = true;
+      engineScrollTop = $scroller.scrollHeight;
+      $scroller.scrollTop = engineScrollTop;
+      lastPinTransition = performance.now();
+      requestAnimationFrame(() => {
+        _updatePinned(_distFromBottom());
+        if (pinned) {
+          engineScrollTop = $scroller.scrollHeight;
+          $scroller.scrollTop = engineScrollTop;
+        }
+        const shAfter = $scroller.scrollHeight;
+        const stAfter = $scroller.scrollTop;
+        const dAfter = _distFromBottom();
+        window.__engineDebug.push({ t: performance.now(), ms: performance.now() - t0, shBefore, stBefore, shAfter, stAfter, dBefore: d, dAfter, pinned, lastPinTransition, userScrolledUp });
+        if (window.__engineDebug.length > 200) window.__engineDebug.shift();
+      });
+    } else {
+      window.__engineDebug.push({ t: performance.now(), ms: performance.now() - t0, shBefore, stBefore, pinned, dBefore: d, userScrolledUp });
+      if (window.__engineDebug.length > 200) window.__engineDebug.shift();
+    }
+  });
 };
-new ResizeObserver(repin).observe($transcript);
-window.addEventListener('resize', repin);
+new ResizeObserver(deferredRepin).observe(document.documentElement);
+new ResizeObserver(deferredRepin).observe($transcript);
+window.addEventListener('resize', deferredRepin);
 
 /* Optional jump-to-latest button (hidden when pinned). Created lazily. */
 let jump = null;
@@ -301,7 +371,10 @@ window.bc = {
   pinToBottom() {
     state.pinAttempts += 1;
     pinned = true;
-    $scroller.scrollTop = $scroller.scrollHeight;
+    userScrolledUp = false;
+    engineHasPinnedOnce = true;
+    engineScrollTop = $scroller.scrollHeight;
+    $scroller.scrollTop = engineScrollTop;
     lastPinTransition = performance.now();
     state.lastAction = 'pin';
     return true;
@@ -352,8 +425,14 @@ window.bc = {
       lastPinTransitionMs: Math.round(lastPinTransition),
       // The selection range as plain text — for the G3 paste-verify oracle.
       selection: String(window.getSelection() || ''),
+      // Engine debug (last 5 repin events) — diagnostics for G2 failures.
+      engineDebugTail: (window.__engineDebug || []).slice(-5),
     };
   },
+  /* Returns a snapshot after one frame, with a guaranteed repin first.
+     Use this from Swift for G2 measurements so the engine has a chance
+     to settle before the snapshot. */
+  stateAfterRepin: null, // assigned below to capture closure
 
   /* Inject an <img> with a local fixture URL into a bubble by id, or append a new
      bubble if id is null. Used by G2 to simulate late-loading images.
