@@ -46,3 +46,20 @@ Once all five gates are signed, the WP-0 spike is accepted. Option A (single-Web
 ## Schedule blocker
 
 Fable's re-check concluded: "Now that the single remaining process blocker is E5, and it is scheduling, not engineering." The subagent cannot clear this. It is the operator's job to route the gates to the named verifiers in the next session.
+
+---
+
+## Sign-off updates (2026-08-05, evening)
+
+**Adam signed G1, G2, G3, G6** (message 2026-08-05 22:00 GMT+1): "yes - it looks like we have the closure we need."
+
+| Gate | Verifier | Status |
+|------|----------|--------|
+| G1 — Memory soak | Adam | ✅ **SIGNED 2026-08-05** |
+| G2 — Scroll feasibility | Adam | ✅ **SIGNED 2026-08-05** |
+| G3 — Selection feasibility | Adam | ✅ **SIGNED 2026-08-05** |
+| G4 — Theme + fontScale | Mel | ⏳ PENDING (nudge sent 2026-08-05) — parity NOT_ASSESSED deferred to WP-2 |
+| G5 — Topic swap | Kieran | ⏳ PENDING (nudge sent 2026-08-05) — timings reviewed, methodology sign pending |
+| G6 — Input feasibility | Adam | ✅ **SIGNED 2026-08-05** |
+
+**Remaining for full WP-0 closure:** G4 (Mel) + G5 (Kieran).
