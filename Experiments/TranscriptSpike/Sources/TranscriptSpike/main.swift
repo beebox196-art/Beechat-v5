@@ -1065,16 +1065,23 @@ final class G2ScrollGate {
             })();
             """
             host.evaluate(js)
-            // Poll the global until __bounceProbeResult is non-null (or
-            // __bounceProbeError is set, or the deadline elapses).
-            let deadline = Date().addingTimeInterval(2.0)
-            let pollInterval = 0.05
-            func poll() {
-                guard let self = self, let host = self.host else { return }
-                host.evaluateAsync("({r: window.bc.__bounceProbeResult, e: window.bc.__bounceProbeError})") { result in
+            host.evidence("G2 bounce_probe JS kicked off at \(host.isoNow()) (waiting 500ms then reading __bounceProbeResult via single asyncAfter read)")
+            // Single-shot read after 500ms. The probe runs 12 rAFs (~200ms)
+            // in JS to settle, then writes JSON to __bounceProbeResult.
+            // After 500ms the result is almost certainly there; if not,
+            // we record a timeout and continue. This is simpler than a
+            // poll loop and matches the G2 state sampler's single-async
+            // pattern (which works reliably).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self, weak host] in
+                guard let self = self, let host = host else { return }
+                host.evaluateAsync("JSON.stringify({r: window.bc.__bounceProbeResult, e: window.bc.__bounceProbeError})") { result in
                     guard let jsStr = result as? String,
                           let data = jsStr.data(using: .utf8),
-                          let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                          let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                        host.evidence("G2 bounce_probe read: result not parseable as JSON: \(String(describing: result).prefix(200))")
+                        self.bounceAsserts.append(("bounce_probe", false, "result not parseable: \(String(describing: result).prefix(200))"))
+                        return
+                    }
                     let errStr = r["e"] as? String
                     let resStr = r["r"] as? String
                     if let errStr = errStr, !errStr.isEmpty {
@@ -1082,46 +1089,36 @@ final class G2ScrollGate {
                         self.bounceAsserts.append(("bounce_probe", false, "JS error: \(errStr)"))
                         return
                     }
-                    if let resStr = resStr, !resStr.isEmpty {
-                        // Parse the result JSON.
-                        guard let rdata = resStr.data(using: .utf8),
-                              let pr = try? JSONSerialization.jsonObject(with: rdata) as? [String: Any] else {
-                            self.bounceAsserts.append(("bounce_probe", false, "result JSON unparseable: \(resStr.prefix(200))"))
-                            host.evidence("G2 bounce_probe result unparseable: \(resStr.prefix(200))")
-                            return
-                        }
-                        let initialDFB = Int((pr["initialDFB"] as? Double) ?? -1)
-                        let finalDFB = Int((pr["finalDFB"] as? Double) ?? -1)
-                        let pinned = (pr["pinned"] as? Bool) ?? true
-                        let initialST = Int((pr["initialScrollTop"] as? Double) ?? -1)
-                        let finalST = Int((pr["finalScrollTop"] as? Double) ?? -1)
-                        let scrollH = Int((pr["finalScrollH"] as? Double) ?? -1)
-                        let bubbles = Int((pr["bubblesBefore"] as? Double) ?? -1)
-                        let detail = "initialDFB=\(initialDFB)px finalDFB=\(finalDFB)px pinned=\(pinned) scrollTop \(initialST)→\(finalST) scrollH=\(scrollH) bubbles=\(bubbles) (NO REPIN ISSUED — engine must auto-handle; result via poll global)"
-                        // PASS condition: engine honours the user's scroll-up
-                        // (pinned stays false, finalDFB is at or near
-                        // initialDFB after content below grows). The probe
-                        // does NOT issue a repin; this is the second
-                        // pre-registered criterion
-                        // `bounce_probe_passes_only_if_pinned_state_remains_correct_under_stress`.
-                        let engineHonouredScrollUp = (pinned == false && finalDFB >= (initialDFB - 100))
-                        let probeOk = engineHonouredScrollUp
-                        self.bounceAsserts.append(("bounce_probe", probeOk, detail))
-                        host.evidence("G2 bounce_probe \(detail) ok=\(probeOk) (engineHonouredScrollUp=\(engineHonouredScrollUp))")
+                    guard let resStr = resStr, !resStr.isEmpty else {
+                        host.evidence("G2 bounce_probe: __bounceProbeResult is null/empty after 500ms wait")
+                        self.bounceAsserts.append(("bounce_probe", false, "__bounceProbeResult null/empty after 500ms wait"))
                         return
                     }
-                    if Date() >= deadline {
-                        host.evidence("G2 bounce_probe timeout: __bounceProbeResult never set")
-                        self.bounceAsserts.append(("bounce_probe", false, "timeout: __bounceProbeResult never set"))
+                    guard let rdata = resStr.data(using: .utf8),
+                          let pr = try? JSONSerialization.jsonObject(with: rdata) as? [String: Any] else {
+                        host.evidence("G2 bounce_probe result unparseable: \(resStr.prefix(200))")
+                        self.bounceAsserts.append(("bounce_probe", false, "result JSON unparseable: \(resStr.prefix(200))"))
                         return
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + pollInterval) {
-                        poll()
-                    }
+                    let initialDFB = Int((pr["initialDFB"] as? Double) ?? -1)
+                    let finalDFB = Int((pr["finalDFB"] as? Double) ?? -1)
+                    let pinned = (pr["pinned"] as? Bool) ?? true
+                    let initialST = Int((pr["initialScrollTop"] as? Double) ?? -1)
+                    let finalST = Int((pr["finalScrollTop"] as? Double) ?? -1)
+                    let scrollH = Int((pr["finalScrollH"] as? Double) ?? -1)
+                    let bubbles = Int((pr["bubblesBefore"] as? Double) ?? -1)
+                    let detail = "initialDFB=\(initialDFB)px finalDFB=\(finalDFB)px pinned=\(pinned) scrollTop \(initialST)→\(finalST) scrollH=\(scrollH) bubbles=\(bubbles) (NO REPIN ISSUED — engine must auto-handle; result via single asyncAfter read)"
+                    // PASS condition: engine honours the user's scroll-up
+                    // (pinned stays false, finalDFB is at or near
+                    // initialDFB after content below grows). The probe
+                    // does NOT issue a repin; this is the second
+                    // pre-registered criterion
+                    // `bounce_probe_passes_only_if_pinned_state_remains_correct_under_stress`.
+                    let engineHonouredScrollUp = (pinned == false && finalDFB >= (initialDFB - 100))
+                    let probeOk = engineHonouredScrollUp
+                    self.bounceAsserts.append(("bounce_probe", probeOk, detail))
+                    host.evidence("G2 bounce_probe \(detail) ok=\(probeOk) (engineHonouredScrollUp=\(engineHonouredScrollUp))")
                 }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                poll()
             }
         }
     }
