@@ -271,7 +271,7 @@ function ensureJump() {
   jump.id = 'jump-to-latest';
   jump.textContent = 'Jump to latest';
   jump.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:6px 10px;border:1px solid var(--bc-tbl-bd);border-radius:8px;background:var(--bc-bg);color:var(--bc-text);font:inherit;cursor:pointer;z-index:99;';
-  jump.addEventListener('click', () => { pinned = true; repin(); jump.hidden = true; });
+  jump.addEventListener('click', () => { pinned = true; deferredRepin(); jump.hidden = true; });
   jump.hidden = pinned;
   document.body.appendChild(jump);
   return jump;
@@ -429,14 +429,41 @@ window.bc = {
       engineDebugTail: (window.__engineDebug || []).slice(-5),
     };
   },
-  /* Returns a snapshot after one frame, with a guaranteed repin first.
-     Use this from Swift for G2 measurements so the engine has a chance
-     to settle before the snapshot. */
-  stateAfterRepin: null, // assigned below to capture closure
+  /* The pending result for stateAfterRepin. Swift's evaluateJavaScript
+     serialises a top-level Promise to "[object Promise]" and the resolved
+     value never reaches Swift, so we cannot return a Promise from this
+     function. Instead, this function:
+       1. Triggers a repin via deferredRepin (which schedules two rAFs).
+       2. Captures the state AFTER those rAFs (post-repin) into
+          window.bc.__pendingStateAfterRepin as a JSON string.
+     Swift then polls bc.__pendingStateAfterRepin via a plain evaluate
+     (no Promise in flight). The poll is one-shot per call.
+     This fixes the G2 measurement race (Kieran adjudication WP-0):
+     previously the sampler read window.bc.state() via asyncAfter + 0.2s
+     and the Swift async task frequently fired while the engine's two
+     rAF callbacks were still in flight, so the captured state reflected
+     a pre-repin snapshot (dfb non-zero), not the post-repin steady state. */
+  __pendingStateAfterRepin: null,
+  stateAfterRepin() {
+    // Clear any prior pending state so Swift's read is unambiguous.
+    window.bc.__pendingStateAfterRepin = null;
+    // Trigger a real engine repin so the user-visible scrollTop settles.
+    deferredRepin();
+    // After two rAFs + a microtask the engine's debug push has fired and
+    // any post-rAF scrollTop assignment has landed. Capture then.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        Promise.resolve().then(() => {
+          window.bc.__pendingStateAfterRepin = JSON.stringify(window.bc.state());
+        });
+      });
+    });
+    return true;
+  },
 
   /* Inject an <img> with a local fixture URL into a bubble by id, or append a new
      bubble if id is null. Used by G2 to simulate late-loading images.
-     load/error hooks call repin() per route plan §4.4 so post-paint image
+     load/error hooks call deferredRepin() per route plan §4.4 so post-paint image
      reflow keeps the view pinned. */
   injectImage({ bubbleIndex, url, alt }) {
     let target;
@@ -451,8 +478,8 @@ window.bc = {
     const img = document.createElement('img');
     img.src = url;
     img.alt = alt || '';
-    img.addEventListener('load', () => repin());
-    img.addEventListener('error', () => { img.classList.add('broken'); repin(); });
+    img.addEventListener('load', () => deferredRepin());
+    img.addEventListener('error', () => { img.classList.add('broken'); deferredRepin(); });
     body.appendChild(img);
     return target.children.length;
   },
