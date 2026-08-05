@@ -12,6 +12,12 @@ Your decisive finding: the spike's `transcript.html` had **no ResizeObserver, no
 
 ## What to verify now — has each correction genuinely landed?
 
+**Note: this re-check now has TWO parts.** Part 1 confirms the corrections from your first review landed. **Part 2 (added) asks you to adjudicate the G2 engine defect that the honest re-run exposed** — this is the fork decision Adam needs external input on before the programme proceeds. Read both.
+
+---
+
+## PART 1 — The four corrections + provenance (from your first review)
+
 ### 1. C-2 — The scroll engine (THE decisive one)
 The route plan's §4.4 scroll engine — "the ~15 lines that replace two months of fighting" — must now EXIST in the spike's transcript document: a real `pinned` state, a ResizeObserver (or equivalent) keeping the view pinned as content grows underneath, and a scroll listener detecting user scroll-away-from-bottom and unpinning.
 **Verify:** Is the pin machinery actually implemented? Is the pin driven by real pinned-state + observation of content growth, NOT by an imperative `pinToBottom()` before each measurement? Does the transcript stay pinned as content grows asynchronously underneath it?
@@ -39,11 +45,49 @@ G3 must now do a REAL Cmd+C copy + NSPasteboard read-back, and paste into a real
 - The +29 MB growth event — you said not a leak but it fell outside the plateau window. Is this now handled (e.g. plateau window covering the growth, or documented)?
 - The C-2/C-3 gates gate WP-2/WP-3; everything else runs in parallel; WP-1 (Transcript Boundary) is engine-agnostic and proceeds independently.
 
+## PART 2 — NEW: Adjudicate the G2 engine defect (the fork decision)
+
+After the test-harness fix (stateAfterRepin wired, bounce probe fixed, E8 audit completed to all 10 criteria), **G2 still FAILs — but on a real, scoped engine defect, not a test problem.** This is the decision point Adam needs your independent judgement on.
+
+### The defect
+With the sampler now reading post-repin state honestly and the bounce probe actually executing (it never ran before — a Promise-serialisation bug), the probe revealed: **the engine auto-repins when content arrives below the viewport even if the user has scrolled up 500px.**
+
+```
+G2 bounce_probe initialDFB=500px finalDFB=0px pinned=true
+  scrollTop 195455→197063 scrollH=197743 bubbles=457
+  (NO REPIN ISSUED — engine must auto-handle)
+  ok=false (engineHonouredScrollUp=false)
+```
+
+- `initialDFB=500px` — user scroll-up worked (500px from bottom)
+- `finalDFB=0px` — engine DID auto-repin to the bottom (yanks the user back)
+- `engineHonouredScrollUp=false` — the engine's "respect user scroll-up" branch is **never reached**
+- Stream/image/resize: **100% PASS** at post-repin sample — the rest of the engine is solid
+
+**The UX problem:** if a user scrolls up to read history and a new message arrives below, the engine forces them back to the bottom. That's a real bug — arguably worse than the whitespace/bounce bug the programme exists to kill.
+
+### The fork (per WP-0 spec, a G-gate FAIL halts the programme — Exit 1 is the standing fallback)
+
+**Option A — focused engine fix (~half a day):** the "respect user scroll-up" branch exists in the code but is never reached — likely a control-flow bug (e.g. the pin/repin path doesn't check user-scroll state before forcing the pin). Fix it, re-run G2. If G2 then passes, the premise holds and we proceed to WP-2/WP-3.
+
+**Option B — Exit 1:** treat the G2 FAIL as the kill-gate trip, pivot to native Grid rendering + Whitespace-Fix Phases 1–3, and take the scroll-engine finding as the reason.
+
+**Adjudicate:** (a) is the engine defect genuinely narrow/scoped (Option A viable), or does it signal a deeper architectural problem with the whole pin model (Option B)? (b) Is the "respect user scroll-up" branch actually reachable with a control-flow fix, based on your reading of the engine code? (c) Is the bounce probe's criterion fair — should the engine honour user scroll-up under content-arrival-below, or is auto-repin-to-bottom acceptable UX? (d) Your recommendation: A or B, with reasoning and confidence.
+
+### Evidence for the defect
+- Corrected G2 evidence: `Docs/Reviews/optionb/G2-evidence.md` (the honest FAIL re-run, rows 5 + 9)
+- The scroll engine: `Experiments/TranscriptSpike/Sources/TranscriptSpike/Resources/transcript.html` (the pinned state + deferredRepin + user-scroll-detection logic)
+- Kieran's adjudication: the G2 FAIL was a measurement race (now fixed) — the remaining fail is a real engine finding
+- Route plan §4.4: `Docs/Specs/Active/single-webview-transcript-plan.md`
+
+---
+
 ## Deliverable
 A written re-review covering:
-1. Verdict on each of the four corrections (GENUINELY FIXED / PARTIALLY FIXED / NOT FIXED) with evidence-backed reasoning.
-2. Overall WP-0 verdict: **SIGN-OFF** (premise now validated, proceed) OR **FURTHER CORRECTIONS REQUIRED** (specific items).
-3. Any residual risks or improvements to carry into WP-2/WP-3.
-4. Confidence level.
+1. **Part 1** — verdict on each of the four corrections (GENUINELY FIXED / PARTIALLY FIXED / NOT FIXED) + E8 audit coverage + provenance (all evidence committed) + G5 E5 resolution, with evidence-backed reasoning.
+2. **Part 2** — the G2 engine-defect fork: your recommendation (Option A focused fix / Option B Exit 1) with reasoning on (a)–(d) above.
+3. Overall WP-0 verdict: **SIGN-OFF** (premise validated, proceed — naming whether via Option A or with the fix) OR **FURTHER CORRECTIONS REQUIRED** (specific items).
+4. Any residual risks or improvements to carry into WP-2/WP-3.
+5. Confidence level.
 
-Be rigorous and impartial. This is the second external pass — the gates must now genuinely test what they assert, or the programme should not proceed. Do not rubber-stamp.
+Be rigorous and impartial. This is the second external pass — the gates must now genuinely test what they assert, and the G2 fork is the load-bearing decision. Do not rubber-stamp.

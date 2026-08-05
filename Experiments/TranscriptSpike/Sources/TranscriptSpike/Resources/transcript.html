@@ -57,6 +57,16 @@
   /* html scrolls; the transcript lives in <main> */
   html, body { height: 100%; }
   body { overflow-y: auto; }
+  /* NOTE on scroll-anchor: WebKit's scroll-anchor (overflow-anchor: auto by
+     default) auto-adjusts scrollTop when content above the viewport changes.
+     This is a competing anchor mechanism against the scroll engine. The
+     engine's user-intent persistence (Defect 2 fix) and the strict
+     "no automatic re-pin while userScrolledUp=true" rule in _updatePinned
+     make the engine robust against scroll-anchor behaviour even with
+     overflow-anchor: auto. We do NOT disable scroll-anchor here because
+     the engine's contract is correct under auto; disabling it would mask
+     the engine's robustness. (If we later see scroll-anchor interact
+     badly with a different scenario, the fix is in the engine, not the CSS.) */
 
   /* Pin-to-bottom sentinel — invisible marker measured by Swift. */
   #pin-sentinel {
@@ -176,14 +186,25 @@ const $scroller = document.scrollingElement || document.documentElement;
 let pinned = true;
 let lastPinTransition = performance.now();
 // userScrolledUp: the user has explicitly scrolled away from the bottom.
-// Detection: scrollTop differs from what the engine last set (within
-// tolerance). This is the gap in route plan §4.4's enter-50/leave-120
-// hysteresis — that hysteresis is incompatible with high-rate streaming
-// (each chunk pushes dfb past 120 in one frame, leaving the engine
-// falsely unpinned). User-scroll detection by scrollTop-vs-engineScrollTop
-// mismatch is more robust and matches the user's mental model.
+//
+// Fix per Fable super-check (2026-08-05, Part 2, Defect 2): persistence.
+// User intent must outlive a single handler invocation. The flag is set
+// by an explicit user scroll (scrollTop differs from engineScrollTop
+// beyond tolerance) and cleared ONLY by an explicit re-pin:
+//   - jump-to-latest button click
+//   - pinToBottom() call
+//   - swapTopic() (atomic pin-then-load)
+//   - the user's own scroll returning them to the bottom
+// Crucially, it is NOT cleared as a side-effect of an engine repin —
+// that would let the engine forget the user's scroll-up between the
+// heuristic itself setting it and `deferredRepin` reading it.
 let userScrolledUp = false;
-let engineScrollTop = -1;  // last scrollTop the engine set; if user changes it, they scrolled
+// engineScrollTop: the scrollTop value the engine last set.
+// IMPORTANT: scrollTop is CLAMPED by the browser to scrollHeight - clientHeight.
+// So we store the *clamped* value, not scrollHeight. Otherwise every engine
+// repin appears as a 680px mismatch vs the actual scrollTop and the user-scroll
+// detector misclassifies engine repins as user scrolls (Fix 1 / Defect 1).
+let engineScrollTop = -1;
 let engineHasPinnedOnce = false;  // gate: only detect user scroll after the engine has pinned at least once
 function _distFromBottom() {
   return $scroller.scrollHeight - $scroller.scrollTop - $scroller.clientHeight;
@@ -213,16 +234,32 @@ function _updatePinned(d) {
 }
 $scroller.addEventListener('scroll', () => {
   const d = _distFromBottom();
+  if (window.__G2_DEBUG) {
+    window.__G2_DEBUG.push({
+      event: 'scroll',
+      scrollTop: Math.round($scroller.scrollTop),
+      scrollHeight: $scroller.scrollHeight,
+      d: Math.round(d),
+      userScrolledUpBefore: userScrolledUp,
+      pinnedBefore: pinned,
+      engineScrollTop: engineScrollTop,
+    });
+  }
   // Detect user scroll: if scrollTop changed but engine didn't set it,
   // the user is scrolling. Engine-set scrollTop sets engineScrollTop
   // first; if actual scrollTop differs by more than 2px, it's a user
   // scroll. Only detect AFTER the engine has pinned at least once —
   // otherwise the initial state (scrollTop=0 because page just loaded)
   // would be misclassified as "user scrolled up".
-  if (engineHasPinnedOnce && engineScrollTop >= 0 && Math.abs($scroller.scrollTop - engineScrollTop) > 2) {
+  if (engineHasPinnedOnce && engineScrollTop >= 0 && Math.abs($scroller.scrollTop - engineScrollTop) > 4) {
     userScrolledUp = true;
   }
   _updatePinned(d);
+  if (window.__G2_DEBUG) {
+    const last = window.__G2_DEBUG[window.__G2_DEBUG.length-1];
+    last.userScrolledUpAfter = userScrolledUp;
+    last.pinnedAfter = pinned;
+  }
 }, { passive: true });
 // Deferred repin — used by ResizeObserver + window.resize. The repin must
 // happen AFTER the next layout pass, otherwise it captures a stale
@@ -238,13 +275,20 @@ const deferredRepin = () => {
     _updatePinned(d);
     if (pinned) {
       engineHasPinnedOnce = true;
-      engineScrollTop = $scroller.scrollHeight;
+      // FIX 1 (Fable 2026-08-05 Defect 1): scrollTop is clamped to
+      // scrollHeight - clientHeight. Storing scrollHeight here (the
+      // previous behaviour) made the engineScrollTop-vs-actualScrollTop
+      // mismatch always equal to clientHeight (680px in this run), so
+      // the user-scroll detector misclassified every engine repin as a
+      // user scroll. Store the clamped value instead.
+      engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
       $scroller.scrollTop = engineScrollTop;
       lastPinTransition = performance.now();
       requestAnimationFrame(() => {
         _updatePinned(_distFromBottom());
         if (pinned) {
-          engineScrollTop = $scroller.scrollHeight;
+          // Same fix: clamped value.
+          engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
           $scroller.scrollTop = engineScrollTop;
         }
         const shAfter = $scroller.scrollHeight;
@@ -271,7 +315,15 @@ function ensureJump() {
   jump.id = 'jump-to-latest';
   jump.textContent = 'Jump to latest';
   jump.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:6px 10px;border:1px solid var(--bc-tbl-bd);border-radius:8px;background:var(--bc-bg);color:var(--bc-text);font:inherit;cursor:pointer;z-index:99;';
-  jump.addEventListener('click', () => { pinned = true; deferredRepin(); jump.hidden = true; });
+  jump.addEventListener('click', () => {
+    // Explicit user-initiated re-pin. Clear userScrolledUp because the
+    // user is asking for the bottom — they no longer want to remain
+    // scrolled up. Fix 2 / Fable 2026-08-05 Defect 2.
+    pinned = true;
+    userScrolledUp = false;
+    deferredRepin();
+    jump.hidden = true;
+  });
   jump.hidden = pinned;
   document.body.appendChild(jump);
   return jump;
@@ -346,13 +398,18 @@ window.bc = {
     const t0 = performance.now();
     // Pre-arm pin before mutating DOM so ResizeObserver callback fires post-paint.
     pinned = true;
+    userScrolledUp = false;
     $transcript.innerHTML = '';
     const frag = document.createDocumentFragment();
     for (const m of messages) frag.appendChild(buildBubble(m));
     $transcript.appendChild(frag);
     // Snap scrollTop synchronously; ResizeObserver would normally do this but
     // we want the swap measurement to see the same-frame pin.
+    // Browser clamps to scrollHeight - clientHeight; record the clamped value
+    // so the user-scroll detector sees no false-positive mismatch on the next
+    // scroll event (Fix 1 / Fable 2026-08-05 Defect 1).
     $scroller.scrollTop = $scroller.scrollHeight;
+    engineScrollTop = $scroller.scrollTop;  // already clamped
     // Force a layout flush so Swift can measure first composited frame.
     void document.body.offsetHeight;
     state.loadedCount = messages.length;
@@ -367,13 +424,19 @@ window.bc = {
 
   /* Pin-to-bottom: explicit jump (used by recovery, tests, jump-to-latest button).
      Sets pinned=true so subsequent content growth will continue to repin via
-     the scroll engine — does NOT call scrollIntoView imperatively. */
+     the scroll engine — does NOT call scrollIntoView imperatively.
+
+     Fix per Fable super-check (2026-08-05, Part 2, Fix 1): scrollTop is
+     clamped to scrollHeight - clientHeight, so storing scrollHeight here
+     would leave a 680px mismatch and the user-scroll detector would
+     treat the very next scroll event as a user scroll-up. Store the
+     clamped value (matches what deferredRepin now stores). */
   pinToBottom() {
     state.pinAttempts += 1;
     pinned = true;
     userScrolledUp = false;
     engineHasPinnedOnce = true;
-    engineScrollTop = $scroller.scrollHeight;
+    engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
     $scroller.scrollTop = engineScrollTop;
     lastPinTransition = performance.now();
     state.lastAction = 'pin';
@@ -423,6 +486,13 @@ window.bc = {
       // scrollIntoView). See route plan §4.4.
       pinned: pinned,
       lastPinTransitionMs: Math.round(lastPinTransition),
+      // User-intent state — exposed for bounce-probe diagnostics. The
+      // probe reads these via window.bc.state() to confirm whether the
+      // engine detected and remembered the user's scroll-up. Per Fable
+      // 2026-08-05 Defect 2, this flag must persist for the duration of
+      // the probe's 12-frame hold.
+      userScrolledUp: userScrolledUp,
+      engineHasPinnedOnce: engineHasPinnedOnce,
       // The selection range as plain text — for the G3 paste-verify oracle.
       selection: String(window.getSelection() || ''),
       // Engine debug (last 5 repin events) — diagnostics for G2 failures.
@@ -451,10 +521,19 @@ window.bc = {
     deferredRepin();
     // After two rAFs + a microtask the engine's debug push has fired and
     // any post-rAF scrollTop assignment has landed. Capture then.
+    //
+    // POST TO SWIFT: instead of polling (which was starving the rAFs
+    // when concurrent appends were firing ResizeObserver), post the
+    // captured state to the "g2State" message handler when ready. Swift
+    // is the one waiting, not the page.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         Promise.resolve().then(() => {
-          window.bc.__pendingStateAfterRepin = JSON.stringify(window.bc.state());
+          const json = JSON.stringify(window.bc.state());
+          window.bc.__pendingStateAfterRepin = json;
+          try {
+            window.webkit.messageHandlers.g2State.postMessage(json);
+          } catch (e) { /* handler not registered; fallback to polling */ }
         });
       });
     });

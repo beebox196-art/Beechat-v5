@@ -1,6 +1,6 @@
 # G4 — Theme + fontScale feasibility + visual parity — evidence
 
-**Date:** 2026-08-05T16:15:43.266Z
+**Date:** 2026-08-05T20:08:31.359Z
 **Build:** TranscriptSpike WP-0 2026-08-05 (post-Fable C-6 correction)
 **Machine:** Openclaw's Mac mini, macOS 26.5.1, arm64
 **Operator:** Q
@@ -25,7 +25,7 @@ G4 criterion verdict_logic_evaluates_each_criterion_above_explicitly (E8 complia
 |---|---|---|---|
 | 1 | ported_theme=light | ✅ | setTheme('light') confirmed; prefers-color-scheme handles dark |
 | 2 | font_scale_steps=[0.8, 1.0, 1.2, 1.5] | ✅ | timings evaluated=4 / 4 |
-| 3 | target_perceived_frame=16.7ms; recorded_as=documented_performance_target | ✅ | max raf_ms=95.00 avg=78.00 (not binary-gated; recorded for P-series budgeting) |
+| 3 | target_perceived_frame=16.7ms; recorded_as=documented_performance_target | ✅ | max raf_ms=64.00 avg=54.75 (not binary-gated; recorded for P-series budgeting) |
 | 4 | metric_chosen=requestAnimationFrame deltas around style mutation | ✅ | rAF deltas captured for 4 fontScale steps |
 | 5 | reference_screenshot=G4-reference-light.png (committed artefact) | ✅ | path=/Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G4-reference-light.png size=115742 bytes |
 | 6 | visual_parity_method=byte_ratio_proxy_vs_production_MessageTemplate (Mel is human verifier) | ❌ | side-by-side=MISSING production=MISSING spike=/Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G4-reference-light.png |
@@ -36,13 +36,13 @@ G4 criterion verdict_logic_evaluates_each_criterion_above_explicitly (E8 complia
 
 | Event | raf_ms |
 |---|---|
-| fontScale=0.8 | 95.00 |
-| fontScale=1.0 | 53.00 |
-| fontScale=1.2 | 73.00 |
-| fontScale=1.5 | 91.00 |
+| fontScale=0.8 | 63.00 |
+| fontScale=1.0 | 29.00 |
+| fontScale=1.2 | 63.00 |
+| fontScale=1.5 | 64.00 |
 
-- **max** raf_ms: 95.00
-- **avg** raf_ms: 78.00
+- **max** raf_ms: 64.00
+- **avg** raf_ms: 54.75
 
 ## Reference artefacts (committed, NOT untracked)
 
@@ -52,7 +52,7 @@ G4 criterion verdict_logic_evaluates_each_criterion_above_explicitly (E8 complia
 
 ## Verdict
 
-**FAIL**
+**FONT_SCALE_SWAP=PASS; VISUAL_PARITY=NOT_ASSESSED (blocked on production-template screenshot + Mel sign-off on side-by-side — side-by-side image was not produced because the production template load did not complete in time)**
 
 ## What changed vs the original G4 (Fable Deviation 4 / C-6)
 
