@@ -8,11 +8,17 @@ import SwiftUI
 /// value (used in previews/tests) reads from UserDefaults as the backing store.
 @Observable
 final class FeatureFlags {
+    /// Backing store for both reads and writes. Held as a property so the
+    /// `didSet` observers below persist to the SAME defaults store that
+    /// `init` reads from — without this, scoped-defaults test injection
+    /// (WP-1 §4.3) would write to `.standard` and silently fail round-trips.
+    private let defaults: UserDefaults
+
     /// When enabled, streaming assistant messages are rendered in a WebView
     /// using MessageTemplate.html for rich formatting (bold, code, links, etc.).
     /// When disabled (default), streaming uses plain Text as before.
     var htmlRenderingEnabled: Bool {
-        didSet { UserDefaults.standard.set(htmlRenderingEnabled, forKey: Keys.htmlRendering) }
+        didSet { defaults.set(htmlRenderingEnabled, forKey: Keys.htmlRendering) }
     }
 
     /// WP-1 (Transcript Boundary Refactor): selects which transcript rendering
@@ -29,7 +35,7 @@ final class FeatureFlags {
     /// keys and would silently default an enum value to its "false" raw value).
     var transcriptEngine: TranscriptEngine {
         didSet {
-            UserDefaults.standard.set(transcriptEngine.rawValue, forKey: Keys.transcriptEngine)
+            defaults.set(transcriptEngine.rawValue, forKey: Keys.transcriptEngine)
         }
     }
 
@@ -50,6 +56,7 @@ final class FeatureFlags {
         transcriptEngine: TranscriptEngine? = nil,
         defaults: UserDefaults = .standard
     ) {
+        self.defaults = defaults
         self.htmlRenderingEnabled = htmlRenderingEnabled
             ?? defaults.bool(forKey: Keys.htmlRendering)
 
