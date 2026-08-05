@@ -1,13 +1,14 @@
 # Active Specs Index — BeeChat-v5
 
-**Last Updated:** 2026-06-20
-**Total Active:** 8 specs (+ 2 re-org plans + this index)
+**Last Updated:** 2026-08-05
+**Total Active:** 9 specs (+ 2 re-org plans + this index)
 
 ## Active Architecture Specs
 
 | Spec | Description | Status |
 |------|-------------|--------|
 | `single-webview-transcript-plan.md` | Option B — single-WebView transcript; phased route (B-0…B-5) with gates, bridge protocol, deletion ledger | APPROVED DIRECTION (Adam 2026-07-12), gates pending |
+| `FR-MULTICOPY.md` | Multi-line copy (Option B gated requirement) — §0.1 of single-webview-transcript-plan: A1 cross-message selection, A2 code-block copy, A3 per-message copy, A4 no selection interference, A5 paste-verified | GATED (Adam 2026-08-05), enforced at G3 + P6 |
 
 ## Active Feature Specs
 

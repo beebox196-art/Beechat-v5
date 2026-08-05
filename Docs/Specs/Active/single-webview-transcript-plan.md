@@ -24,6 +24,40 @@ The invariant this restores: **message height and scroll offset live in the same
 | HTML fidelity (tables, code, anything) | Full WebKit, no converter subset, no bail-outs. |
 | `defaultScrollAnchor` / LazyVStack estimation semantics | Not used at all. Pinning is ~15 lines of our own JS (spec §4.4). |
 
+## 0.1 Gated requirement — Multi-line copy (Adam, 2026-08-05)
+
+**This is a first-class, gated requirement of Option B — not an incidental by-product.** It must be designed in from the start and pass explicit acceptance criteria before the `.web` engine can default on (Gate B-4).
+
+### Why it's a requirement
+In the current (v0.9.5f/g) per-bubble native transcript, users can only ever select a single rendered line before the selection snaps. Copying commands/code blocks across line breaks to another app is effectively impossible without manual line-by-line reconstruction. This is a real usability blocker for Adam, not a nice-to-have.
+
+### Acceptance criteria (all must pass)
+- **A1 — Cross-message multi-line selection:** drag-select any contiguous text across line breaks *and* across multiple messages; Cmd+C yields clean, coherent plain text (no stray HTML, no dropped lines, no wrapping artifacts).
+- **A2 — Code-block copy button:** every rendered `pre`/code block exposes a one-click copy affordance that puts the *entire* block's text (all lines) on the clipboard as a unit — not just the visually selected line.
+- **A3 — Per-message copy-full-text:** each message has a copy action that grabs the message's complete text content (multi-line, including code) regardless of what is visually selected.
+- **A4 — No selection interference:** normal drag-select does not get snapped/clipped by the scroll engine, the pin hysteresis, or the jump-to-latest overlay; selection works while pinned and while mid-scroll.
+- **A5 — Paste-verified:** copied output pastes correctly into TextEdit (plain text) and into a code editor (command block intact, line breaks preserved).
+
+### How it's enforced in this plan
+| Mechanism | Where | What it guarantees |
+|---|---|---|
+| Gate **G3 (selection)** | §3 spike gates | Proves cross-message multi-line copy works in the prototype *before* the full build — a silent disqualifier is caught early |
+| Parity item **P6** | §6 B-4 parity matrix | Blocks default-on until the full transcript passes the same multi-line copy check |
+| Context-menu filter | §5 B-3 host | Keep Copy / Copy Link / Look Up / Share; remove Reload / Go Back / Inspect Element — copy is a first-class citizen |
+| DOM structure | §4.1 | `role="log"` + block-level `.msg` nodes make whole-message selection a native browser operation |
+
+### Design notes (carried into §4)
+- Native browser selection across the single document is the *free* baseline (§0 table) — A1 should fall out of the architecture, not require special code.
+- A2 (code-block copy) is a small explicit addition: a copy button on each `pre`, wired to a `navigator.clipboard.writeText(textContent)` call — policy stays native-free, button is DOM.
+- A3 (per-message copy) is a small per-`.msg` button/action → `bcCopyMessage {id}` bridge event, with the full text read from the DOM node by the document itself (single source of truth for the visible text).
+- A4 is the real test: the scroll engine (§4.4) must never fight selection. Pin hysteresis uses `scroll` events only, which do not run during drag-select, so this is expected to hold — but it is gated explicitly so a regression can't ship silently.
+
+### Owner / tracking
+- Gate G3 and parity P6 are the pass/fail chokepoints; a failure at either stops the phase and is written up per the team's review convention.
+- Logged as a tracked requirement (FR-MULTICOPY) in the Active Specs index.
+
+---
+
 ## 1. Design principles
 
 1. **Modularity first (Adam's requirement).** The transcript becomes a swappable engine behind a single boundary (§2). The current native stack is Engine 1; the WebView transcript is Engine 2. A future Engine 3 (e.g. AppKit table view, or a different web stack) plugs into the same seam. Nothing outside the boundary knows which engine is rendering.

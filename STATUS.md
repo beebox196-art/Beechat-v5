@@ -3,16 +3,30 @@
 ## Stage
 active
 
-**Phase:** Working App - Feature Growth
-**Last Updated:** 2026-06-29
-**Latest Commit:** `6b20bd8` — FR-004 font scale: Settings UI, ⌘+/⌘−, sidebar auto-width, full hardcoded font sweep
-**Version:** v0.9.3 (VERSION file), build 0.6.0-reset-inject (Info.plist CFBundleShortVersionString)
-**Topic Archiving:** ✅ IMPLEMENTED, reviewed (Kieran round 1 + round 2 fixes), Adam smoke-tested OK
+**Phase:** Working App - Feature Growth — **Option B single-WebView transcript programme in progress**
+**Last Updated:** 2026-08-05
+**Latest Commit:** `c84a50f` — v0.9.5g (fix(scroll): self-healing clamp v3, Kieran v2 review fixes)
+**Version:** v0.9.5g (VERSION file) — tag `v0.9.5g` == main HEAD `c84a50f`
+**Installed builds:** `BeeChatApp.app` = v0.9.5f (old, rollback) · `BeeChatApp-g.app` = v0.9.5g (new, side-by-side, added 2026-08-05)
 **Protocol:** v4 (confirmed in `GatewayClient.swift`)
 
 ---
 
-## Current State: WORKING APP ✅
+## ⭐ WHERE TO FIND EVERYTHING (read this first — single source of truth)
+
+The **canonical Option B programme tracker is the HTML file on the Desktop**, not the repo docs. It holds the gate register, work packages, decisions, and evidence rules in one place and is the authoritative view of what's planned, what's signed off, and what to do next:
+
+- **Tracker:** `/Users/openclaw/Desktop/BEECHAT-BUILD-PROGRESS.html` — WP-0…WP-6, Gate Register (G1–G6 kill gates, B1–B4, T1–T5, P1–P16, R1–R3), Decisions D1–D4, Evidence rules E1–E7. **Always start here.**
+- **Route plan (the detailed spec):** `Docs/Specs/Active/single-webview-transcript-plan.md` — Option B phases B-0…B-5, §0.1 = FR-MULTICOPY gated requirement, §12 = decisions taken. (Note: the tracker's footer historically said `...-scope.md`; the real file is `...-plan.md` — corrected 2026-08-05.)
+- **Active Specs index:** `Docs/Specs/Active/INDEX.md` — includes `FR-MULTICOPY` (multi-line copy, gated 2026-08-05).
+- **Option B review evidence:** `Docs/Reviews/optionb/<GATE-ID>-evidence.md` per E1–E7 rules.
+- **Daily log:** `~/.openclaw/workspace/memory/2026-08-05.md` — FR-MULTICOPY + v0.9.5g side-by-side build logged.
+
+**Rule (set by Adam 2026-08-05):** this project is critical and must be managed perfectly. If a fact about Option B direction, gate status, or decisions isn't in the tracker, it does not exist — sync the tracker before and after any significant work. The Desktop HTML is the tracking system of record for this programme.
+
+---
+
+## Current State: WORKING APP ✅ (Option B programme active)
 
 The app connects to the OpenClaw gateway, displays topics in a sidebar, shows messages, sends messages, and displays streaming AI responses. Font scale is adjustable via Settings (⌘,) with keyboard shortcuts ⌘+/⌘-. Research panel (Cmd+Shift+R) routes to Gav. BeeBoard provides pin creation, prioritisation, and archive/restore. Folder favourites give quick Finder access. Tap-to-reconnect provides visual feedback on WebSocket drops.
 
