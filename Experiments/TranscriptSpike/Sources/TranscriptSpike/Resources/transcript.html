@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- color-scheme prevents WebKit painting a default-white canvas before our CSS runs -->
+<meta name="color-scheme" content="light dark">
+<title>Transcript Spike</title>
+<style>
+  /* === Theme tokens (mimic BeeChat MessageTemplate.html structure) ===================== */
+  :root {
+    color-scheme: light dark;
+    --bc-font-base: 13;       /* pt; multiplied by --bc-font-scale */
+    --bc-font-scale: 1;
+    --bc-bg:        #FFFFFF;
+    --bc-text:      #212121;
+    --bc-text-dim:  rgba(33,33,33,0.55);
+    --bc-link:      #8A6420;
+    --bc-accent:    #D4A574;
+    --bc-user-bg:   rgba(212,165,116,0.18);
+    --bc-asst-bg:   rgba(0,0,0,0.04);
+    --bc-code-bg:   rgba(33,33,33,0.06);
+    --bc-code-bd:   rgba(33,33,33,0.12);
+    --bc-tbl-bd:    rgba(33,33,33,0.18);
+    --bc-hr:        rgba(33,33,33,0.15);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bc-bg:       #1F1F1F;
+      --bc-text:     #E0E0E0;
+      --bc-text-dim: rgba(224,224,224,0.55);
+      --bc-link:     #E8C583;
+      --bc-user-bg:  rgba(212,165,116,0.16);
+      --bc-asst-bg:  rgba(255,255,255,0.04);
+      --bc-code-bg:  rgba(224,224,224,0.10);
+      --bc-code-bd:  rgba(224,224,224,0.16);
+      --bc-tbl-bd:   rgba(224,224,224,0.22);
+      --bc-hr:       rgba(224,224,224,0.18);
+    }
+  }
+
+  /* === Document shell ================================================================ */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bc-bg);
+    color: var(--bc-text);
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    font-size: calc(var(--bc-font-base) * var(--bc-font-scale) * 1px);
+    line-height: 1.45;
+    /* Native text selection must work for FR-MULTICOPY A1 (G3). */
+    -webkit-user-select: text;
+    cursor: default;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  /* html scrolls; the transcript lives in <main> */
+  html, body { height: 100%; }
+  body { overflow-y: auto; }
+
+  /* Pin-to-bottom sentinel — invisible marker measured by Swift. */
+  #pin-sentinel {
+    height: 1px;
+    width: 100%;
+    pointer-events: none;
+  }
+
+  /* === Message bubbles =============================================================== */
+  main#transcript {
+    display: block;
+    padding: 16px 20px 32px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .bubble {
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    -webkit-user-select: text;
+    overflow-wrap: break-word;
+  }
+  .bubble.user      { background: var(--bc-user-bg); margin-left: 12%; }
+  .bubble.assistant { background: var(--bc-asst-bg); margin-right: 12%; }
+  .bubble .role {
+    display: block;
+    font-size: 0.78em;
+    color: var(--bc-text-dim);
+    margin-bottom: 4px;
+    -webkit-user-select: none;
+  }
+  .bubble pre {
+    background: var(--bc-code-bg);
+    border: 1px solid var(--bc-code-bd);
+    border-radius: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.92em;
+  }
+  .bubble code:not(pre code) {
+    background: var(--bc-code-bg);
+    border: 1px solid var(--bc-code-bd);
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.92em;
+  }
+  .bubble blockquote {
+    border-left: 3px solid var(--bc-accent);
+    margin: 0.4em 0;
+    padding: 0 0 0 10px;
+    color: var(--bc-text-dim);
+  }
+  .bubble table {
+    border-collapse: collapse;
+    margin: 0.4em 0;
+  }
+  .bubble th, .bubble td {
+    border: 1px solid var(--bc-tbl-bd);
+    padding: 4px 8px;
+    text-align: left;
+  }
+  .bubble img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    margin: 4px 0;
+    background: var(--bc-code-bg);
+    display: block;
+  }
+  .bubble img.broken {
+    outline: 1px dashed var(--bc-text-dim);
+    outline-offset: 2px;
+    min-height: 24px;
+  }
+  /* Streaming cursor for the last message while it grows. */
+  .bubble.streaming::after {
+    content: "▍";
+    display: inline-block;
+    margin-left: 1px;
+    color: var(--bc-accent);
+    animation: blink 1s steps(1) infinite;
+    -webkit-user-select: none;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<main id="transcript" role="log" aria-live="polite"></main>
+<div id="pin-sentinel"></div>
+
+<script>
+'use strict';
+/* ============================================================================
+ * bc — minimal bridge surface for the spike harness.
+ * All public functions are exposed via window.bc.* so Swift can invoke them
+ * via WKWebView.evaluateJavaScript.
+ *
+ * Swift-side message handlers (see Spike.swift):
+ *   bc.state    → status / counters Swift polls at sample intervals
+ *   bc.event    → discrete events Swift subscribes to (pin, append, paste, etc.)
+ * ========================================================================= */
+
+const $transcript = document.getElementById('transcript');
+
+const state = {
+  loadedCount: 0,        // messages currently in the document
+  appendedCount: 0,      // appends since load
+  appendedChars: 0,      // total chars appended (rough streaming activity indicator)
+  pinAttempts: 0,        // # of times Swift requested a pin (debug)
+  topicSwaps: 0,         // # of times a topic swap has occurred
+  lastSwapAt: 0,         // performance.now() of last completed swap
+  keystrokesReceived: 0, // for G6 input harness
+  pasteEvents: 0,        // for G3 selection harness
+  fontScaleChanges: 0,   // for G4
+  themeChanges: 0,
+  lastAction: 'init',
+};
+
+window.bc = {
+  /* Render an array of message objects as bubbles. Idempotent w.r.t. an empty doc. */
+  loadMessages(messages) {
+    $transcript.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (const m of messages) frag.appendChild(buildBubble(m));
+    $transcript.appendChild(frag);
+    state.loadedCount = messages.length;
+    state.lastAction = 'load';
+    return messages.length;
+  },
+
+  /* Append a single message bubble (streaming or one-shot). Returns the new count. */
+  appendMessage(message) {
+    const node = buildBubble(message);
+    if (message.streaming) node.classList.add('streaming');
+    $transcript.appendChild(node);
+    state.appendedCount += 1;
+    if (typeof message.content === 'string') state.appendedChars += message.content.length;
+    state.loadedCount += 1;
+    state.lastAction = 'append';
+    return state.loadedCount;
+  },
+
+  /* Patch the last message's content (for streaming chunked growth). */
+  patchLastContent(extraText) {
+    const last = $transcript.lastElementChild;
+    if (!last) return 0;
+    const body = last.querySelector('.body');
+    if (!body) return 0;
+    const span = document.createElement('span');
+    span.textContent = extraText;
+    body.appendChild(span);
+    state.appendedChars += extraText.length;
+    return body.textContent.length;
+  },
+
+  /* Clear all bubbles (used between topic swaps). */
+  clear() {
+    $transcript.innerHTML = '';
+    state.loadedCount = 0;
+    state.lastAction = 'clear';
+    return 0;
+  },
+
+  /* Swap topics — clear + load. Measures wall-clock + paint. Stores the swap_ms
+     into window.bc.lastSwapMs / lastSwapCount so Swift can poll after rAF. */
+  swapTopic(messages) {
+    window.bc.lastSwapMs = -1;
+    window.bc.lastSwapCount = messages.length;
+    const t0 = performance.now();
+    $transcript.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (const m of messages) frag.appendChild(buildBubble(m));
+    $transcript.appendChild(frag);
+    // Force a layout flush so Swift can measure first composited frame.
+    void document.body.offsetHeight;
+    state.loadedCount = messages.length;
+    state.topicSwaps += 1;
+    state.lastSwapAt = performance.now() - t0;
+    requestAnimationFrame(() => {
+      window.bc.lastSwapMs = performance.now() - t0;
+    });
+    state.lastAction = 'swap';
+    return { count: messages.length, swapMs: state.lastSwapAt };
+  },
+
+  /* Pin-to-bottom: scroll the document so the pin sentinel sits flush at bottom. */
+  pinToBottom() {
+    state.pinAttempts += 1;
+    const sentinel = document.getElementById('pin-sentinel');
+    if (!sentinel) return false;
+    sentinel.scrollIntoView({ block: 'end' });
+    state.lastAction = 'pin';
+    return true;
+  },
+
+  /* Live font scale (G4). Sets the CSS variable; layout reflows immediately. */
+  setFontScale(scale) {
+    document.documentElement.style.setProperty('--bc-font-scale', String(scale));
+    state.fontScaleChanges += 1;
+    state.lastAction = 'fontScale';
+    return scale;
+  },
+
+  /* Theme switch (G4). Only one theme is ported for the spike (light) — the call
+     flips a CSS class so Swift can drive visual parity. The dark theme relies on
+     prefers-color-scheme and is not an explicit port per spec §3 G4. */
+  setTheme(themeName) {
+    document.documentElement.dataset.theme = themeName;
+    state.themeChanges += 1;
+    state.lastAction = 'theme';
+    return themeName;
+  },
+
+  /* Returns a snapshot Swift polls at sample intervals. */
+  state() {
+    const doc = document.documentElement;
+    return {
+      loadedCount: state.loadedCount,
+      appendedCount: state.appendedCount,
+      appendedChars: state.appendedChars,
+      pinAttempts: state.pinAttempts,
+      topicSwaps: state.topicSwaps,
+      lastSwapAt: state.lastSwapAt,
+      fontScaleChanges: state.fontScaleChanges,
+      themeChanges: state.themeChanges,
+      keystrokesReceived: state.keystrokesReceived,
+      pasteEvents: state.pasteEvents,
+      lastAction: state.lastAction,
+      // Scroll measurements — Swift uses these for G2/G5 assertions.
+      scrollTop: window.scrollY || doc.scrollTop || 0,
+      scrollHeight: doc.scrollHeight,
+      clientHeight: doc.clientHeight,
+      distanceFromBottom: (doc.scrollHeight - (window.scrollY || doc.scrollTop) - doc.clientHeight),
+      // The selection range as plain text — for the G3 paste-verify oracle.
+      selection: String(window.getSelection() || ''),
+    };
+  },
+
+  /* Inject an <img> with a local fixture URL into a bubble by id, or append a new
+     bubble if id is null. Used by G2 to simulate late-loading images. */
+  injectImage({ bubbleIndex, url, alt }) {
+    let target;
+    if (bubbleIndex == null) {
+      target = buildBubble({ role: 'user', content: '', id: 'img-' + Date.now() });
+      $transcript.appendChild(target);
+    } else {
+      target = $transcript.children[bubbleIndex];
+      if (!target) return -1;
+    }
+    const body = target.querySelector('.body') || target;
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = alt || '';
+    img.addEventListener('error', () => img.classList.add('broken'));
+    body.appendChild(img);
+    return target.children.length;
+  },
+
+  /* Native-keystroke counter for G6 — Swift dispatches keyboard events to this
+     document; we count events that reach the body. */
+  recordKeystroke() { state.keystrokesReceived += 1; },
+
+  /* Paste counter — fires when copy/paste reaches the document. */
+  recordPaste() { state.pasteEvents += 1; },
+
+  /* Load a golden G3 fixture directly into the document. Returns the bubble count. */
+  loadGoldenFixture() {
+    const golden = [
+      { id: 'g3-1', role: 'assistant', content: 'Here is the table:' },
+      { id: 'g3-2', role: 'assistant', content: 'TABLE_BLOCK' },
+      { id: 'g3-3', role: 'assistant', content: 'And the code block:' },
+      { id: 'g3-4', role: 'assistant', content: 'CODE_BLOCK' },
+      { id: 'g3-5', role: 'user', content: 'Got it, thanks!' },
+    ];
+    $transcript.innerHTML = '';
+    for (const m of golden) $transcript.appendChild(buildBubble(m));
+    // Replace the markers with real DOM nodes.
+    const bubbles = $transcript.querySelectorAll('.bubble');
+    bubbles[1].querySelector('.body').innerHTML =
+      '<table><thead><tr><th>Component</th><th>Tests</th><th>Status</th></tr></thead>' +
+      '<tbody><tr><td>Persistence</td><td>27</td><td>OK</td></tr>' +
+      '<tr><td>Gateway</td><td>48</td><td>OK</td></tr>' +
+      '<tr><td>SyncBridge</td><td>37</td><td>OK</td></tr>' +
+      '<tr><td>App</td><td>14</td><td>OK</td></tr></tbody></table>';
+    bubbles[3].querySelector('.body').innerHTML =
+      '<pre><code>func hello() {\n    print("hello, world")\n    return 0\n}</code></pre>';
+    state.loadedCount = golden.length;
+    state.lastAction = 'golden';
+    return golden.length;
+  },
+
+  /* Read the current selection as plain text — Swift uses this to verify Cmd+C
+     against the golden fixture's expected paste output. */
+  selectionText() {
+    const sel = window.getSelection();
+    return sel ? String(sel) : '';
+  },
+
+  /* Mark first responder state — used by G6 to confirm the composer kept focus. */
+  isFocused() {
+    return document.activeElement === document.body;
+  },
+
+  /* Performance.now() reading — for low-overhead timing in Swift. */
+  now() { return performance.now(); },
+};
+
+/* === Measurement scratch (used by G4 font-scale raf timing + G5 swap timing) === */
+window.bc.lastRafMs = -1;
+window.bc.lastRafScale = null;
+window.bc.lastSwapMs = -1;
+window.bc.lastSwapCount = 0;
+
+/* === bubble builder ============================================================ */
+function buildBubble(m) {
+  const div = document.createElement('article');
+  div.className = 'bubble ' + (m.role === 'user' ? 'user' : 'assistant');
+  div.dataset.id = m.id || '';
+  div.dataset.role = m.role;
+  const role = document.createElement('span');
+  role.className = 'role';
+  role.textContent = (m.senderName ? m.senderName + ' · ' : '') + (m.role || 'assistant');
+  const body = document.createElement('div');
+  body.className = 'body';
+  // Minimal markdown-ish: paragraphs split on blank line; inline `code`. This is
+  // intentionally crude — the spike validates the *engine*, not the renderer.
+  body.innerHTML = renderInline(m.content || '');
+  div.appendChild(role);
+  div.appendChild(body);
+  return div;
+}
+
+function renderInline(text) {
+  // Escape HTML, then apply a tiny set of inline transforms. Tables and code
+  // blocks in real data are surfaced by the G3 golden fixture, not by this
+  // pass — see loadGoldenFixture().
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Paragraph split on blank lines.
+  const paras = escaped.split(/\n{2,}/).map(p =>
+    '<p>' + p.replace(/\n/g, '<br>') + '</p>'
+  ).join('');
+  return paras || '<p></p>';
+}
+
+/* === selection / paste instrumentation (G3, G6) ================================ */
+document.addEventListener('selectionchange', () => {
+  // Cheap signal: a non-empty selection. Swift polls window.bc.state() for the
+  // current text and counts.
+  const sel = window.getSelection();
+  if (sel && String(sel).length > 0) { /* selection exists */ }
+});
+document.addEventListener('copy',  () => { state.pasteEvents += 1; });
+document.addEventListener('cut',   () => { state.pasteEvents += 1; });
+document.addEventListener('paste', () => { state.pasteEvents += 1; });
+document.addEventListener('keydown', (e) => {
+  // Each keydown bubbles here — used as a coarse keystroke counter for G6.
+  // The exact replay for G6 is dispatched by Swift; this counter is a backup.
+  state.keystrokesReceived += 1;
+});
+
+/* Initial state poll so Swift doesn't read a half-warm document. */
+window.bc.state();
+</script>
+</body>
+</html>
