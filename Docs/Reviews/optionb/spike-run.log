@@ -1,0 +1,337 @@
+[2026-08-05T11:32:30.243Z] === TranscriptSpike launch ===
+[2026-08-05T11:32:30.243Z] date=2026-08-05T11:32:30.243Z
+[2026-08-05T11:32:30.243Z] build=TranscriptSpike WP-0 2026-08-05
+[2026-08-05T11:32:30.243Z] machine=Openclaw's Mac mini  macOS 26.5.1 arm64
+[2026-08-05T11:32:30.244Z] dbPath=/Users/openclaw/Library/Application Support/BeeChat/BeeChat.sqlite
+[2026-08-05T11:32:30.244Z] generalTopicID=491EA8D6-9527-4E71-89B4-D0A06DF3F49D
+[2026-08-05T11:32:30.244Z] generalSessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:32:30.244Z] operator=Q
+[2026-08-05T11:32:30.244Z] gate=g1
+[2026-08-05T11:32:30.246Z] messages_loaded=427 at 2026-08-05T11:32:30.246Z
+[2026-08-05T11:32:30.446Z] webView didFinish navigation at 2026-08-05T11:32:30.446Z
+[2026-08-05T11:32:32.046Z] G1 START — pre-registered criteria:
+[2026-08-05T11:32:32.047Z] G1 criterion soak_seconds=1800
+[2026-08-05T11:32:32.047Z] G1 criterion web_content_count=1
+[2026-08-05T11:32:32.047Z] G1 criterion rss_total_max_bytes=419430400
+[2026-08-05T11:32:32.047Z] G1 criterion sample_interval_sec=60
+[2026-08-05T11:32:32.047Z] G1 criterion plateau_window_seconds=600  tolerance_mb=20
+[2026-08-05T11:32:32.048Z] G1 criterion message_count_source=GRDB general_sessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:50:05.212Z] === TranscriptSpike launch ===
+[2026-08-05T11:50:05.212Z] date=2026-08-05T11:50:05.212Z
+[2026-08-05T11:50:05.212Z] build=TranscriptSpike WP-0 2026-08-05
+[2026-08-05T11:50:05.212Z] machine=Openclaw's Mac mini  macOS 26.5.1 arm64
+[2026-08-05T11:50:05.212Z] dbPath=/Users/openclaw/Library/Application Support/BeeChat/BeeChat.sqlite
+[2026-08-05T11:50:05.212Z] generalTopicID=491EA8D6-9527-4E71-89B4-D0A06DF3F49D
+[2026-08-05T11:50:05.212Z] generalSessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:50:05.212Z] operator=Q
+[2026-08-05T11:50:05.212Z] gate=g1
+[2026-08-05T11:50:05.215Z] messages_loaded=427 at 2026-08-05T11:50:05.215Z
+[2026-08-05T11:50:05.415Z] webView didFinish navigation at 2026-08-05T11:50:05.415Z
+[2026-08-05T11:50:07.020Z] G1 START — pre-registered criteria:
+[2026-08-05T11:50:07.021Z] G1 criterion soak_seconds=1800
+[2026-08-05T11:50:07.021Z] G1 criterion web_content_count=1
+[2026-08-05T11:50:07.022Z] G1 criterion rss_total_max_bytes=419430400
+[2026-08-05T11:50:07.022Z] G1 criterion sample_interval_sec=60
+[2026-08-05T11:50:07.022Z] G1 criterion plateau_window_seconds=600  tolerance_mb=20
+[2026-08-05T11:50:07.022Z] G1 criterion message_count_source=GRDB general_sessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:50:07.023Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:50:07.151Z] G1 sample post-ps count=29 webBytes=846741504
+[2026-08-05T11:50:07.151Z] G1 sample app_mb=28.0 web_mb=807.5 total_mb=835.5 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:50:07.152Z] G1 sampling begun; will exit after windowSeconds=1800
+[2026-08-05T11:50:23.175Z] === TranscriptSpike launch ===
+[2026-08-05T11:50:23.175Z] date=2026-08-05T11:50:23.175Z
+[2026-08-05T11:50:23.175Z] build=TranscriptSpike WP-0 2026-08-05
+[2026-08-05T11:50:23.175Z] machine=Openclaw's Mac mini  macOS 26.5.1 arm64
+[2026-08-05T11:50:23.176Z] dbPath=/Users/openclaw/Library/Application Support/BeeChat/BeeChat.sqlite
+[2026-08-05T11:50:23.176Z] generalTopicID=491EA8D6-9527-4E71-89B4-D0A06DF3F49D
+[2026-08-05T11:50:23.176Z] generalSessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:50:23.176Z] operator=Q
+[2026-08-05T11:50:23.176Z] gate=g2
+[2026-08-05T11:50:23.178Z] messages_loaded=427 at 2026-08-05T11:50:23.178Z
+[2026-08-05T11:50:23.372Z] webView didFinish navigation at 2026-08-05T11:50:23.372Z
+[2026-08-05T11:50:24.976Z] G2 START — pre-registered criteria:
+[2026-08-05T11:50:24.976Z] G2 criterion pin_state=true_throughout
+[2026-08-05T11:50:24.976Z] G2 criterion distance_from_bottom_px_tolerance=4 (1 frame @1x = 16.7px; we use 4px to allow sub-pixel rounding)
+[2026-08-05T11:50:24.977Z] G2 criterion late_images=10 local_fixtures
+[2026-08-05T11:50:24.977Z] G2 criterion streaming_append=5fps for 10s (50 messages)
+[2026-08-05T11:50:24.977Z] G2 criterion window_resize_continuous_for_10s
+[2026-08-05T11:50:24.996Z] G2 stream_append[0] dfb=0px ok=true
+[2026-08-05T11:50:24.998Z] G2 resize[0] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:25.191Z] G2 stream_append[1] dfb=0px ok=true
+[2026-08-05T11:50:25.273Z] G2 resize[1] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:25.312Z] G2 image_inject[0] dfb=0px ok=true url=g2-img-0.png
+[2026-08-05T11:50:25.404Z] G2 stream_append[2] dfb=0px ok=true
+[2026-08-05T11:50:25.546Z] G2 resize[2] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:25.614Z] G2 stream_append[3] dfb=0px ok=true
+[2026-08-05T11:50:25.811Z] G2 resize[3] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:25.811Z] G2 stream_append[4] dfb=0px ok=true
+[2026-08-05T11:50:25.826Z] G2 image_inject[1] dfb=0px ok=true url=g2-img-1.png
+[2026-08-05T11:50:26.045Z] G2 stream_append[5] dfb=0px ok=true
+[2026-08-05T11:50:26.064Z] G2 resize[4] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:26.258Z] G2 stream_append[6] dfb=0px ok=true
+[2026-08-05T11:50:26.275Z] G2 resize[5] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:26.378Z] G2 image_inject[2] dfb=0px ok=true url=g2-img-2.png
+[2026-08-05T11:50:26.475Z] G2 stream_append[7] dfb=0px ok=true
+[2026-08-05T11:50:26.609Z] G2 resize[6] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:26.610Z] G2 stream_append[8] dfb=0px ok=true
+[2026-08-05T11:50:26.836Z] G2 resize[7] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:26.836Z] G2 stream_append[9] dfb=0px ok=true
+[2026-08-05T11:50:26.836Z] G2 image_inject[3] dfb=0px ok=true url=g2-img-3.png
+[2026-08-05T11:50:27.112Z] G2 stream_append[10] dfb=0px ok=true
+[2026-08-05T11:50:27.131Z] G2 resize[8] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:27.323Z] G2 stream_append[11] dfb=0px ok=true
+[2026-08-05T11:50:27.338Z] G2 resize[9] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:27.339Z] G2 image_inject[4] dfb=0px ok=true url=g2-img-4.png
+[2026-08-05T11:50:27.533Z] G2 stream_append[12] dfb=0px ok=true
+[2026-08-05T11:50:27.555Z] G2 resize[10] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:27.751Z] G2 stream_append[13] dfb=0px ok=true
+[2026-08-05T11:50:27.772Z] G2 resize[11] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:27.961Z] G2 stream_append[14] dfb=0px ok=true
+[2026-08-05T11:50:27.962Z] G2 image_inject[5] dfb=0px ok=true url=g2-img-5.png
+[2026-08-05T11:50:28.180Z] G2 stream_append[15] dfb=0px ok=true
+[2026-08-05T11:50:28.193Z] G2 resize[12] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:28.194Z] G2 stream_append[16] dfb=0px ok=true
+[2026-08-05T11:50:28.414Z] G2 resize[13] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:28.415Z] G2 stream_append[17] dfb=0px ok=true
+[2026-08-05T11:50:28.415Z] G2 image_inject[6] dfb=0px ok=true url=g2-img-6.png
+[2026-08-05T11:50:28.751Z] G2 resize[14] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:28.752Z] G2 stream_append[18] dfb=0px ok=true
+[2026-08-05T11:50:28.950Z] G2 resize[15] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:28.950Z] G2 stream_append[19] dfb=0px ok=true
+[2026-08-05T11:50:28.950Z] G2 image_inject[7] dfb=0px ok=true url=g2-img-7.png
+[2026-08-05T11:50:29.244Z] G2 stream_append[20] dfb=0px ok=true
+[2026-08-05T11:50:29.256Z] G2 resize[16] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:29.256Z] G2 stream_append[21] dfb=0px ok=true
+[2026-08-05T11:50:29.257Z] G2 resize[17] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:29.457Z] G2 stream_append[22] dfb=0px ok=true
+[2026-08-05T11:50:29.457Z] G2 image_inject[8] dfb=0px ok=true url=g2-img-8.png
+[2026-08-05T11:50:29.807Z] G2 resize[18] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:29.807Z] G2 stream_append[23] dfb=0px ok=true
+[2026-08-05T11:50:29.808Z] G2 resize[19] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:29.808Z] G2 stream_append[24] dfb=0px ok=true
+[2026-08-05T11:50:30.003Z] G2 stream_append[25] dfb=0px ok=true
+[2026-08-05T11:50:30.004Z] G2 image_inject[9] dfb=0px ok=true url=g2-img-9.png
+[2026-08-05T11:50:30.021Z] G2 resize[20] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:30.526Z] G2 stream_append[26] dfb=0px ok=true
+[2026-08-05T11:50:30.539Z] G2 resize[21] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:30.539Z] G2 stream_append[27] dfb=0px ok=true
+[2026-08-05T11:50:30.539Z] G2 resize[22] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:30.954Z] G2 stream_append[28] dfb=0px ok=true
+[2026-08-05T11:50:30.978Z] G2 resize[23] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:30.978Z] G2 stream_append[29] dfb=0px ok=true
+[2026-08-05T11:50:31.378Z] G2 stream_append[30] dfb=0px ok=true
+[2026-08-05T11:50:31.397Z] G2 resize[24] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:31.397Z] G2 stream_append[31] dfb=0px ok=true
+[2026-08-05T11:50:31.398Z] G2 resize[25] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:31.398Z] G2 stream_append[32] dfb=0px ok=true
+[2026-08-05T11:50:31.959Z] G2 resize[26] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:31.959Z] G2 stream_append[33] dfb=0px ok=true
+[2026-08-05T11:50:31.959Z] G2 resize[27] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:31.960Z] G2 stream_append[34] dfb=0px ok=true
+[2026-08-05T11:50:32.447Z] G2 stream_append[35] dfb=0px ok=true
+[2026-08-05T11:50:32.465Z] G2 resize[28] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:32.466Z] G2 stream_append[36] dfb=0px ok=true
+[2026-08-05T11:50:32.471Z] G2 resize[29] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:32.472Z] G2 stream_append[37] dfb=0px ok=true
+[2026-08-05T11:50:33.007Z] G2 resize[30] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:33.008Z] G2 stream_append[38] dfb=0px ok=true
+[2026-08-05T11:50:33.008Z] G2 resize[31] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:33.008Z] G2 stream_append[39] dfb=0px ok=true
+[2026-08-05T11:50:33.008Z] G2 stream_append[40] dfb=0px ok=true
+[2026-08-05T11:50:33.008Z] G2 resize[32] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:33.724Z] G2 stream_append[41] dfb=0px ok=true
+[2026-08-05T11:50:33.744Z] G2 resize[33] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:33.744Z] G2 stream_append[42] dfb=0px ok=true
+[2026-08-05T11:50:33.745Z] G2 resize[34] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:33.746Z] G2 stream_append[43] dfb=0px ok=true
+[2026-08-05T11:50:34.353Z] G2 resize[35] dfb=0px size=760x720 ok=true
+[2026-08-05T11:50:34.354Z] G2 stream_append[44] dfb=0px ok=true
+[2026-08-05T11:50:34.354Z] G2 stream_append[45] dfb=0px ok=true
+[2026-08-05T11:50:34.354Z] G2 resize[36] dfb=0px size=900x600 ok=true
+[2026-08-05T11:50:34.355Z] G2 stream_append[46] dfb=0px ok=true
+[2026-08-05T11:50:34.355Z] G2 resize[37] dfb=0px size=600x800 ok=true
+[2026-08-05T11:50:35.009Z] G2 stream_append[47] dfb=0px ok=true
+[2026-08-05T11:50:35.031Z] G2 resize[38] dfb=0px size=1100x700 ok=true
+[2026-08-05T11:50:35.031Z] G2 stream_append[48] dfb=0px ok=true
+[2026-08-05T11:50:35.031Z] G2 resize[39] dfb=0px size=500x900 ok=true
+[2026-08-05T11:50:35.032Z] G2 stream_append[49] dfb=0px ok=true
+[2026-08-05T11:50:37.260Z] G2 evidence written: /Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G2-evidence.md
+[2026-08-05T11:50:37.261Z] === exit code=0 ===
+[2026-08-05T11:50:40.022Z] === TranscriptSpike launch ===
+[2026-08-05T11:50:40.022Z] date=2026-08-05T11:50:40.022Z
+[2026-08-05T11:50:40.022Z] build=TranscriptSpike WP-0 2026-08-05
+[2026-08-05T11:50:40.022Z] machine=Openclaw's Mac mini  macOS 26.5.1 arm64
+[2026-08-05T11:50:40.022Z] dbPath=/Users/openclaw/Library/Application Support/BeeChat/BeeChat.sqlite
+[2026-08-05T11:50:40.022Z] generalTopicID=491EA8D6-9527-4E71-89B4-D0A06DF3F49D
+[2026-08-05T11:50:40.023Z] generalSessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:50:40.023Z] operator=Q
+[2026-08-05T11:50:40.023Z] gate=g3
+[2026-08-05T11:50:40.025Z] messages_loaded=427 at 2026-08-05T11:50:40.025Z
+[2026-08-05T11:50:40.222Z] webView didFinish navigation at 2026-08-05T11:50:40.222Z
+[2026-08-05T11:50:41.827Z] G3 START — pre-registered criteria:
+[2026-08-05T11:50:41.827Z] G3 criterion fixture=golden_table_and_code (5 bubbles)
+[2026-08-05T11:50:41.828Z] G3 criterion drag_select_from=bubble1_top to=bubble5_bottom
+[2026-08-05T11:50:41.828Z] G3 criterion paste_target=TextEdit (textedit://) OR NSPasteboard readback
+[2026-08-05T11:50:41.829Z] G3 criterion content_in_order_match — every non-empty line of expected appears in actual in order (FR-MULTICOPY A1 semantics)
+[2026-08-05T11:50:41.830Z] JS[consoleLog]: [G3] bc keys=20
+[2026-08-05T11:50:41.846Z] G3 fixture_loaded_check: {"bubbles":5,"hasTable":true,"hasCode":true}
+[2026-08-05T11:50:42.470Z] G3 selection_text_bytes=196
+[2026-08-05T11:50:42.471Z] G3 content_in_order_match=true
+[2026-08-05T11:50:42.473Z] G3 evidence written: /Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G3-evidence.md
+[2026-08-05T11:50:42.474Z] === exit code=0 ===
+[2026-08-05T11:50:45.220Z] === TranscriptSpike launch ===
+[2026-08-05T11:50:45.220Z] date=2026-08-05T11:50:45.220Z
+[2026-08-05T11:50:45.220Z] build=TranscriptSpike WP-0 2026-08-05
+[2026-08-05T11:50:45.220Z] machine=Openclaw's Mac mini  macOS 26.5.1 arm64
+[2026-08-05T11:50:45.220Z] dbPath=/Users/openclaw/Library/Application Support/BeeChat/BeeChat.sqlite
+[2026-08-05T11:50:45.220Z] generalTopicID=491EA8D6-9527-4E71-89B4-D0A06DF3F49D
+[2026-08-05T11:50:45.220Z] generalSessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:50:45.221Z] operator=Q
+[2026-08-05T11:50:45.221Z] gate=g4
+[2026-08-05T11:50:45.223Z] messages_loaded=427 at 2026-08-05T11:50:45.223Z
+[2026-08-05T11:50:45.425Z] webView didFinish navigation at 2026-08-05T11:50:45.425Z
+[2026-08-05T11:50:47.026Z] G4 START — pre-registered criteria:
+[2026-08-05T11:50:47.027Z] G4 criterion ported_theme=light (the representative theme; state rationale)
+[2026-08-05T11:50:47.027Z] G4 criterion font_scale_steps=[0.8, 1.0, 1.2, 1.5]
+[2026-08-05T11:50:47.027Z] G4 criterion target_perceived_frame=16.7ms; recorded_as=documented_performance_target_if_metric_unavailable
+[2026-08-05T11:50:47.027Z] G4 criterion metric_chosen=requestAnimationFrame deltas around style mutation (best-available proxy)
+[2026-08-05T11:50:47.422Z] G4 reference screenshot: /Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G4-reference-light.png
+[2026-08-05T11:50:47.531Z] G4 font_scale=0.80 raf_ms=71.00
+[2026-08-05T11:50:48.306Z] G4 font_scale=1.00 raf_ms=38.00
+[2026-08-05T11:50:49.156Z] G4 font_scale=1.20 raf_ms=96.00
+[2026-08-05T11:50:50.016Z] G4 font_scale=1.50 raf_ms=96.00
+[2026-08-05T11:50:51.371Z] G4 evidence written: /Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G4-evidence.md
+[2026-08-05T11:50:51.371Z] === exit code=0 ===
+[2026-08-05T11:50:54.146Z] === TranscriptSpike launch ===
+[2026-08-05T11:50:54.147Z] date=2026-08-05T11:50:54.147Z
+[2026-08-05T11:50:54.147Z] build=TranscriptSpike WP-0 2026-08-05
+[2026-08-05T11:50:54.147Z] machine=Openclaw's Mac mini  macOS 26.5.1 arm64
+[2026-08-05T11:50:54.147Z] dbPath=/Users/openclaw/Library/Application Support/BeeChat/BeeChat.sqlite
+[2026-08-05T11:50:54.147Z] generalTopicID=491EA8D6-9527-4E71-89B4-D0A06DF3F49D
+[2026-08-05T11:50:54.147Z] generalSessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:50:54.147Z] operator=Q
+[2026-08-05T11:50:54.147Z] gate=g5
+[2026-08-05T11:50:54.149Z] messages_loaded=427 at 2026-08-05T11:50:54.149Z
+[2026-08-05T11:50:54.333Z] webView didFinish navigation at 2026-08-05T11:50:54.333Z
+[2026-08-05T11:50:55.937Z] G5 START — pre-registered criteria:
+[2026-08-05T11:50:55.937Z] G5 criterion swaps=20 alternating between two 25-message subsets
+[2026-08-05T11:50:55.937Z] G5 criterion swap_window=JS mutation-to-first-rAF (best available proxy for first composited frame)
+[2026-08-05T11:50:55.937Z] G5 criterion white_flash=non-white background pixels during swap, sampled at 60Hz from the document's first body pixel
+[2026-08-05T11:50:55.938Z] G5 topics_loaded=2 ([agent:main:be8d141c-09ac-4b40-941f-634abc8f7f32,agent:main:ac9d4deb-adc5-4bd3-b23d-37ea4cefae53])
+[2026-08-05T11:50:55.938Z] G5 subsetA_count=25 subsetB_count=25
+[2026-08-05T11:50:56.049Z] G5 swap[0] A count=25 ms=9.00
+[2026-08-05T11:50:56.583Z] G5 swap[1] B count=25 ms=27.00
+[2026-08-05T11:50:57.114Z] G5 swap[2] A count=25 ms=9.00
+[2026-08-05T11:50:57.650Z] G5 swap[3] B count=25 ms=15.00
+[2026-08-05T11:50:58.184Z] G5 swap[4] A count=25 ms=10.00
+[2026-08-05T11:50:58.715Z] G5 swap[5] B count=25 ms=14.00
+[2026-08-05T11:50:59.249Z] G5 swap[6] A count=25 ms=13.00
+[2026-08-05T11:50:59.775Z] G5 swap[7] B count=25 ms=13.00
+[2026-08-05T11:51:00.308Z] G5 swap[8] A count=25 ms=4.00
+[2026-08-05T11:51:00.847Z] G5 swap[9] B count=25 ms=5.00
+[2026-08-05T11:51:01.384Z] G5 swap[10] A count=25 ms=14.00
+[2026-08-05T11:51:01.918Z] G5 swap[11] B count=25 ms=14.00
+[2026-08-05T11:51:02.447Z] G5 swap[12] A count=25 ms=14.00
+[2026-08-05T11:51:02.556Z] G5 swap[13] B count=25 ms=16.00
+[2026-08-05T11:51:03.511Z] G5 swap[14] A count=25 ms=9.00
+[2026-08-05T11:51:03.569Z] G5 swap[15] B count=25 ms=9.00
+[2026-08-05T11:51:04.579Z] G5 swap[16] A count=25 ms=10.00
+[2026-08-05T11:51:04.579Z] G5 swap[17] B count=25 ms=10.00
+[2026-08-05T11:51:05.646Z] G5 swap[18] A count=25 ms=11.00
+[2026-08-05T11:51:05.647Z] G5 swap[19] B count=25 ms=11.00
+[2026-08-05T11:51:07.142Z] G5 evidence written: /Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G5-evidence.md
+[2026-08-05T11:51:07.142Z] === exit code=0 ===
+[2026-08-05T11:51:07.160Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:51:07.287Z] G1 sample post-ps count=30 webBytes=936165376
+[2026-08-05T11:51:07.287Z] G1 sample app_mb=27.5 web_mb=892.8 total_mb=920.3 web_count=30 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,48512,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:51:09.924Z] === TranscriptSpike launch ===
+[2026-08-05T11:51:09.925Z] date=2026-08-05T11:51:09.924Z
+[2026-08-05T11:51:09.925Z] build=TranscriptSpike WP-0 2026-08-05
+[2026-08-05T11:51:09.925Z] machine=Openclaw's Mac mini  macOS 26.5.1 arm64
+[2026-08-05T11:51:09.925Z] dbPath=/Users/openclaw/Library/Application Support/BeeChat/BeeChat.sqlite
+[2026-08-05T11:51:09.925Z] generalTopicID=491EA8D6-9527-4E71-89B4-D0A06DF3F49D
+[2026-08-05T11:51:09.925Z] generalSessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+[2026-08-05T11:51:09.925Z] operator=Q
+[2026-08-05T11:51:09.925Z] gate=g6
+[2026-08-05T11:51:09.928Z] messages_loaded=427 at 2026-08-05T11:51:09.927Z
+[2026-08-05T11:51:10.108Z] webView didFinish navigation at 2026-08-05T11:51:10.108Z
+[2026-08-05T11:51:11.709Z] G6 START — pre-registered criteria:
+[2026-08-05T11:51:11.710Z] G6 criterion typed_string=known pangram + digits + specials + emoji + trailing punctuation
+[2026-08-05T11:51:11.710Z] G6 criterion typing_method=NSApp.sendEvent(.keyDown) dispatched to firstResponder (deterministic, reproducible)
+[2026-08-05T11:51:11.711Z] G6 criterion target=host NSWindow's first responder (a hidden NSTextField)
+[2026-08-05T11:51:11.711Z] G6 criterion comparison=typed_string == composer_text (zero dropped keystrokes)
+[2026-08-05T11:51:11.712Z] G6 criterion focus=first_responder remains the composer throughout
+[2026-08-05T11:51:11.712Z] G6 criterion out_of_scope=IME, key repeat, paste, modifier keys
+[2026-08-05T11:51:11.727Z] G6 composer=<NSTextField: 0xc535c8000> composerOwnsFocus=true isKey=true makeFirstResponder=true currentFR_type=NSTextView
+[2026-08-05T11:51:16.614Z] G6 typed_chars=136 expected=136 match=true
+[2026-08-05T11:51:16.614Z] G6 focus_retained=true currentFR_type=NSTextView
+[2026-08-05T11:51:16.617Z] G6 evidence written: /Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G6-evidence.md
+[2026-08-05T11:51:16.617Z] === exit code=0 ===
+[2026-08-05T11:51:16.618Z] G6 page_state keystrokesReceived=136
+[2026-08-05T11:52:07.163Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:52:07.259Z] G1 sample post-ps count=29 webBytes=846544896
+[2026-08-05T11:52:07.259Z] G1 sample app_mb=24.6 web_mb=807.3 total_mb=831.9 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:53:07.163Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:53:07.290Z] G1 sample post-ps count=29 webBytes=846528512
+[2026-08-05T11:53:07.291Z] G1 sample app_mb=24.1 web_mb=807.3 total_mb=831.4 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:54:07.162Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:54:07.289Z] G1 sample post-ps count=29 webBytes=846528512
+[2026-08-05T11:54:07.289Z] G1 sample app_mb=24.1 web_mb=807.3 total_mb=831.4 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:55:07.162Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:55:07.289Z] G1 sample post-ps count=29 webBytes=846528512
+[2026-08-05T11:55:07.289Z] G1 sample app_mb=24.1 web_mb=807.3 total_mb=831.4 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:56:07.161Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:56:07.283Z] G1 sample post-ps count=29 webBytes=846528512
+[2026-08-05T11:56:07.283Z] G1 sample app_mb=24.1 web_mb=807.3 total_mb=831.4 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:57:07.161Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:57:07.287Z] G1 sample post-ps count=29 webBytes=846528512
+[2026-08-05T11:57:07.287Z] G1 sample app_mb=24.1 web_mb=807.3 total_mb=831.4 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:58:07.160Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:58:07.287Z] G1 sample post-ps count=29 webBytes=861061120
+[2026-08-05T11:58:07.287Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T11:59:07.167Z] G1 sample_invoked appPID=48234
+[2026-08-05T11:59:07.297Z] G1 sample post-ps count=29 webBytes=861110272
+[2026-08-05T11:59:07.298Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:00:07.166Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:00:07.296Z] G1 sample post-ps count=29 webBytes=861061120
+[2026-08-05T12:00:07.296Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:01:07.166Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:01:07.296Z] G1 sample post-ps count=29 webBytes=861061120
+[2026-08-05T12:01:07.296Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:02:07.169Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:02:07.295Z] G1 sample post-ps count=29 webBytes=861061120
+[2026-08-05T12:02:07.296Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:03:07.168Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:03:07.294Z] G1 sample post-ps count=29 webBytes=861061120
+[2026-08-05T12:03:07.295Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:04:07.167Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:04:07.294Z] G1 sample post-ps count=29 webBytes=861061120
+[2026-08-05T12:04:07.295Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:05:07.167Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:05:07.283Z] G1 sample post-ps count=29 webBytes=861061120
+[2026-08-05T12:05:07.283Z] G1 sample app_mb=24.1 web_mb=821.2 total_mb=845.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:06:07.172Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:06:07.298Z] G1 sample post-ps count=29 webBytes=863240192
+[2026-08-05T12:06:07.299Z] G1 sample app_mb=24.1 web_mb=823.2 total_mb=847.3 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:07:07.133Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:07:07.254Z] G1 sample post-ps count=29 webBytes=863453184
+[2026-08-05T12:07:07.255Z] G1 sample app_mb=24.2 web_mb=823.5 total_mb=847.6 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:08:07.129Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:08:07.249Z] G1 sample post-ps count=29 webBytes=863453184
+[2026-08-05T12:08:07.249Z] G1 sample app_mb=24.2 web_mb=823.5 total_mb=847.6 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:09:07.128Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:09:07.237Z] G1 sample post-ps count=29 webBytes=863453184
+[2026-08-05T12:09:07.237Z] G1 sample app_mb=24.1 web_mb=823.5 total_mb=847.6 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:10:07.127Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:10:07.253Z] G1 sample post-ps count=29 webBytes=863469568
+[2026-08-05T12:10:07.254Z] G1 sample app_mb=24.2 web_mb=823.5 total_mb=847.6 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:11:07.126Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:11:07.252Z] G1 sample post-ps count=29 webBytes=863469568
+[2026-08-05T12:11:07.252Z] G1 sample app_mb=24.2 web_mb=823.5 total_mb=847.6 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:12:07.128Z] G1 sample_invoked appPID=48234
+[2026-08-05T12:12:07.259Z] G1 sample post-ps count=29 webBytes=833077248
+[2026-08-05T12:12:07.259Z] G1 sample app_mb=24.2 web_mb=794.5 total_mb=818.6 web_count=29 pids=3744,11615,15311,16129,18040,20603,22341,22343,26871,26872,31014,38173,41084,48248,51459,55767,68016,71190,73207,76808,79820,79886,86939,88536,97498,98166,98584,99283,99287
+[2026-08-05T12:12:07.259Z] G1 plateau_window samples=3 app_min_mb=24.2 app_max_mb=24.2 app_spread_mb=0.0
+[2026-08-05T12:12:07.366Z] G1 VERDICT: passes=3 fails=
+[2026-08-05T12:12:07.368Z] G1 evidence written: /Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/G1-evidence.md
+[2026-08-05T12:12:07.368Z] === exit code=0 ===
