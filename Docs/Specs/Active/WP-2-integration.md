@@ -130,7 +130,7 @@ Observable, not "byte-for-byte". **E1: no gate passes on code inspection alone**
 
 | Risk | Mitigation |
 |---|---|
-| Merge conflict (WP-1 + WP-2 diverged) | Merge gate: must compile + full suite green before host work. **Seam is localised to `MainWindow.swift`** (the only file both branches touch per Q validation) — resolve there; WP-1 first, rebase WP-2 on top |
+| Merge conflict (WP-1 + WP-2 diverged) | Merge gate: must compile + full suite green before host work. **Per §2, the merge is conflict-free** (disjoint file sets vs `main`); gate is `swift build` + `swift test` green, not source-tree surgery. |
 | `data:` fix introduces XSS if `data:` leaks to `href` | Per-attribute scheme lists; `data:` for `img src` only; existing XSS test must pass; new negative test |
 | Whitespace/bounce recurs in `.web` engine | **Standing rule: any recurrence is automatically P0** (recorded in progress HTML). The WP-2 scroll engine is Fable-verified; the host must not reintroduce the bug |
 | Host state-diffing bugs (wrong JS call per state change) | Truth-table tests on the diff logic (mirror WP-1 §4.5 policy-test pattern); bridge-surface test |
@@ -140,7 +140,7 @@ Observable, not "byte-for-byte". **E1: no gate passes on code inspection alone**
 
 ## 7. Effort
 
-**Estimate: 2 days** (Q validation, 2026-08-06 — "1-2 days is tight but feasible" → peg at 2 to allow for the `MainWindow.swift` merge conflict + cross-engine smoke-test cycles). Host slice + `data:` fix + merge + tests ≈ 310 LOC (WebTranscriptView bridge + diffing ≈ 250; sanitizer refactor + tests ≈ 60). WP-3 (full host hardening) remains ~2 days later.
+**Estimate: 2 days.** Per §2 the merge is conflict-free (no source-tree surgery), so the buffer is for cross-engine smoke-test cycles + the bcCopyMessage pasteboard-write verification per §3.1. Host slice + `data:` fix + tests ≈ 310 LOC (WebTranscriptView bridge + diffing ≈ 250; sanitizer refactor + tests ≈ 60). WP-3 (full host hardening) remains ~2 days later.
 
 ---
 
