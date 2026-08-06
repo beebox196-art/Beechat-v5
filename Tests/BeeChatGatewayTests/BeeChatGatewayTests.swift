@@ -244,48 +244,75 @@ final class FrameTests: XCTestCase {
 }
 
 final class KeychainTokenStoreTests: XCTestCase {
-    
-    var store: KeychainTokenStore!
-    
+
+    // The TokenStore contract (round-trip / update / delete) is verified against
+    // the in-memory mock so routine `swift test` runs NEVER touch the real macOS
+    // keychain. Constructing KeychainTokenStore() in a test fires one keychain-access
+    // dialog per distinct SecItem call, per fresh test process — a prompt storm on
+    // every test run.
+    //
+    // The real SecItem path is covered by testRealKeychainRoundTrip below, gated
+    // behind RUN_KEYCHAIN_TESTS=1 so it only runs when explicitly requested.
+
+    private var store: TokenStore!
+
     override func setUpWithError() throws {
-        store = KeychainTokenStore()
-        try store.deleteAll()
+        store = InMemoryTokenStore()
     }
-    
-    override func tearDownWithError() throws {
-        try store.deleteAll()
-    }
-    
+
     func testGatewayTokenRoundTrip() throws {
         XCTAssertNil(try store.getGatewayToken(), "Should start empty")
         try store.setGatewayToken("test-gateway-token")
         XCTAssertEqual(try store.getGatewayToken(), "test-gateway-token")
     }
-    
+
     func testDeviceTokenRoundTrip() throws {
         XCTAssertNil(try store.getDeviceToken(), "Should start empty")
         try store.setDeviceToken("test-device-token")
         XCTAssertEqual(try store.getDeviceToken(), "test-device-token")
     }
-    
+
     func testDeleteAll() throws {
-        let testStore = KeychainTokenStore()
+        let testStore = InMemoryTokenStore()
         try testStore.setGatewayToken("gw-delete-test")
         try testStore.setDeviceToken("dt-delete-test")
-        
+
         XCTAssertEqual(try testStore.getGatewayToken(), "gw-delete-test")
         XCTAssertEqual(try testStore.getDeviceToken(), "dt-delete-test")
-        
+
         try testStore.deleteAll()
-        
+
         XCTAssertNil(try testStore.getGatewayToken(), "Gateway token should be deleted")
         XCTAssertNil(try testStore.getDeviceToken(), "Device token should be deleted")
     }
-    
+
     func testTokenUpdate() throws {
         try store.setGatewayToken("old-token")
         try store.setGatewayToken("new-token")
         XCTAssertEqual(try store.getGatewayToken(), "new-token", "Token should be updated")
+    }
+
+    // MARK: - Real-keychain integration (OPT-IN — never runs in routine swift test)
+    //
+    // This exercises KeychainTokenStore's actual SecItem logic (CopyMatching,
+    // Update-with-Add-fallback, DeleteAll) against the REAL macOS keychain.
+    // It is skipped unless RUN_KEYCHAIN_TESTS=1 is set, because it fires
+    // keychain-access dialogs. Run explicitly with:
+    //   RUN_KEYCHAIN_TESTS=1 swift test --filter KeychainTokenStoreTests
+
+    func testRealKeychainRoundTrip() throws {
+        guard ProcessInfo.processInfo.environment["RUN_KEYCHAIN_TESTS"] == "1" else {
+            throw XCTSkip("Real-keychain test skipped. Set RUN_KEYCHAIN_TESTS=1 to run against the actual macOS keychain.")
+        }
+        let real = KeychainTokenStore()
+        try real.deleteAll()
+        defer { try? real.deleteAll() }
+
+        XCTAssertNil(try real.getGatewayToken(), "Should start empty after deleteAll")
+        try real.setGatewayToken("real-gw-token")
+        XCTAssertEqual(try real.getGatewayToken(), "real-gw-token")
+        try real.setGatewayToken("real-gw-updated")
+        XCTAssertEqual(try real.getGatewayToken(), "real-gw-updated", "Token should update in place")
     }
 }
 
