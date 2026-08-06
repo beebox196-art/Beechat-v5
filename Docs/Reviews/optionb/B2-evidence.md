@@ -265,3 +265,35 @@ Required CSP changes before sign-off:
 3. Document `frame-ancestors` explicitly as not enforceable from a meta CSP in this WKWebView template; do not imply the meta tag protects embedding. The local `loadHTMLString(..., baseURL: nil)` + navigation policy is the relevant control here.
 
 P4 visual-parity follow-up: re-verify all 8 themes with fontScale side-by-side against native bubbles, with special attention to `--bc-pad-h-bubble`/`--bc-pad-v-bubble` versus the route-plan shorthand `--bc-pad-bubble`, bubble radius, gap, and shadow weight.
+
+## Verifier sign-off — CSP (Mel) — RE-VERIFY
+**Verifier:** Mel
+**Date:** 2026-08-05
+**Result:** SIGNED — CSP + sanitizer criteria are accepted for WP-2. `TranscriptTemplate.html` and the embedded Swift constant include explicit `form-action 'none'`; `frame-ancestors` is correctly documented as intentionally absent because a meta CSP cannot enforce it; the WP-3 hand-off now records the binding sanitizer-before-bridge contract for every payload path into `window.bc.setTopic`, `upsertMessages`, `prependEarlier`, and `setStreaming`.
+
+Scope note: this signs Mel's CSP + sanitizer + 8-theme fixture-corpus criteria only. It does not sign the whole B2 gate or Kieran/Bee-owned T1-T4/embed-template criteria.
+
+Validation: `swift scripts/embed-template.swift --check TranscriptTemplate` PASS; `swift test` PASS, 396 tests, 0 failures, 0 unexpected; `testEmbeddedTemplateHasCSPMeta` now asserts `form-action 'none'`.
+
+P4 visual-parity follow-up remains open: re-verify all 8 themes with fontScale side-by-side against native bubbles, especially split padding (`--bc-pad-h-bubble` / `--bc-pad-v-bubble`) versus route-plan `--bc-pad-bubble`, radius, message gap, and shadow weight.
+
+---
+
+## WP-2 Kieran condition re-check (commit 56a1c97) — 2026-08-05 22:24 BST
+
+Re-verifier: Kieran (independent reviewer). Status: **CONDITIONS CLEARED**.
+
+**Condition 1 (bcPinned bridge contract):** CLEARED.
+- `grep -n "bridge(" Sources/App/Resources/TranscriptTemplate.html` → exactly 5 call sites (bcReady at 857, bcLink at 846, bcImage at 850, bcLoadEarlier at 854, bcCopyMessage at 556). Confirmed.
+- B2-evidence.md bridge contract table (lines 158-181) lists exactly the 5 real events with no bcPinned row. Note block (line 181) documents bcPinned as comment-only historical and explicitly directs WP-3 at `window.bc.state().pinned` as the source of truth. Verified.
+
+**Condition 2 (--bc-bubble-max):** CLEARED.
+- `grep -n "bc-bubble-max" Sources/App/Resources/TranscriptTemplate.html` → empty. Token fully removed.
+- `max-width: 66%` hardcoded on `.bubble` (line 169) and `#thinking` (line 287), both with native-parity comments referencing `MessageBubble.BubbleWidthModifier` (canvasWidth * 0.66). Verified.
+- Option (a) — remove token, hardcode 66% — was the correct call (native parity; themes cannot vary bubble width). ThemeManager NOT touched (correct — removal is a template-only change). Verified via `git show 56a1c97 -- Sources/App/Rendering/ThemeManager.swift` → empty diff.
+
+**Test confirmation:** `swift test` → 396 tests, 0 failures, 0 unexpected. The new `XCTAssertEqual(bubbleMaxWidth, "66%", ...)` assertion in `TranscriptFixtureTests.testBubbleComputedStylesMatchThemeTokens` (line 225) is non-vacuous: it loops over all 8 themes in `TranscriptFixtures.allThemes`, applies each theme, reads the computed `getComputedStyle(b).maxWidth`, and asserts exact string equality with "66%". The assertion would fail for any other value. The `XCTAssertFalse(html.contains("--bc-bubble-max"), ...)` guard at line 215 prevents re-introduction.
+
+**Optional follow-up — bridge-helper doc-comment at line ~403 of TranscriptTemplate.html: ✅ RESOLVED 2026-08-06.** The in-source header previously listed `bcPinned` + `bcSelectionCopied` in its comment ("Bridge events (bcReady, bcLink, bcImage, bcLoadEarlier, bcPinned, bcCopyMessage, bcSelectionCopied) post back to Swift via webkit.messageHandlers."). Call sites were always correct (5, verified above); only the comment was stale. The header in BOTH `TranscriptTemplate.html` and the regenerated `TranscriptTemplate.swift` now lists only the 5 real events (`bcReady, bcLink, bcImage, bcLoadEarlier, bcCopyMessage`), and `swift scripts/embed-template.swift --check TranscriptTemplate` exits 0 (in sync). Contract-truthful end to end.
+
+**Verdict:** B2 engineering gate is ready for Bee validation + Adam sign-off.
