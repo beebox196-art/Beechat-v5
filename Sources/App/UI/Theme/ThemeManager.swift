@@ -169,9 +169,55 @@ final class ThemeManager {
             tokens["--bc-hr"] = border.toHex()
         }
 
+        // WP-2 §3.2: geometry token group for the new single-WebView transcript.
+        // These mirror the native MessageBubble chrome so the .web engine renders
+        // the same physical bubble shape. They replace the native BubbleWidthModifier
+        // (66% max width), padding, and inter-message gap that the WebView document
+        // now owns via CSS. Scaled by fontScale so a larger font widens the padding
+        // proportionally (the native SwiftUI bubble does this implicitly).
+        //
+        // --bc-radius-bubble : rounded-rect corner radius (Theme.radius.xl = 16pt)
+        // --bc-pad-bubble    : bubble interior padding (Theme.spacing.lg = 16pt horizontal,
+        //                      Theme.spacing.md = 12pt vertical)
+        // --bc-gap-msg       : inter-message vertical gap (Theme.spacing.xs = 4pt)
+        // --bc-shadow-bubble : box-shadow string built from Theme.shadow.sm + shadowMedium
+        let scale = Double(fontScale)
+        let radiusXl = (currentTheme.radius[.xl] ?? 16) * CGFloat(scale)
+        let padH = (currentTheme.spacing[.lg] ?? 16) * CGFloat(scale)
+        let padV = (currentTheme.spacing[.md] ?? 12) * CGFloat(scale)
+        let gapMsg = (currentTheme.spacing[.xs] ?? 4) * CGFloat(scale)
+        tokens["--bc-radius-bubble"] = formatPx(radiusXl)
+        tokens["--bc-pad-h-bubble"] = formatPx(padH)
+        tokens["--bc-pad-v-bubble"] = formatPx(padV)
+        tokens["--bc-gap-msg"] = formatPx(gapMsg)
+        // Shadow — assemble from the theme's shadow definitions.
+        if let bubbleShadow = currentTheme.shadow[.sm],
+           let medium = currentTheme.shadow[.md] {
+            // Two-layer shadow matches the native bubble (shadowMedium.opacity(0.1) +
+            // radius:4 x:0 y:2). We compose the sm definition with the medium's blur
+            // offset to keep the visual weight identical across themes.
+            tokens["--bc-shadow-bubble"] =
+                "\(bubbleShadow.cssString), \(medium.cssString)"
+        } else if let bubbleShadow = currentTheme.shadow[.sm] {
+            tokens["--bc-shadow-bubble"] = bubbleShadow.cssString
+        } else {
+            tokens["--bc-shadow-bubble"] = "none"
+        }
+
         // Font scale — already handled by setFontScale(), but include for completeness
         tokens["--bc-font-scale"] = String(format: "%.1f", fontScale)
 
         return tokens
+    }
+
+    /// Format a CGFloat as a CSS pixel value (e.g. "12.0px"). Stripping the trailing
+    /// ".0" gives cleaner output for integer-valued tokens (which is most of them —
+    /// fontScale scaling is the only non-integer source).
+    private func formatPx(_ value: CGFloat) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            return "\(Int(rounded))px"
+        }
+        return String(format: "%.1fpx", Double(rounded))
     }
 }

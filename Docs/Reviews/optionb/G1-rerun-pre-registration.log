@@ -1,0 +1,67 @@
+# G1 Rerun — Timestamped Pre-Registration Artefact
+
+**Purpose:** E3 provenance — the authoritative, dated, before-the-run record of the
+G1 pass criteria that actually ran in the 2026-08-05 rerun. Extracted verbatim
+from `spike-run.log` (lines 371–377), printed by the spike's own G1 start-up
+logging at `2026-08-05T13:22:31.933Z` — i.e. **before** any sample, attribution, or
+verdict logic executed (the first attribution sample fired at `13:22:32.042Z`,
+~109 ms after this block; the spike's verdict fired at `13:44:32.301Z`).
+
+**Source file:** `/Users/openclaw/projects/BeeChat-v5/Docs/Reviews/optionb/spike-run.log`
+**Source lines:** 371–377
+
+---
+
+## Verbatim block (printed 2026-08-05T13:22:31.933Z)
+
+```
+[2026-08-05T13:22:31.933Z] G1 START — pre-registered criteria:
+[2026-08-05T13:22:31.933Z] G1 criterion soak_seconds=1800
+[2026-08-05T13:22:31.933Z] G1 criterion web_content_count=1
+[2026-08-05T13:22:31.934Z] G1 criterion rss_total_max_bytes=419430400
+[2026-08-05T13:22:31.934Z] G1 criterion sample_interval_sec=60
+[2026-08-05T13:22:31.934Z] G1 criterion plateau_window_seconds=600  tolerance_mb=20
+[2026-08-05T13:22:31.935Z] G1 criterion message_count_source=GRDB general_sessionKey=agent:main:491ea8d6-9527-4e71-89b4-d0a06df3f49d
+```
+
+These six lines are the **complete** set of pass criteria the spike's own G1
+gate code evaluated against during the rerun. The criteria are hard-coded in
+`Experiments/TranscriptSpike/Sources/.../GateG1.swift` and emitted via
+`logger.log("G1 criterion ...")` at the very start of the gate's `run()` function,
+ahead of any measurement.
+
+## Decoded pass criteria (for human reading)
+
+| Line | Field | Value | Meaning |
+|---|---|---|---|
+| L372 | `soak_seconds` | `1800` | 30-minute target soak window |
+| L373 | `web_content_count` | `1` | Exactly one spike-attributable WebContent process |
+| L374 | `rss_total_max_bytes` | `419430400` | App + WebContent RSS ≤ 400 MB (combined budget) |
+| L375 | `sample_interval_sec` | `60` | 60-second sampling cadence |
+| L376 | `plateau_window_seconds` | `600` | Final 10 min = plateau window |
+| L376 | `tolerance_mb` | `20` | Plateau spread ≤ 20 MB |
+| L377 | `message_count_source` | `GRDB` | Message count comes from local GRDB, not the wire |
+
+## Why this is the authoritative pre-registration
+
+- It is **timestamped** (`2026-08-05T13:22:31.933Z`) and **dated** to the second.
+- It was **printed by the spike's own code** — not retroactively written by the
+  operator or the attribution tool — so it cannot have been edited after the
+  fact to match the measured numbers.
+- It was **emitted before the run** (the first attribution sample fired 109 ms
+  later at `13:22:32.042Z`; the verdict fired 21 min later at `13:44:32.301Z`).
+- The numbers here match the WP-0 protocol spec verbatim (1800 s soak, 1
+  process, 400 MB total, 600 s / 20 MB plateau) — confirming the spike was
+  configured against the spec, not retroactively adjusted.
+
+## Companion artefact: the attribution-tool overlay
+
+The attribution-tool (`attribut-webcontent.sh`) checked the run against a
+**stricter per-spike overlay** (spike_count ∈ {1,2}, per-spike RSS ≤ 200 MB,
+spike PID stable, idle residual ≤ 10, Safari/mail/messages/notes = 0). Those
+overlay criteria live in `attribut-webcontent.sh` and are NOT part of this
+pre-registration block — they are a corroborating second pass applied after
+the spike's own G1 gate finished. See `G1-evidence-rerun.md` §
+"Pre-registered criteria (timestamped, spike-emitted) vs attribution overlay"
+for the reconciliation between the two sets and the rationale for the
+number difference (200 MB per-spike vs 400 MB combined).

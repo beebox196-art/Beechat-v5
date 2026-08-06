@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- color-scheme prevents WebKit painting a default-white canvas before our CSS runs -->
+<meta name="color-scheme" content="light dark">
+<title>Transcript Spike</title>
+<style>
+  /* === Theme tokens (mimic BeeChat MessageTemplate.html structure) ===================== */
+  :root {
+    color-scheme: light dark;
+    --bc-font-base: 13;       /* pt; multiplied by --bc-font-scale */
+    --bc-font-scale: 1;
+    --bc-bg:        #FFFFFF;
+    --bc-text:      #212121;
+    --bc-text-dim:  rgba(33,33,33,0.55);
+    --bc-link:      #8A6420;
+    --bc-accent:    #D4A574;
+    --bc-user-bg:   rgba(212,165,116,0.18);
+    --bc-asst-bg:   rgba(0,0,0,0.04);
+    --bc-code-bg:   rgba(33,33,33,0.06);
+    --bc-code-bd:   rgba(33,33,33,0.12);
+    --bc-tbl-bd:    rgba(33,33,33,0.18);
+    --bc-hr:        rgba(33,33,33,0.15);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bc-bg:       #1F1F1F;
+      --bc-text:     #E0E0E0;
+      --bc-text-dim: rgba(224,224,224,0.55);
+      --bc-link:     #E8C583;
+      --bc-user-bg:  rgba(212,165,116,0.16);
+      --bc-asst-bg:  rgba(255,255,255,0.04);
+      --bc-code-bg:  rgba(224,224,224,0.10);
+      --bc-code-bd:  rgba(224,224,224,0.16);
+      --bc-tbl-bd:   rgba(224,224,224,0.22);
+      --bc-hr:       rgba(224,224,224,0.18);
+    }
+  }
+
+  /* === Document shell ================================================================ */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bc-bg);
+    color: var(--bc-text);
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    font-size: calc(var(--bc-font-base) * var(--bc-font-scale) * 1px);
+    line-height: 1.45;
+    /* Native text selection must work for FR-MULTICOPY A1 (G3). */
+    -webkit-user-select: text;
+    cursor: default;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  /* html scrolls; the transcript lives in <main> */
+  html, body { height: 100%; }
+  body { overflow-y: auto; }
+  /* NOTE on scroll-anchor: WebKit's scroll-anchor (overflow-anchor: auto by
+     default) auto-adjusts scrollTop when content above the viewport changes.
+     This is a competing anchor mechanism against the scroll engine. The
+     engine's user-intent persistence (Defect 2 fix) and the strict
+     "no automatic re-pin while userScrolledUp=true" rule in _updatePinned
+     make the engine robust against scroll-anchor behaviour even with
+     overflow-anchor: auto. We do NOT disable scroll-anchor here because
+     the engine's contract is correct under auto; disabling it would mask
+     the engine's robustness. (If we later see scroll-anchor interact
+     badly with a different scenario, the fix is in the engine, not the CSS.) */
+
+  /* Pin-to-bottom sentinel — invisible marker measured by Swift. */
+  #pin-sentinel {
+    height: 1px;
+    width: 100%;
+    pointer-events: none;
+  }
+
+  /* === Message bubbles =============================================================== */
+  main#transcript {
+    display: block;
+    padding: 16px 20px 32px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  .bubble {
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    -webkit-user-select: text;
+    overflow-wrap: break-word;
+  }
+  .bubble.user      { background: var(--bc-user-bg); margin-left: 12%; }
+  .bubble.assistant { background: var(--bc-asst-bg); margin-right: 12%; }
+  .bubble .role {
+    display: block;
+    font-size: 0.78em;
+    color: var(--bc-text-dim);
+    margin-bottom: 4px;
+    -webkit-user-select: none;
+  }
+  .bubble pre {
+    background: var(--bc-code-bg);
+    border: 1px solid var(--bc-code-bd);
+    border-radius: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.92em;
+  }
+  .bubble code:not(pre code) {
+    background: var(--bc-code-bg);
+    border: 1px solid var(--bc-code-bd);
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.92em;
+  }
+  .bubble blockquote {
+    border-left: 3px solid var(--bc-accent);
+    margin: 0.4em 0;
+    padding: 0 0 0 10px;
+    color: var(--bc-text-dim);
+  }
+  .bubble table {
+    border-collapse: collapse;
+    margin: 0.4em 0;
+  }
+  .bubble th, .bubble td {
+    border: 1px solid var(--bc-tbl-bd);
+    padding: 4px 8px;
+    text-align: left;
+  }
+  .bubble img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    margin: 4px 0;
+    background: var(--bc-code-bg);
+    display: block;
+  }
+  .bubble img.broken {
+    outline: 1px dashed var(--bc-text-dim);
+    outline-offset: 2px;
+    min-height: 24px;
+  }
+  /* Streaming cursor for the last message while it grows. */
+  .bubble.streaming::after {
+    content: "▍";
+    display: inline-block;
+    margin-left: 1px;
+    color: var(--bc-accent);
+    animation: blink 1s steps(1) infinite;
+    -webkit-user-select: none;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<main id="transcript" role="log" aria-live="polite"></main>
+<div id="pin-sentinel"></div>
+
+<script>
+'use strict';
+/* ============================================================================
+ * bc — minimal bridge surface for the spike harness.
+ * All public functions are exposed via window.bc.* so Swift can invoke them
+ * via WKWebView.evaluateJavaScript.
+ *
+ * Swift-side message handlers (see Spike.swift):
+ *   bc.state    → status / counters Swift polls at sample intervals
+ *   bc.event    → discrete events Swift subscribes to (pin, append, paste, etc.)
+ * ========================================================================= */
+
+const $transcript = document.getElementById('transcript');
+const $scroller = document.scrollingElement || document.documentElement;
+
+/* ============================================================================
+ * Scroll engine — route plan §4.4 (the ~15 lines that replace two months of fighting).
+ *
+ * Field-tested hysteresis: enter at 50 px / leave at 120 px from the bottom edge.
+ * ResizeObserver on the transcript keeps the view pinned when content grows
+ * underneath (streaming appends, late-loading images, fontScale restyle).
+ * window.resize handles outer-viewport size changes.
+ * ========================================================================= */
+let pinned = true;
+let lastPinTransition = performance.now();
+// userScrolledUp: the user has explicitly scrolled away from the bottom.
+//
+// Fix per Fable super-check (2026-08-05, Part 2, Defect 2): persistence.
+// User intent must outlive a single handler invocation. The flag is set
+// by an explicit user scroll (scrollTop differs from engineScrollTop
+// beyond tolerance) and cleared ONLY by an explicit re-pin:
+//   - jump-to-latest button click
+//   - pinToBottom() call
+//   - swapTopic() (atomic pin-then-load)
+//   - the user's own scroll returning them to the bottom
+// Crucially, it is NOT cleared as a side-effect of an engine repin —
+// that would let the engine forget the user's scroll-up between the
+// heuristic itself setting it and `deferredRepin` reading it.
+let userScrolledUp = false;
+// engineScrollTop: the scrollTop value the engine last set.
+// IMPORTANT: scrollTop is CLAMPED by the browser to scrollHeight - clientHeight.
+// So we store the *clamped* value, not scrollHeight. Otherwise every engine
+// repin appears as a 680px mismatch vs the actual scrollTop and the user-scroll
+// detector misclassifies engine repins as user scrolls (Fix 1 / Defect 1).
+let engineScrollTop = -1;
+let engineHasPinnedOnce = false;  // gate: only detect user scroll after the engine has pinned at least once
+function _distFromBottom() {
+  return $scroller.scrollHeight - $scroller.scrollTop - $scroller.clientHeight;
+}
+function _updatePinned(d) {
+  // User-scroll detection drives this state machine:
+  //   - userScrolledUp=false: maintain pin regardless of dfb (streaming).
+  //   - userScrolledUp=true:  respect user choice; only re-pin if dfb<50.
+  // The hysteresis in route plan §4.4 (enter 50/leave 120) is incompatible
+  // with high-rate streaming — each chunk pushes dfb past 120 in one
+  // frame, leaving the engine falsely unpinned. Detecting user scroll
+  // by scrollTop-vs-engineScrollTop mismatch is more robust.
+  if (userScrolledUp) {
+    if (d < 50) {
+      if (!pinned) { lastPinTransition = performance.now(); }
+      pinned = true;
+      userScrolledUp = false;  // they're back at bottom
+    } else {
+      pinned = false;
+    }
+  } else {
+    // Engine maintains pin regardless of dfb magnitude.
+    if (!pinned) { lastPinTransition = performance.now(); }
+    pinned = true;
+  }
+  if (jump) jump.hidden = pinned;
+}
+$scroller.addEventListener('scroll', () => {
+  const d = _distFromBottom();
+  if (window.__G2_DEBUG) {
+    window.__G2_DEBUG.push({
+      event: 'scroll',
+      scrollTop: Math.round($scroller.scrollTop),
+      scrollHeight: $scroller.scrollHeight,
+      d: Math.round(d),
+      userScrolledUpBefore: userScrolledUp,
+      pinnedBefore: pinned,
+      engineScrollTop: engineScrollTop,
+    });
+  }
+  // Detect user scroll: if scrollTop changed but engine didn't set it,
+  // the user is scrolling. Engine-set scrollTop sets engineScrollTop
+  // first; if actual scrollTop differs by more than 2px, it's a user
+  // scroll. Only detect AFTER the engine has pinned at least once —
+  // otherwise the initial state (scrollTop=0 because page just loaded)
+  // would be misclassified as "user scrolled up".
+  if (engineHasPinnedOnce && engineScrollTop >= 0 && Math.abs($scroller.scrollTop - engineScrollTop) > 4) {
+    userScrolledUp = true;
+  }
+  _updatePinned(d);
+  if (window.__G2_DEBUG) {
+    const last = window.__G2_DEBUG[window.__G2_DEBUG.length-1];
+    last.userScrolledUpAfter = userScrolledUp;
+    last.pinnedAfter = pinned;
+  }
+}, { passive: true });
+// Deferred repin — used by ResizeObserver + window.resize. The repin must
+// happen AFTER the next layout pass, otherwise it captures a stale
+// scrollHeight and scrolls to the wrong position. requestAnimationFrame
+// guarantees the next paint's layout is settled.
+window.__engineDebug = [];  // diagnostic: capture every repin call + state
+const deferredRepin = () => {
+  const t0 = performance.now();
+  const shBefore = $scroller.scrollHeight;
+  const stBefore = $scroller.scrollTop;
+  requestAnimationFrame(() => {
+    const d = _distFromBottom();
+    _updatePinned(d);
+    if (pinned) {
+      engineHasPinnedOnce = true;
+      // FIX 1 (Fable 2026-08-05 Defect 1): scrollTop is clamped to
+      // scrollHeight - clientHeight. Storing scrollHeight here (the
+      // previous behaviour) made the engineScrollTop-vs-actualScrollTop
+      // mismatch always equal to clientHeight (680px in this run), so
+      // the user-scroll detector misclassified every engine repin as a
+      // user scroll. Store the clamped value instead.
+      engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
+      $scroller.scrollTop = engineScrollTop;
+      lastPinTransition = performance.now();
+      requestAnimationFrame(() => {
+        _updatePinned(_distFromBottom());
+        if (pinned) {
+          // Same fix: clamped value.
+          engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
+          $scroller.scrollTop = engineScrollTop;
+        }
+        const shAfter = $scroller.scrollHeight;
+        const stAfter = $scroller.scrollTop;
+        const dAfter = _distFromBottom();
+        window.__engineDebug.push({ t: performance.now(), ms: performance.now() - t0, shBefore, stBefore, shAfter, stAfter, dBefore: d, dAfter, pinned, lastPinTransition, userScrolledUp });
+        if (window.__engineDebug.length > 200) window.__engineDebug.shift();
+      });
+    } else {
+      window.__engineDebug.push({ t: performance.now(), ms: performance.now() - t0, shBefore, stBefore, pinned, dBefore: d, userScrolledUp });
+      if (window.__engineDebug.length > 200) window.__engineDebug.shift();
+    }
+  });
+};
+new ResizeObserver(deferredRepin).observe(document.documentElement);
+new ResizeObserver(deferredRepin).observe($transcript);
+window.addEventListener('resize', deferredRepin);
+
+/* Optional jump-to-latest button (hidden when pinned). Created lazily. */
+let jump = null;
+function ensureJump() {
+  if (jump) return jump;
+  jump = document.createElement('button');
+  jump.id = 'jump-to-latest';
+  jump.textContent = 'Jump to latest';
+  jump.style.cssText = 'position:fixed;right:16px;bottom:16px;padding:6px 10px;border:1px solid var(--bc-tbl-bd);border-radius:8px;background:var(--bc-bg);color:var(--bc-text);font:inherit;cursor:pointer;z-index:99;';
+  jump.addEventListener('click', () => {
+    // Explicit user-initiated re-pin. Clear userScrolledUp because the
+    // user is asking for the bottom — they no longer want to remain
+    // scrolled up. Fix 2 / Fable 2026-08-05 Defect 2.
+    pinned = true;
+    userScrolledUp = false;
+    deferredRepin();
+    jump.hidden = true;
+  });
+  jump.hidden = pinned;
+  document.body.appendChild(jump);
+  return jump;
+}
+
+const state = {
+  loadedCount: 0,        // messages currently in the document
+  appendedCount: 0,      // appends since load
+  appendedChars: 0,      // total chars appended (rough streaming activity indicator)
+  pinAttempts: 0,        // # of times Swift requested a pin (debug)
+  topicSwaps: 0,         // # of times a topic swap has occurred
+  lastSwapAt: 0,         // performance.now() of last completed swap
+  keystrokesReceived: 0, // for G6 input harness
+  pasteEvents: 0,        // for G3 selection harness
+  fontScaleChanges: 0,   // for G4
+  themeChanges: 0,
+  lastAction: 'init',
+};
+
+window.bc = {
+  /* Render an array of message objects as bubbles. Idempotent w.r.t. an empty doc. */
+  loadMessages(messages) {
+    $transcript.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (const m of messages) frag.appendChild(buildBubble(m));
+    $transcript.appendChild(frag);
+    state.loadedCount = messages.length;
+    state.lastAction = 'load';
+    return messages.length;
+  },
+
+  /* Append a single message bubble (streaming or one-shot). Returns the new count. */
+  appendMessage(message) {
+    const node = buildBubble(message);
+    if (message.streaming) node.classList.add('streaming');
+    $transcript.appendChild(node);
+    state.appendedCount += 1;
+    if (typeof message.content === 'string') state.appendedChars += message.content.length;
+    state.loadedCount += 1;
+    state.lastAction = 'append';
+    return state.loadedCount;
+  },
+
+  /* Patch the last message's content (for streaming chunked growth). */
+  patchLastContent(extraText) {
+    const last = $transcript.lastElementChild;
+    if (!last) return 0;
+    const body = last.querySelector('.body');
+    if (!body) return 0;
+    const span = document.createElement('span');
+    span.textContent = extraText;
+    body.appendChild(span);
+    state.appendedChars += extraText.length;
+    return body.textContent.length;
+  },
+
+  /* Clear all bubbles (used between topic swaps). */
+  clear() {
+    $transcript.innerHTML = '';
+    state.loadedCount = 0;
+    state.lastAction = 'clear';
+    return 0;
+  },
+
+  /* Swap topics — clear + load. Measures wall-clock + paint. Stores the swap_ms
+     into window.bc.lastSwapMs / lastSwapCount so Swift can poll after rAF.
+     Atomic-pin-then-load: pinned=true + scrollTop=max in the same JS task
+     so no intermediate frame can paint (the whole topic-switch fix). */
+  swapTopic(messages) {
+    window.bc.lastSwapMs = -1;
+    window.bc.lastSwapCount = messages.length;
+    const t0 = performance.now();
+    // Pre-arm pin before mutating DOM so ResizeObserver callback fires post-paint.
+    pinned = true;
+    userScrolledUp = false;
+    $transcript.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (const m of messages) frag.appendChild(buildBubble(m));
+    $transcript.appendChild(frag);
+    // Snap scrollTop synchronously; ResizeObserver would normally do this but
+    // we want the swap measurement to see the same-frame pin.
+    // Browser clamps to scrollHeight - clientHeight; record the clamped value
+    // so the user-scroll detector sees no false-positive mismatch on the next
+    // scroll event (Fix 1 / Fable 2026-08-05 Defect 1).
+    $scroller.scrollTop = $scroller.scrollHeight;
+    engineScrollTop = $scroller.scrollTop;  // already clamped
+    // Force a layout flush so Swift can measure first composited frame.
+    void document.body.offsetHeight;
+    state.loadedCount = messages.length;
+    state.topicSwaps += 1;
+    state.lastSwapAt = performance.now() - t0;
+    requestAnimationFrame(() => {
+      window.bc.lastSwapMs = performance.now() - t0;
+    });
+    state.lastAction = 'swap';
+    return { count: messages.length, swapMs: state.lastSwapAt };
+  },
+
+  /* Pin-to-bottom: explicit jump (used by recovery, tests, jump-to-latest button).
+     Sets pinned=true so subsequent content growth will continue to repin via
+     the scroll engine — does NOT call scrollIntoView imperatively.
+
+     Fix per Fable super-check (2026-08-05, Part 2, Fix 1): scrollTop is
+     clamped to scrollHeight - clientHeight, so storing scrollHeight here
+     would leave a 680px mismatch and the user-scroll detector would
+     treat the very next scroll event as a user scroll-up. Store the
+     clamped value (matches what deferredRepin now stores). */
+  pinToBottom() {
+    state.pinAttempts += 1;
+    pinned = true;
+    userScrolledUp = false;
+    engineHasPinnedOnce = true;
+    engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
+    $scroller.scrollTop = engineScrollTop;
+    lastPinTransition = performance.now();
+    state.lastAction = 'pin';
+    return true;
+  },
+
+  /* Live font scale (G4). Sets the CSS variable; layout reflows immediately. */
+  setFontScale(scale) {
+    document.documentElement.style.setProperty('--bc-font-scale', String(scale));
+    state.fontScaleChanges += 1;
+    state.lastAction = 'fontScale';
+    return scale;
+  },
+
+  /* Theme switch (G4). Only one theme is ported for the spike (light) — the call
+     flips a CSS class so Swift can drive visual parity. The dark theme relies on
+     prefers-color-scheme and is not an explicit port per spec §3 G4. */
+  setTheme(themeName) {
+    document.documentElement.dataset.theme = themeName;
+    state.themeChanges += 1;
+    state.lastAction = 'theme';
+    return themeName;
+  },
+
+  /* Returns a snapshot Swift polls at sample intervals. */
+  state() {
+    const doc = $scroller;
+    return {
+      loadedCount: state.loadedCount,
+      appendedCount: state.appendedCount,
+      appendedChars: state.appendedChars,
+      pinAttempts: state.pinAttempts,
+      topicSwaps: state.topicSwaps,
+      lastSwapAt: state.lastSwapAt,
+      fontScaleChanges: state.fontScaleChanges,
+      themeChanges: state.themeChanges,
+      keystrokesReceived: state.keystrokesReceived,
+      pasteEvents: state.pasteEvents,
+      lastAction: state.lastAction,
+      // Scroll measurements — Swift uses these for G2/G5 assertions.
+      scrollTop: Math.round(doc.scrollTop),
+      scrollHeight: doc.scrollHeight,
+      clientHeight: doc.clientHeight,
+      distanceFromBottom: Math.round(_distFromBottom()),
+      // The scroll engine's pinned state — G2 reads this to verify the engine
+      // is actively maintaining pin during content growth (not just an imperative
+      // scrollIntoView). See route plan §4.4.
+      pinned: pinned,
+      lastPinTransitionMs: Math.round(lastPinTransition),
+      // User-intent state — exposed for bounce-probe diagnostics. The
+      // probe reads these via window.bc.state() to confirm whether the
+      // engine detected and remembered the user's scroll-up. Per Fable
+      // 2026-08-05 Defect 2, this flag must persist for the duration of
+      // the probe's 12-frame hold.
+      userScrolledUp: userScrolledUp,
+      engineHasPinnedOnce: engineHasPinnedOnce,
+      // The selection range as plain text — for the G3 paste-verify oracle.
+      selection: String(window.getSelection() || ''),
+      // Engine debug (last 5 repin events) — diagnostics for G2 failures.
+      engineDebugTail: (window.__engineDebug || []).slice(-5),
+    };
+  },
+  /* The pending result for stateAfterRepin. Swift's evaluateJavaScript
+     serialises a top-level Promise to "[object Promise]" and the resolved
+     value never reaches Swift, so we cannot return a Promise from this
+     function. Instead, this function:
+       1. Triggers a repin via deferredRepin (which schedules two rAFs).
+       2. Captures the state AFTER those rAFs (post-repin) into
+          window.bc.__pendingStateAfterRepin as a JSON string.
+     Swift then polls bc.__pendingStateAfterRepin via a plain evaluate
+     (no Promise in flight). The poll is one-shot per call.
+     This fixes the G2 measurement race (Kieran adjudication WP-0):
+     previously the sampler read window.bc.state() via asyncAfter + 0.2s
+     and the Swift async task frequently fired while the engine's two
+     rAF callbacks were still in flight, so the captured state reflected
+     a pre-repin snapshot (dfb non-zero), not the post-repin steady state. */
+  __pendingStateAfterRepin: null,
+  stateAfterRepin() {
+    // Clear any prior pending state so Swift's read is unambiguous.
+    window.bc.__pendingStateAfterRepin = null;
+    // Trigger a real engine repin so the user-visible scrollTop settles.
+    deferredRepin();
+    // After two rAFs + a microtask the engine's debug push has fired and
+    // any post-rAF scrollTop assignment has landed. Capture then.
+    //
+    // POST TO SWIFT: instead of polling (which was starving the rAFs
+    // when concurrent appends were firing ResizeObserver), post the
+    // captured state to the "g2State" message handler when ready. Swift
+    // is the one waiting, not the page.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        Promise.resolve().then(() => {
+          const json = JSON.stringify(window.bc.state());
+          window.bc.__pendingStateAfterRepin = json;
+          try {
+            window.webkit.messageHandlers.g2State.postMessage(json);
+          } catch (e) { /* handler not registered; fallback to polling */ }
+        });
+      });
+    });
+    return true;
+  },
+
+  /* Inject an <img> with a local fixture URL into a bubble by id, or append a new
+     bubble if id is null. Used by G2 to simulate late-loading images.
+     load/error hooks call deferredRepin() per route plan §4.4 so post-paint image
+     reflow keeps the view pinned. */
+  injectImage({ bubbleIndex, url, alt }) {
+    let target;
+    if (bubbleIndex == null) {
+      target = buildBubble({ role: 'user', content: '', id: 'img-' + Date.now() });
+      $transcript.appendChild(target);
+    } else {
+      target = $transcript.children[bubbleIndex];
+      if (!target) return -1;
+    }
+    const body = target.querySelector('.body') || target;
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = alt || '';
+    img.addEventListener('load', () => deferredRepin());
+    img.addEventListener('error', () => { img.classList.add('broken'); deferredRepin(); });
+    body.appendChild(img);
+    return target.children.length;
+  },
+
+  /* Native-keystroke counter for G6 — Swift dispatches keyboard events to this
+     document; we count events that reach the body. */
+  recordKeystroke() { state.keystrokesReceived += 1; },
+
+  /* Paste counter — fires when copy/paste reaches the document. */
+  recordPaste() { state.pasteEvents += 1; },
+
+  /* Load a golden G3 fixture directly into the document. Returns the bubble count. */
+  loadGoldenFixture() {
+    const golden = [
+      { id: 'g3-1', role: 'assistant', content: 'Here is the table:' },
+      { id: 'g3-2', role: 'assistant', content: 'TABLE_BLOCK' },
+      { id: 'g3-3', role: 'assistant', content: 'And the code block:' },
+      { id: 'g3-4', role: 'assistant', content: 'CODE_BLOCK' },
+      { id: 'g3-5', role: 'user', content: 'Got it, thanks!' },
+    ];
+    $transcript.innerHTML = '';
+    for (const m of golden) $transcript.appendChild(buildBubble(m));
+    // Replace the markers with real DOM nodes.
+    const bubbles = $transcript.querySelectorAll('.bubble');
+    bubbles[1].querySelector('.body').innerHTML =
+      '<table><thead><tr><th>Component</th><th>Tests</th><th>Status</th></tr></thead>' +
+      '<tbody><tr><td>Persistence</td><td>27</td><td>OK</td></tr>' +
+      '<tr><td>Gateway</td><td>48</td><td>OK</td></tr>' +
+      '<tr><td>SyncBridge</td><td>37</td><td>OK</td></tr>' +
+      '<tr><td>App</td><td>14</td><td>OK</td></tr></tbody></table>';
+    bubbles[3].querySelector('.body').innerHTML =
+      '<pre><code>func hello() {\n    print("hello, world")\n    return 0\n}</code></pre>';
+    state.loadedCount = golden.length;
+    state.lastAction = 'golden';
+    return golden.length;
+  },
+
+  /* Read the current selection as plain text — Swift uses this to verify Cmd+C
+     against the golden fixture's expected paste output. */
+  selectionText() {
+    const sel = window.getSelection();
+    return sel ? String(sel) : '';
+  },
+
+  /* Mark first responder state — used by G6 to confirm the composer kept focus. */
+  isFocused() {
+    return document.activeElement === document.body;
+  },
+
+  /* Performance.now() reading — for low-overhead timing in Swift. */
+  now() { return performance.now(); },
+};
+
+/* === Measurement scratch (used by G4 font-scale raf timing + G5 swap timing) === */
+window.bc.lastRafMs = -1;
+window.bc.lastRafScale = null;
+window.bc.lastSwapMs = -1;
+window.bc.lastSwapCount = 0;
+
+/* === bubble builder ============================================================ */
+function buildBubble(m) {
+  const div = document.createElement('article');
+  div.className = 'bubble ' + (m.role === 'user' ? 'user' : 'assistant');
+  div.dataset.id = m.id || '';
+  div.dataset.role = m.role;
+  const role = document.createElement('span');
+  role.className = 'role';
+  role.textContent = (m.senderName ? m.senderName + ' · ' : '') + (m.role || 'assistant');
+  const body = document.createElement('div');
+  body.className = 'body';
+  // Minimal markdown-ish: paragraphs split on blank line; inline `code`. This is
+  // intentionally crude — the spike validates the *engine*, not the renderer.
+  body.innerHTML = renderInline(m.content || '');
+  div.appendChild(role);
+  div.appendChild(body);
+  return div;
+}
+
+function renderInline(text) {
+  // Escape HTML, then apply a tiny set of inline transforms. Tables and code
+  // blocks in real data are surfaced by the G3 golden fixture, not by this
+  // pass — see loadGoldenFixture().
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Paragraph split on blank lines.
+  const paras = escaped.split(/\n{2,}/).map(p =>
+    '<p>' + p.replace(/\n/g, '<br>') + '</p>'
+  ).join('');
+  return paras || '<p></p>';
+}
+
+/* === selection / paste instrumentation (G3, G6) ================================ */
+document.addEventListener('selectionchange', () => {
+  // Cheap signal: a non-empty selection. Swift polls window.bc.state() for the
+  // current text and counts.
+  const sel = window.getSelection();
+  if (sel && String(sel).length > 0) { /* selection exists */ }
+});
+document.addEventListener('copy',  () => { state.pasteEvents += 1; });
+document.addEventListener('cut',   () => { state.pasteEvents += 1; });
+document.addEventListener('paste', () => { state.pasteEvents += 1; });
+document.addEventListener('keydown', (e) => {
+  // Each keydown bubbles here — used as a coarse keystroke counter for G6.
+  // The exact replay for G6 is dispatched by Swift; this counter is a backup.
+  state.keystrokesReceived += 1;
+});
+
+/* Initial state poll so Swift doesn't read a half-warm document. */
+window.bc.state();
+</script>
+</body>
+</html>

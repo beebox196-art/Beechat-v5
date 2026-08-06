@@ -77,6 +77,7 @@ Adam codified the exact delivery loop that works well. This is the process for a
 - **The super-checker is MANUAL.** Bee writes the `.md` prompt; Adam copies it to Claude/Fable. No automation, no invented sub-agents.
 - Fable/Claude is invoked at **major milestones only**, not per-task — it's the external final review gate.
 - E5 evidence rule still applies within the loop: implementer cannot sign their own gate.
+- **E8 (adopted 2026-08-05, after Fable CORRECTIONS REQUIRED on WP-0):** before any gate is signed off, one reviewer (independent of the implementer) must confirm **every criterion printed as "pre-registered" actually appears in the verdict logic** — i.e. the verdict code/tests explicitly evaluate each pre-registered criterion; none may be silently skipped or annotated "not gated" after being printed as pre-registered. This closes the "unreached assertion" failure class (Round 7: unpersisted logs; WP-0: unreached assertions — same root cause: nobody re-read the verdict logic against the criteria list).
 - This process guarantees work is done properly with the minimum of errors, and every gate has a second-party verifier.
 
 ### Where this is tracked

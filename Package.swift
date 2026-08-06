@@ -1,10 +1,15 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "BeeChatPersistence",
     platforms: [
-        .macOS(.v14),
+        // Single-user app, single deployment target: Adam's Mac mini.
+        // Targeting an older floor was speculative generality — it constrained the
+        // WebKit feature set available to the transcript document (Safari 17) for no
+        // deployment we actually have. See Docs/Specs/Active/option-b-prior-art-register.md §1.
+        // iOS floor left at v17 pending decision D4 (BeeChat-Mobile platform target).
+        .macOS(.v26),
         .iOS(.v17)
     ],
     products: [
@@ -34,12 +39,12 @@ let package = Package(
                 .product(name: "GRDB", package: "GRDB.swift")
             ],
             path: "Sources/BeeChatPersistence",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
             name: "BeeChatGateway",
             path: "Sources/BeeChatGateway",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
             name: "BeeChatSyncBridge",
@@ -49,7 +54,7 @@ let package = Package(
                 .target(name: "BeeChatGateway"),
             ],
             path: "Sources/BeeChatSyncBridge",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
             name: "BeeBoard",
@@ -58,25 +63,25 @@ let package = Package(
                 .target(name: "BeeChatPersistence"),
             ],
             path: "Sources/BeeBoard",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "BeeChatPersistenceTests",
             dependencies: ["BeeChatPersistence"],
             path: "Tests/BeeChatPersistenceTests",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "BeeChatGatewayTests",
             dependencies: ["BeeChatGateway"],
             path: "Tests/BeeChatGatewayTests",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "BeeChatSyncBridgeTests",
             dependencies: ["BeeChatSyncBridge", "BeeChatPersistence", "BeeChatGateway"],
             path: "Tests/BeeChatSyncBridgeTests",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "BeeChatIntegrationTest",
@@ -86,7 +91,7 @@ let package = Package(
                 .target(name: "BeeChatSyncBridge"),
             ],
             path: "Sources/BeeChatIntegrationTest",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "BeeChatApp",
@@ -105,13 +110,13 @@ let package = Package(
                 .process("Assets.xcassets"),
                 .process("Resources"),
             ],
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "BeeChatAppTests",
             dependencies: ["BeeChatApp"],
             path: "Tests/BeeChatAppTests",
-            swiftSettings: [.swiftLanguageVersion(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]
 )

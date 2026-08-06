@@ -1,0 +1,953 @@
+import Foundation
+import os
+
+/// Embedded HTML template for the single-WebView transcript (WP-2).
+///
+/// One `WKWebView` owns the entire message transcript — heights and scroll
+/// offset live in the same layout engine, which makes the R1/R2/R4/whitespace
+/// bug class *unrepresentable* (route plan `single-webview-transcript-plan.md` §0).
+///
+/// ## Updating the template
+///
+/// After editing `Resources/TranscriptTemplate.html`, regenerate this constant:
+///
+///     swift scripts/embed-template.swift TranscriptTemplate
+///
+/// or check it stays in sync (B2 exit gate):
+///
+///     swift scripts/embed-template.swift --check TranscriptTemplate   # exit 0 = in sync
+///
+/// The resolution chain (resource bundle → flat Bundle.main → embedded constant)
+/// matches `MessageTemplate.swift`; hand-assembled app bundles get the embedded
+/// constant as the guaranteed-available fallback.
+enum TranscriptTemplate {
+
+    private static let logger = Logger(subsystem: "com.beebox.beechat", category: "TranscriptTemplate")
+
+    /// The complete HTML template as a string. Loaded at init time (once per process).
+    /// Resolution chain: SPM resource bundle → flat Bundle.main → embedded fallback constant.
+    /// Never crashes — if no resource file is found, the embedded constant is used.
+    static let html: String = {
+        // Try SPM resource bundle by scanning Resources/ for .bundle directories.
+        if let resourceURL = Bundle.main.resourceURL {
+            let fm = FileManager.default
+            if let contents = try? fm.contentsOfDirectory(at: resourceURL, includingPropertiesForKeys: nil) {
+                for url in contents where url.pathExtension == "bundle" && url.lastPathComponent.contains("BeeChatApp") {
+                    if let bundle = Bundle(url: url),
+                       let htmlURL = bundle.url(forResource: "TranscriptTemplate", withExtension: "html"),
+                       let content = try? String(contentsOf: htmlURL, encoding: .utf8) {
+                        logger.info("Template loaded from SPM resource bundle: \(url.lastPathComponent)")
+                        return content
+                    }
+                }
+            }
+        }
+
+        // Try Bundle.main directly (for hand-assembled .app bundles that copy the file flat).
+        if let url = Bundle.main.url(forResource: "TranscriptTemplate", withExtension: "html"),
+           let content = try? String(contentsOf: url, encoding: .utf8) {
+            logger.info("Template loaded from Bundle.main flat resource")
+            return content
+        }
+
+        // Embedded fallback — guaranteed available, never crashes.
+        // KEEP IN SYNC WITH: Sources/App/Resources/TranscriptTemplate.html
+        // REGENERATE WITH: swift scripts/embed-template.swift TranscriptTemplate
+        logger.warning("No resource bundle or flat file found for TranscriptTemplate.html — using embedded fallback")
+        return embeddedTemplate
+    }()
+
+    // MARK: - Embedded Template
+
+    /// Hardcoded fallback template. The authoritative source for hand-assembled
+    /// app bundles where SPM resource bundles are not available.
+    ///
+    /// This block is replaced by `scripts/embed-template.swift TranscriptTemplate`.
+    /// Do NOT edit by hand — regenerate from `Resources/TranscriptTemplate.html`.
+    private static let embeddedTemplate = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- color-scheme prevents WebKit painting a default-white canvas before our CSS runs -->
+<meta name="color-scheme" content="light dark">
+<!-- CSP (route plan §4.6): own inline script/style only; no remote loads.
+     img-src https: data: covers https image URLs (LinkPolicy already allow-lists these)
+     and data: URIs for inline base64 (some markdown renderers emit them). Same posture
+     as MessageTemplate.html — Sanitizer is the real trust boundary; this meta is
+     belt-and-braces.
+
+     NOTE — frame-ancestors is INTENTIONALLY ABSENT from this meta CSP.
+     Per CSP spec, frame-ancestors is ignored when the policy is delivered via a
+     <meta> tag; it only takes effect via an HTTP response header. Since this
+     template ships its policy as a meta tag, frame-ancestors would deliver a
+     false sense of protection. Embedding protection for this WKWebView is
+     provided instead by the Swift-side loadHTMLString(_, baseURL: nil) load +
+     the WKNavigationDelegate navigation-policy handler in MessageWebView (which
+     rejects navigation to non-file/about URLs). Do not add frame-ancestors here. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';">
+<title>BeeChat Transcript</title>
+<style>
+  /* ============================================================================
+   * BeeChat TranscriptTemplate.html — single-WebView transcript document
+   *
+   * Architecture: one WKWebView owns the entire message transcript. Heights and
+   * scroll offset live in the same layout engine (WebKit's), which makes the
+   * R1/R2/R4/whitespace-stranding bug class *unrepresentable* (route plan §0).
+   *
+   * Proven scroll engine from TranscriptSpike/Sources/TranscriptSpike/Resources/
+   * transcript.html (WP-0 G2 PASS, 100/100 assertions) is lifted verbatim with
+   * WP-2 additions: FR-MULTICOPY A2/A3 copy affordances, A4 selection-friendliness
+   * guards, and the §4.1 DOM (load-earlier button, jump overlay, streaming/thinking
+   * nodes).
+   * ========================================================================= */
+
+  /* === Theme tokens (mirror MessageTemplate.html; extended with WP-2 §3.2) === */
+  :root {
+    color-scheme: light dark;
+    --bc-font-base: 13;          /* pt; multiplied by --bc-font-scale */
+    --bc-font-scale: 1;
+    --bc-bg:        #FFFFFF;
+    --bc-text:      #212121;
+    --bc-text-dim:  rgba(33,33,33,0.55);
+    --bc-link:      #8A6420;
+    --bc-accent:    #D4A574;
+    --bc-user-bg:   rgba(212,165,116,0.18);
+    --bc-asst-bg:   rgba(0,0,0,0.04);
+    --bc-code-bg:   rgba(33,33,33,0.06);
+    --bc-code-bd:   rgba(33,33,33,0.12);
+    --bc-tbl-bd:    rgba(33,33,33,0.18);
+    --bc-hr:        rgba(33,33,33,0.15);
+    --bc-shadow-bubble: none;
+    --bc-radius-bubble: 16px;
+    --bc-pad-h-bubble: 16px;
+    --bc-pad-v-bubble: 12px;
+    --bc-gap-msg: 4px;
+    /* Scrollbar reserved space so the jump-to-latest button stays clear of the gutter. */
+    --bc-scrollbar-w: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bc-bg:       #1F1F1F;
+      --bc-text:     #E0E0E0;
+      --bc-text-dim: rgba(224,224,224,0.55);
+      --bc-link:     #E8C583;
+      --bc-user-bg:  rgba(212,165,116,0.16);
+      --bc-asst-bg:  rgba(255,255,255,0.04);
+      --bc-code-bg:  rgba(224,224,224,0.10);
+      --bc-code-bd:  rgba(224,224,224,0.16);
+      --bc-tbl-bd:   rgba(224,224,224,0.22);
+      --bc-hr:       rgba(224,224,224,0.18);
+    }
+  }
+
+  /* === Document shell ============================================================ */
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bc-bg);
+    color: var(--bc-text);
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    font-size: calc(var(--bc-font-base) * var(--bc-font-scale) * 1px);
+    line-height: 1.45;
+    height: 100%;
+    /* FR-MULTICOPY A1: native text selection must work. The single-document
+       architecture makes cross-message drag-select free (route plan §0.1).
+       user-select:text on the document, with -webkit-user-select:none ONLY on
+       the affordance chrome (sender label, badges, buttons) so the click target
+       for "select to copy" stays the message text. */
+    -webkit-user-select: text;
+    cursor: default;
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+  body { overflow-y: auto; }
+
+  /* === Scroll surface (route plan §4.1: the ONE scroll surface) ================ */
+  #transcript {
+    display: block;
+    padding: 16px 20px 32px;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  /* === Load-earlier button (route plan §4.1) =================================== */
+  #load-earlier {
+    display: block;
+    width: 100%;
+    margin: 0 0 var(--bc-gap-msg) 0;
+    padding: 8px 12px;
+    background: transparent;
+    color: var(--bc-text-dim);
+    border: 1px solid var(--bc-tbl-bd);
+    border-radius: var(--bc-radius-bubble);
+    font: inherit;
+    font-size: 0.92em;
+    cursor: pointer;
+    text-align: center;
+  }
+  #load-earlier:hover { color: var(--bc-text); border-color: var(--bc-accent); }
+  #load-earlier[hidden] { display: none; }
+
+  /* === Message bubbles (route plan §4.2) ======================================= */
+  .msg {
+    display: flex;
+    flex-direction: column;
+    margin: 0 0 var(--bc-gap-msg) 0;
+    -webkit-user-select: text;     /* FR-MULTICOPY A4: selection works on every msg */
+    /* FR-MULTICOPY A4 (cont.): no scroll-snap, no scroll-padding adjustments
+       tied to .msg that would snap a drag-select. The engine listens to 'scroll'
+       events only (not selection-related events), so drag-select cannot trigger
+       pin state changes. */
+  }
+  /* System messages centered italic — parity with native MessageBubble.systemBubble */
+  .msg[data-role="system"] {
+    align-items: center;
+  }
+  .msg[data-role="user"]   { align-items: flex-end; }
+  .msg[data-role="assistant"] { align-items: flex-start; }
+
+  .msg .sender {
+    font-size: 0.78em;
+    color: var(--bc-text-dim);
+    margin: 0 0 4px 2px;
+    -webkit-user-select: none;     /* sender label is decoration, not selectable */
+  }
+  .msg[data-role="user"] .sender { display: none; }  /* user has no sender label */
+  .msg .badge {
+    display: inline-block;
+    font-size: 0.78em;
+    color: var(--bc-text-dim);
+    margin: 0 0 4px 2px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(0,0,0,0.04);
+    border: 1px solid var(--bc-tbl-bd);
+    -webkit-user-select: none;
+  }
+  .msg .badge[hidden] { display: none; }
+
+  .bubble {
+    border-radius: var(--bc-radius-bubble);
+    padding: var(--bc-pad-v-bubble) var(--bc-pad-h-bubble);
+    /* Native parity: MessageBubble.BubbleWidthModifier uses canvasWidth * 0.66
+       with no per-theme variation. Hardcoded here for the same parity. */
+    max-width: 66%;
+    box-shadow: var(--bc-shadow-bubble);
+    /* Selection must include the bubble's text content (A1/A4). */
+    -webkit-user-select: text;
+    overflow-wrap: break-word;
+  }
+  /* Native MessageBubble uses BubbleWidthModifier 66% of canvas. Here we mirror
+     that with max-width:66% AND the row alignment (user right / assistant left). */
+  .msg[data-role="user"] .bubble {
+    background: var(--bc-user-bg);
+    color: var(--bc-text);
+  }
+  .msg[data-role="assistant"] .bubble {
+    background: var(--bc-asst-bg);
+    color: var(--bc-text);
+  }
+  .msg[data-role="system"] .bubble {
+    background: transparent;
+    box-shadow: none;
+    color: var(--bc-text-dim);
+    font-style: italic;
+    max-width: 100%;
+    text-align: center;
+  }
+
+  .bubble .time {
+    display: block;
+    font-size: 0.72em;
+    color: var(--bc-text-dim);
+    margin-top: 4px;
+    -webkit-user-select: none;
+  }
+
+  /* === Content rendering (lifted from MessageTemplate.html, field-tested) ===== */
+  .bubble > :first-child { margin-top: 0; }
+  .bubble > :last-child  { margin-bottom: 0; }
+  p { margin: 0 0 0.6em; }
+  a {
+    color: var(--bc-link);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  a:hover { text-decoration: underline; text-underline-offset: 2px; }
+  strong, b { font-weight: 600; }
+  em, i { font-style: italic; }
+  h1, h2, h3, h4, h5, h6 { margin: 0.7em 0 0.35em; line-height: 1.25; font-weight: 700; }
+  h1 { font-size: 1.35em; } h2 { font-size: 1.25em; } h3 { font-size: 1.15em; }
+  h4, h5, h6 { font-size: 1.0em; }
+  ul, ol { margin: 0.4em 0; padding-left: 1.4em; }
+  li { margin: 0.15em 0; }
+  li > ul, li > ol { margin: 0.15em 0; }
+  blockquote {
+    border-left: 3px solid var(--bc-accent);
+    margin: 0.4em 0;
+    padding: 0 0 0 10px;
+    color: var(--bc-text-dim);
+  }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; }
+  pre {
+    background: var(--bc-code-bg);
+    border: 1px solid var(--bc-code-bd);
+    border-radius: 6px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    white-space: pre;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 0.88em;
+    margin: 0.4em 0;
+  }
+  pre code { background: none; padding: 0; }
+  code:not(pre code) {
+    background: var(--bc-code-bg);
+    border: 1px solid var(--bc-code-bd);
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  .bubble table {
+    border-collapse: collapse;
+    margin: 0.4em 0;
+    font-size: 0.92em;
+  }
+  .bubble th, .bubble td {
+    border: 1px solid var(--bc-tbl-bd);
+    padding: 4px 8px;
+    text-align: left;
+  }
+  .bubble th { font-weight: 600; }
+  .bubble img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    margin: 4px 0;
+    background: var(--bc-code-bg);
+    display: block;
+  }
+  .bubble img.broken {
+    outline: 1px dashed var(--bc-text-dim);
+    outline-offset: 2px;
+    min-height: 24px;
+  }
+  hr { border: none; border-top: 1px solid var(--bc-hr); margin: 0.8em 0; }
+
+  /* Streaming cursor for the last message while it grows (route plan §4.2) */
+  .msg.streaming .bubble::after {
+    content: "▍";
+    display: inline-block;
+    margin-left: 1px;
+    color: var(--bc-accent);
+    animation: blink 1s steps(1) infinite;
+    -webkit-user-select: none;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Thinking dots — route plan §4.2 (CSS three-dot pulse, polish-pass port later) */
+  #thinking {
+    text-align: left;
+    padding: var(--bc-pad-v-bubble) var(--bc-pad-h-bubble);
+    /* Native parity: see .bubble — 66% matches MessageBubble.BubbleWidthModifier. */
+    max-width: 66%;
+    color: var(--bc-text-dim);
+    font-size: 0.92em;
+    margin: 0 0 var(--bc-gap-msg) 0;
+  }
+  #thinking[hidden] { display: none; }
+  #thinking .dots span {
+    display: inline-block;
+    width: 6px; height: 6px;
+    margin: 0 2px;
+    background: var(--bc-text-dim);
+    border-radius: 50%;
+    animation: thinking-pulse 1.2s infinite ease-in-out;
+  }
+  #thinking .dots span:nth-child(2) { animation-delay: 0.15s; }
+  #thinking .dots span:nth-child(3) { animation-delay: 0.30s; }
+  @keyframes thinking-pulse {
+    0%, 80%, 100% { opacity: 0.3; }
+    40% { opacity: 1; }
+  }
+
+  /* === Jump-to-latest overlay (route plan §4.1, §4.4) =========================== */
+  #jump {
+    position: fixed;
+    right: calc(16px + var(--bc-scrollbar-w));
+    bottom: 16px;
+    padding: 6px 10px;
+    border: 1px solid var(--bc-tbl-bd);
+    border-radius: 8px;
+    background: var(--bc-bg);
+    color: var(--bc-text);
+    font: inherit;
+    font-size: 0.92em;
+    cursor: pointer;
+    z-index: 99;
+    box-shadow: var(--bc-shadow-bubble);
+  }
+  #jump:hover { border-color: var(--bc-accent); }
+  #jump[hidden] { display: none; }
+
+  /* === Copy button (FR-MULTICOPY A2) — positioned over pre/code blocks ========= */
+  .bc-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    padding: 2px 8px;
+    background: var(--bc-bg);
+    color: var(--bc-text-dim);
+    border: 1px solid var(--bc-tbl-bd);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.78em;
+    cursor: pointer;
+    opacity: 0;            /* hidden until hover (A4: never interfere with selection) */
+    transition: opacity 0.15s;
+    /* Critical for A4: not user-selectable itself — selection must stay on the code. */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  pre:hover .bc-copy-btn,
+  .bc-copy-btn:focus { opacity: 1; }
+  .bc-copy-btn.copied { color: var(--bc-accent); border-color: var(--bc-accent); }
+
+  /* Wrap pre in a positioned container so the absolute copy button anchors to it. */
+  .bubble pre { position: relative; }
+
+  /* === Per-message copy button (FR-MULTICOPY A3) =============================== */
+  .msg .bc-copy-msg {
+    position: absolute;
+    right: 8px;
+    top: 4px;
+    padding: 2px 6px;
+    background: transparent;
+    color: var(--bc-text-dim);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 0.72em;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .msg { position: relative; }
+  .msg:hover .bc-copy-msg,
+  .bc-copy-msg:focus { opacity: 1; }
+  .msg .bc-copy-msg:hover { border-color: var(--bc-tbl-bd); }
+  .bc-copy-msg.copied { color: var(--bc-accent); }
+
+  /* Reduced-motion compliance — same posture as MessageTemplate.html */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<main id="transcript" role="log" aria-live="polite">
+  <button id="load-earlier" hidden>Load earlier messages</button>
+  <!-- Message nodes, oldest→newest, injected by window.bc.upsertMessages etc. -->
+  <div id="thinking" hidden>
+    <span class="dots"><span></span><span></span><span></span></span>
+    <span> Bee is thinking…</span>
+  </div>
+</main>
+
+<button id="jump" hidden>⌄ Jump to latest</button>
+
+<script>
+'use strict';
+/* ============================================================================
+ * bc — bridge surface for the single-WebView transcript document.
+ *
+ * Public functions on window.bc are invoked from Swift via evaluateJavaScript.
+ * Bridge events (bcReady, bcLink, bcImage, bcLoadEarlier, bcCopyMessage) post back
+ * to Swift via webkit.messageHandlers.
+ *
+ * Scroll engine is ported verbatim from TranscriptSpike/.../transcript.html
+ * (WP-0 G2 PASS, 100/100 assertions incl. bounce probe; user-scroll detection
+ * is via scrollTop-vs-engineScrollTop mismatch — the 50/120 hysteresis from
+ * route plan §4.4 was DELIBERATELY REJECTED, see transcript.html:216-217).
+ * Field-tested fixes (Fix 1: engineScrollTop = scrollHeight − clientHeight;
+ * Fix 2: userScrolledUp persists until explicit re-pin) are preserved unchanged.
+ * ========================================================================= */
+
+const $transcript = document.getElementById('transcript');
+const $loadEarlier = document.getElementById('load-earlier');
+const $thinking = document.getElementById('thinking');
+const $jump = document.getElementById('jump');
+const $scroller = document.scrollingElement || document.documentElement;
+
+/* ============================================================================
+ * Scroll engine — ported from spike/proven (route plan §4.4).
+ *
+ *   - user-scroll detection via scrollTop-vs-engineScrollTop mismatch (the
+ *     spike's chosen mechanism — see transcript.html:216-217; the 50/120
+ *     hysteresis from route plan §4.4 was DELIBERATELY REJECTED as
+ *     incompatible with high-rate streaming and is NOT implemented)
+ *   - ResizeObserver on documentElement + #transcript
+ *   - two-rAF deferred repin (Fix 1/2 from Fable re-check)
+ *   - engineScrollTop clamped (Fix 1, was the 680px mismatch defect)
+ *   - userScrolledUp persists (Fix 2, was the bounce-probe FAIL defect)
+ *   - scroll listener is on `document`, NOT `$scroller`: viewport scroll
+ *     events fire at the Document and bubble to window — they never traverse
+ *     `document.scrollingElement` (<html>, a child of Document), so a listener
+ *     there never fires on a real user scroll. (B-1, Fable super-check 2026-08-06)
+ *     $scroller stays the node for reading/writing scroll geometry.
+ * ========================================================================= */
+let pinned = true;
+let lastPinTransition = performance.now();
+let userScrolledUp = false;
+let engineScrollTop = -1;
+let engineHasPinnedOnce = false;
+function _distFromBottom() {
+  return $scroller.scrollHeight - $scroller.scrollTop - $scroller.clientHeight;
+}
+function _updatePinned(d, fromUser) {
+  if (userScrolledUp) {
+    // C-1 (Fable): only an explicit user re-pin clears userScrolledUp.
+    // A near-bottom approach caused by an ENGINE repin or RESIZE must NOT
+    // silently discard the user's scroll intent (e.g. scroll up 60px, then
+    // window grows taller → intent preserved). `fromUser` is set only by
+    // explicit user re-pin actions (jump-to-latest, scrollToBottom, setTopic,
+    // user actively scrolling back to the bottom band themselves).
+    if (d < 50 && fromUser) {
+      if (!pinned) { lastPinTransition = performance.now(); }
+      pinned = true;
+      userScrolledUp = false;
+    } else if (d < 50) {
+      // near bottom but not user-initiated (engine repin / resize). Keep
+      // userScrolledUp AND do NOT set pinned=true — authorising a repin here
+      // would move the user (e.g. scroll up 60px, window grows 20px taller
+      // → intent survives the flag but the user still gets moved). Leave the
+      // pin state untouched; the jump button stays visible and the user can
+      // re-pin explicitly.
+    } else {
+      pinned = false;
+    }
+  } else {
+    if (!pinned) { lastPinTransition = performance.now(); }
+    pinned = true;
+  }
+  if ($jump) $jump.hidden = pinned;
+}
+document.addEventListener('scroll', () => {
+  const d = _distFromBottom();
+  // User-scroll detection (Fix 2): scrollTop differs from engineScrollTop beyond
+  // tolerance → user scrolled. Only detect AFTER the engine has pinned once,
+  // otherwise the initial state would be misclassified.
+  if (engineHasPinnedOnce && engineScrollTop >= 0 && Math.abs($scroller.scrollTop - engineScrollTop) > 4) {
+    userScrolledUp = true;
+  }
+  _updatePinned(d, true);
+}, { passive: true });
+
+const deferredRepin = () => {
+  requestAnimationFrame(() => {
+    const d = _distFromBottom();
+    _updatePinned(d, false);
+    if (pinned) {
+      engineHasPinnedOnce = true;
+      engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
+      $scroller.scrollTop = engineScrollTop;
+      requestAnimationFrame(() => {
+        _updatePinned(_distFromBottom(), false);
+        if (pinned) {
+          engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
+          $scroller.scrollTop = engineScrollTop;
+        }
+      });
+    }
+  });
+};
+new ResizeObserver(deferredRepin).observe(document.documentElement);
+new ResizeObserver(deferredRepin).observe($transcript);
+window.addEventListener('resize', deferredRepin);
+
+// Jump-to-latest click — explicit user-initiated re-pin.
+$jump.addEventListener('click', () => {
+  pinned = true;
+  userScrolledUp = false;
+  deferredRepin();
+  $jump.hidden = true;
+});
+
+/* ============================================================================
+ * Bridge helper — every outgoing event goes through this. If the Swift
+ * message handler is not registered (tests, dev console), swallow the error
+ * so the document continues to function. This matches MessageTemplate.html's
+ * posture and is critical for T1–T4 headless tests (they don't register
+ * bcReady until the test calls the bridge).
+ * ========================================================================= */
+const bridge = (name, payload) => {
+  try { window.webkit.messageHandlers[name].postMessage(payload); } catch (_) { /* not in WKWebView */ }
+};
+
+/* ============================================================================
+ * FR-MULTICOPY — copy affordances (A2, A3, A5).
+ *
+ * A2: per-pre/code copy button. The button is hidden until hover (or focus),
+ * so it never interferes with native drag-select (A4). Wired to
+ * navigator.clipboard.writeText(textContent).
+ *
+ * A3: per-.msg copy-full-text button. Same hover-only visibility pattern.
+ * Posts bcCopyMessage {id} so Swift can update the action state; also writes
+ * to clipboard directly so paste works even when Swift is not yet wired.
+ *
+ * A4: scroll engine listens to 'scroll' events only, NOT selection-related
+ * events. Drag-select runs without triggering pin-state changes.
+ * ========================================================================= */
+function attachCopyButton(pre) {
+  if (pre.querySelector('.bc-copy-btn')) return;  // idempotent
+  const btn = document.createElement('button');
+  btn.className = 'bc-copy-btn';
+  btn.type = 'button';
+  btn.textContent = 'Copy';
+  btn.setAttribute('aria-label', 'Copy code block');
+  btn.addEventListener('mousedown', (e) => e.preventDefault());  // A4: don't steal selection
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = pre.textContent || '';
+    copyToClipboard(text).then((ok) => {
+      if (ok) {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1200);
+      } else {
+        btn.textContent = 'Failed';
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+      }
+    });
+  });
+  pre.appendChild(btn);
+}
+
+function attachMessageCopyButton(msgEl) {
+  if (msgEl.querySelector('.bc-copy-msg')) return;
+  const btn = document.createElement('button');
+  btn.className = 'bc-copy-msg';
+  btn.type = 'button';
+  btn.textContent = 'Copy';
+  btn.setAttribute('aria-label', 'Copy entire message');
+  const id = msgEl.dataset.id;
+  btn.addEventListener('mousedown', (e) => e.preventDefault());  // A4
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const bubble = msgEl.querySelector('.bubble');
+    const text = bubble ? (bubble.textContent || '') : '';
+    copyToClipboard(text).then((ok) => {
+      bridge('bcCopyMessage', { id, ok });
+      if (ok) {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1200);
+      }
+    });
+  });
+  msgEl.appendChild(btn);
+}
+
+function copyToClipboard(text) {
+  // navigator.clipboard requires secure context (https / localhost / file://).
+  // WKWebView serves the document from loadHTMLString(_, baseURL: nil) which
+  // is treated as about:blank — a secure context in WebKit. If unavailable
+  // (dev/test harness outside WKWebView), fall through to a hidden textarea
+  // + execCommand('copy') which works in plain HTML.
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(
+      () => true,
+      () => fallbackCopy(text)
+    );
+  }
+  return Promise.resolve(fallbackCopy(text));
+}
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_) { return false; }
+}
+
+/* ============================================================================
+ * Message construction — `html` MUST already be sanitized natively
+ * (HTMLSanitizer.sanitize); this document is the rendering surface only.
+ * ========================================================================= */
+function buildMessage({ id, role, senderName, badge, timeLabel, html }) {
+  const article = document.createElement('article');
+  article.className = 'msg';
+  article.dataset.id = id || '';
+  article.dataset.role = role || 'assistant';
+  if (senderName) {
+    const s = document.createElement('div');
+    s.className = 'sender';
+    s.textContent = senderName;
+    article.appendChild(s);
+  }
+  if (badge) {
+    const b = document.createElement('div');
+    b.className = 'badge';
+    b.textContent = badge;
+    article.appendChild(b);
+  }
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  // html is sanitized; safe to assign directly. We DO use innerHTML (not
+  // DOMParser) so the browser's HTML parser applies the same normalization
+  // it would for any author-written document.
+  bubble.innerHTML = html || '';
+  article.appendChild(bubble);
+  if (timeLabel) {
+    const t = document.createElement('time');
+    t.className = 'time';
+    t.textContent = timeLabel;
+    t.setAttribute('datetime', '');
+    article.appendChild(t);
+  }
+  // FR-MULTICOPY A2: copy button on every pre/code block.
+  bubble.querySelectorAll('pre').forEach(attachCopyButton);
+  // FR-MULTICOPY A3: per-message copy-full-text button.
+  attachMessageCopyButton(article);
+  return article;
+}
+
+function findMsgById(id) {
+  return $transcript.querySelector(`.msg[data-id="${CSS.escape(id)}"]`);
+}
+
+/* ============================================================================
+ * Scroll-into-view after image load/error — keeps the engine honest when late
+ * image reflows shift scrollHeight (matches the proven spike engine).
+ * ========================================================================= */
+function wireImageHooks(scope) {
+  scope.querySelectorAll('img').forEach((img) => {
+    if (img.complete) return;
+    img.addEventListener('load', deferredRepin, { once: true });
+    img.addEventListener('error', () => {
+      img.classList.add('broken');
+      deferredRepin();
+    }, { once: true });
+  });
+}
+
+/* ============================================================================
+ * Public API (called from Swift via evaluateJavaScript) — route plan §4.3.
+ *
+ *   setTopic({topicId, messages, canLoadEarlier})
+ *     Atomic swap: build off-DOM, replace children, scrollTop = max, in one
+ *     JS task. No intermediate frame can paint.
+ *   upsertMessages(messages, canLoadEarlier)
+ *     Diff by data-id. New → append (repin if pinned). Changed → replace innerHTML.
+ *   prependEarlier(messages, canLoadEarlier)
+ *     Record scrollHeight before, insert at top, scrollTop += delta.
+ *   setStreaming(html | null)
+ *     Show/hide the streaming node; repin if pinned.
+ *   setThinking(state)
+ *     thinking → show dots; idle → hide.
+ *   setTheme(tokens), setFontScale(n)
+ *     Verbatim from MessageTemplate.html.
+ *   scrollToBottom(), state() — introspection for tests.
+ * ========================================================================= */
+
+const state = {
+  loadedCount: 0,
+  topicId: null,
+  pinned: true,
+  userScrolledUp: false,
+  lastAction: 'init',
+};
+
+window.bc = {
+  setTopic({ topicId, messages, canLoadEarlier }) {
+    state.topicId = topicId;
+    state.lastAction = 'setTopic';
+    // Pre-arm pin before mutating DOM (route plan §4.4, atomic pin-then-load).
+    pinned = true;
+    userScrolledUp = false;
+    // Build all nodes off-DOM.
+    const frag = document.createDocumentFragment();
+    for (const m of (messages || [])) frag.appendChild(buildMessage(m));
+    // Clear existing message nodes (preserve load-earlier + thinking).
+    const toRemove = [];
+    for (const child of $transcript.children) {
+      if (child.id !== 'load-earlier' && child.id !== 'thinking') toRemove.push(child);
+    }
+    toRemove.forEach((n) => n.remove());
+    // Re-append the load-earlier button if needed, then messages, then thinking.
+    if (canLoadEarlier) $loadEarlier.hidden = false;
+    else $loadEarlier.hidden = true;
+    // Insert messages before #thinking (so thinking stays at the bottom).
+    $transcript.insertBefore(frag, $thinking);
+    // Snap scrollTop synchronously.
+    $scroller.scrollTop = $scroller.scrollHeight;
+    engineScrollTop = $scroller.scrollTop;  // already clamped
+    engineHasPinnedOnce = true;
+    void document.body.offsetHeight;  // force layout flush
+    state.loadedCount = (messages || []).length;
+    wireImageHooks($transcript);
+    return state.loadedCount;
+  },
+
+  upsertMessages(messages, canLoadEarlier) {
+    state.lastAction = 'upsert';
+    if (canLoadEarlier) $loadEarlier.hidden = false;
+    else $loadEarlier.hidden = true;
+    let appended = 0;
+    for (const m of (messages || [])) {
+      const existing = m.id ? findMsgById(m.id) : null;
+      if (existing) {
+        // Replace inner HTML in place (settle / edit).
+        const bubble = existing.querySelector('.bubble');
+        if (bubble) {
+          bubble.innerHTML = m.html || '';
+          bubble.querySelectorAll('pre').forEach(attachCopyButton);
+          wireImageHooks(bubble);
+        }
+      } else {
+        const node = buildMessage(m);
+        $transcript.insertBefore(node, $thinking);
+        appended += 1;
+        wireImageHooks(node);
+        if (pinned) deferredRepin();
+      }
+    }
+    state.loadedCount = $transcript.querySelectorAll('.msg').length;
+    return { appended, total: state.loadedCount };
+  },
+
+  prependEarlier(messages) {
+    state.lastAction = 'prepend';
+    const shBefore = $scroller.scrollHeight;
+    const stBefore = $scroller.scrollTop;
+    const frag = document.createDocumentFragment();
+    for (const m of (messages || [])) frag.appendChild(buildMessage(m));
+    // Insert after #load-earlier so the button stays at the top.
+    if ($loadEarlier && $loadEarlier.nextSibling) {
+      $transcript.insertBefore(frag, $loadEarlier.nextSibling);
+    } else {
+      $transcript.insertBefore(frag, $thinking);
+    }
+    wireImageHooks($transcript);
+    // Deterministic anchor (route plan §4.3 — no reliance on overflow-anchor).
+    $scroller.scrollTop = stBefore + ($scroller.scrollHeight - shBefore);
+    return (messages || []).length;
+  },
+
+  setStreaming(payload) {
+    state.lastAction = 'setStreaming';
+    const html = (payload && payload.html) || null;
+    let node = $transcript.querySelector('#streaming-msg');
+    if (!html) {
+      if (node) { node.remove(); }
+      return false;
+    }
+    if (!node) {
+      node = document.createElement('article');
+      node.id = 'streaming-msg';
+      node.className = 'msg streaming assistant';
+      node.dataset.role = 'assistant';
+      node.dataset.id = '__streaming__';
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      node.appendChild(bubble);
+      attachMessageCopyButton(node);
+      $transcript.insertBefore(node, $thinking);
+    }
+    const bubble = node.querySelector('.bubble');
+    bubble.innerHTML = html;
+    bubble.querySelectorAll('pre').forEach(attachCopyButton);
+    wireImageHooks(bubble);
+    if (pinned) deferredRepin();
+    return true;
+  },
+
+  setThinking(s) {
+    state.lastAction = 'setThinking';
+    $thinking.hidden = !(s === 'thinking' || s === 'streaming');
+    if (!$thinking.hidden && pinned) deferredRepin();
+    return s;
+  },
+
+  setTheme(tokens) {
+    state.lastAction = 'setTheme';
+    for (const [k, v] of Object.entries(tokens || {})) {
+      if (k.startsWith('--bc-')) document.documentElement.style.setProperty(k, v);
+    }
+  },
+
+  setFontScale(scale) {
+    state.lastAction = 'setFontScale';
+    document.documentElement.style.setProperty('--bc-font-scale', String(scale));
+  },
+
+  scrollToBottom() {
+    state.lastAction = 'scrollToBottom';
+    pinned = true;
+    userScrolledUp = false;
+    engineHasPinnedOnce = true;
+    engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
+    $scroller.scrollTop = engineScrollTop;
+    $jump.hidden = true;
+  },
+
+  state() {
+    return {
+      loadedCount: state.loadedCount,
+      topicId: state.topicId,
+      pinned: pinned,
+      userScrolledUp: userScrolledUp,
+      lastAction: state.lastAction,
+      scrollTop: Math.round($scroller.scrollTop),
+      scrollHeight: $scroller.scrollHeight,
+      clientHeight: $scroller.clientHeight,
+      distanceFromBottom: Math.round(_distFromBottom()),
+      engineHasPinnedOnce: engineHasPinnedOnce,
+      engineScrollTop: engineScrollTop,
+      loadEarlierVisible: !$loadEarlier.hidden,
+      thinkingVisible: !$thinking.hidden,
+    };
+  },
+
+  /* Selection capture — for FR-MULTICOPY A5 paste-verification (tests + Swift) */
+  selectionText() {
+    const sel = window.getSelection();
+    return sel ? String(sel) : '';
+  },
+};
+
+/* === Interactions → Swift ===================================================== */
+// Link taps — same posture as MessageTemplate.html.
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[href]');
+  if (a) {
+    e.preventDefault();
+    bridge('bcLink', a.href);
+    return;
+  }
+  const img = e.target.closest('img:not(.broken)');
+  if (img && img.src) bridge('bcImage', img.src);
+});
+
+// Load-earlier button → Swift (route plan §4.5).
+$loadEarlier.addEventListener('click', () => bridge('bcLoadEarlier', true));
+
+/* Initial signal — Swift replays full state on this (route plan §4.5). */
+bridge('bcReady', true);
+</script>
+</body>
+</html>
+
+"""
+}

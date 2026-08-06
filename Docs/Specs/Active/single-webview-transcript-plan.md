@@ -224,7 +224,9 @@ Height changes and the pin run in the same layout engine — late-loading images
 | `bcLink` | href string | `LinkPolicy.isAllowed` → `callbacks.onOpenLink` (verbatim from today) |
 | `bcImage` | src | `callbacks.onTapImage` (native viewer remains a TODO, unchanged) |
 | `bcLoadEarlier` | — | `callbacks.onLoadEarlier` → `MessageListObserver.loadEarlierMessages()` |
-| `bcPinned` | bool | Telemetry only (census successor); no native UI depends on it — jump button is in-DOM |
+| `bcCopyMessage` | id | Per-message copy (A3): text read from the DOM node by the document itself, sent back via this event (see §A3, line 52) |
+
+> **Doc-fix (2026-08-06, Q validation):** this §4.5 previously listed `bcPinned` (telemetry-only, no native UI) instead of `bcCopyMessage`. The **route plan was speculative** — WP-2's actual shipped contract is the 5 events above (`bcReady, bcLink, bcImage, bcLoadEarlier, bcCopyMessage`), with **no `bcPinned`** (the jump button is in-DOM) and **no `bcHeight`**. WP-2I builds against this corrected contract.
 
 Gone forever: `bcHeight`. There is no height protocol.
 
@@ -306,7 +308,7 @@ Net: **−1,200 lines**, one rendering pipeline instead of three (native / per-b
 - **Fixture corpus:** the 18 converter matrix cases + General's real 25-message window exported as JSON — render, screenshot-diff across all 8 themes.
 - **Soak:** scripted 30-min stream/switch/resize loop; assert census==1 and RSS plateau (reuse W4 probe thresholds discipline).
 - **Manual matrix:** §6 P1–P12, signed off per the team's review-cycle convention.
-- **Instrumentation that stays:** `bcPinned` transitions and census at `.info` (persisted — and with the bundle-id fix, `log show` finally works for post-hoc audits).
+- **Instrumentation that stays:** census / scroll-pin state at `.info` (persisted — and with the bundle-id fix, `log show` finally works for post-hoc audits). **Note (2026-08-06):** the `bcPinned` event is not part of the shipped bridge surface (see §4.5 doc-fix) — pin state is tracked in-DOM, not via a round-trip event.
 
 ## 10. Risks and mitigations
 
