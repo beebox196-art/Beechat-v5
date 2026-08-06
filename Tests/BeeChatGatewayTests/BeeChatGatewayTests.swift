@@ -314,6 +314,59 @@ final class KeychainTokenStoreTests: XCTestCase {
         try real.setGatewayToken("real-gw-updated")
         XCTAssertEqual(try real.getGatewayToken(), "real-gw-updated", "Token should update in place")
     }
+
+    // MARK: - Regression guard — no un-gated real-keychain tests may exist
+    //
+    // Prevents the keychain prompt storm from returning. Any test that
+    // constructs KeychainTokenStore() (or otherwise touches the real keychain
+    // via SecItem) MUST be gated behind RUN_KEYCHAIN_TESTS=1. This test scans
+    // the gateway test sources and fails if an un-gated construction is found.
+    //
+    // Exemptions: the single gated testRealKeychainRoundTrip above, and the
+    // production file itself (which is not a test).
+
+    func testNoUnGatedKeychainUsageInTests() throws {
+        // Build the construction pattern dynamically so the guard's own source
+        // does not contain the literal (which would self-match during the scan).
+        let store = "Keychain" + "TokenStore"
+        let pattern = "= " + store + "("
+        let testDir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // Tests/BeeChatGatewayTests/
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: testDir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let swiftFiles = files.filter { $0.pathExtension == "swift" }
+
+        for file in swiftFiles {
+            let source = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+            let lines = source.components(separatedBy: "\n")
+            for (idx, line) in lines.enumerated() {
+                // Skip comments (// … or … /* … */) and the guard's own helper lines.
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard !trimmed.hasPrefix("//"),
+                      !trimmed.contains("/*"),
+                      !trimmed.contains("let store = ") else { continue }
+
+                // A real construction is an assignment like `let x = KeychainTokenStore()`
+                // or a bare `KeychainTokenStore()` init — not prose or a string literal.
+                let containsConstruction = trimmed.contains(pattern)
+                    || trimmed.hasPrefix(store + "(")
+                guard containsConstruction else { continue }
+
+                let inGatedTest = lines[max(0, idx - 8)...idx]
+                    .contains { $0.contains("func testRealKeychainRoundTrip") }
+                XCTAssertTrue(
+                    inGatedTest,
+                    "Un-gated real-keychain use at \(file.lastPathComponent):\(idx + 1): "
+                    + "'KeychainTokenStore(' outside the RUN_KEYCHAIN_TESTS-gated test. "
+                    + "This would re-trigger the keychain-access prompt storm. "
+                    + "Either use InMemoryTokenStore or gate behind RUN_KEYCHAIN_TESTS=1."
+                )
+            }
+        }
+    }
 }
 
 final class PendingRequestMapTests: XCTestCase {
