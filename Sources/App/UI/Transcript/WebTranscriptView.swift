@@ -475,24 +475,35 @@ private extension Message {
 // Pure function that takes (appliedState, nextState, messagesPayload) and
 // produces the JS statements the Coordinator should execute in ONE call.
 //
-// Three responsibilities (each addresses a smoke-test bug):
+// Responsibilities (each addresses a smoke-test or seam bug):
 //
-// 1. **Fix 1a — defer setTopic on empty messages.** When the topic changes
-//    AND `next.messages` is empty (MessageListObserver.startObserving just
-//    cleared it), DO NOT emit setTopic. Return `holdsTopicTransition = true`
-//    so the Coordinator can mark `appliedState = nil` and retry on the next
-//    non-empty state. The previous transcript stays on screen; no flash.
+//   1. **Fix 1a — defer setTopic on empty messages.** When the topic changes
+//      AND `next.messages` is empty (MessageListObserver.startObserving just
+//      cleared it), DO NOT emit setTopic. Return `holdsTopicTransition = true`
+//      so the Coordinator can mark `appliedState = nil` and retry on the next
+//      non-empty state. The previous transcript stays on screen; no flash.
 //
-// 2. **Fix 1b — atomic settle.** When we WERE showing a streaming node
-//    (`appliedState.streamingHTML != nil`) AND the new state has a settled
-//    assistant message in `messages`, emit
-//        `setStreaming(null); upsertMessages([settled], false)`
-//    in ONE concatenated statement. The route plan §4.3 R4 collapse — the
-//    streaming node disappears and the settled .msg article appears in the
-//    same JS task. No intermediate frame shows nothing.
+//   2. **Fix 1b — atomic settle.** When we WERE showing a streaming node
+//      AND the new state has a settled assistant message, emit
+//          `setStreaming(null); upsertMessages([settled], canLoadEarlier)`
+//      in ONE concatenated statement. The route plan §4.3 R4 collapse.
 //
-// 3. **Fix 2a — template width.** Not a host responsibility; lives in the
-//    HTML. See commit message.
+//   3. **Issue 1 (loadEarlier) — prependEarlier when head extends.** When
+//      load-earlier expands the message window, `applied.messages[0]` reappears
+//      somewhere inside `next.messages`. The prefix of `next.messages` BEFORE
+//      that reappearance is the new head (older messages) — emit
+//      `prependEarlier(prefix)`. If the tail ALSO grew (new agent message
+//      arrived during the same cycle), emit `prependEarlier` + `upsertMessages`
+//      as two statements in one JS task. The route plan §4.3 contract — without
+//      this, load-earlier messages land at the BOTTOM out of order, breaking
+//      scroll anchoring (T3) and the chronological mental model.
+//
+//   4. **Seam — positional arguments for `upsertMessages(messages, canLoadEarlier)`**
+//      and `prependEarlier(messages)`. The template's JS signatures are
+//      POSITIONAL (TranscriptTemplate.html:743, 770). The host must emit
+//      arguments in the right order; passing a single object throws TypeError
+//      and breaks every subsequent upsert. (Seam fix landed in 27ce61a; this
+//      builder honours it.)
 //
 // The builder is intentionally side-effect-free: it returns a `Plan` struct.
 // Tests assert the JS strings, the holdsTopicTransition flag, and the
@@ -579,6 +590,41 @@ struct TranscriptJSBuilder {
         }
 
         // ----- Normal same-topic path --------------------------------------
+        // Issue 1 (loadEarlier): detect head extension BEFORE falling through to
+        // upsertMessages. When the user clicks "Load earlier", MessageListObserver
+        // expands `messageLimit` so the window grows BACKWARD — older messages
+        // appear at the head, the previously-applied window slides into the
+        // middle. `applied.messages[0]` reappears inside `next.messages` at some
+        // index k > 0; everything before k is the new head (to prepend).
+        //
+        // Without this, load-earlier messages route through upsertMessages — the
+        // template's findMsgById sees them as new (no DOM node matches), calls
+        // insertBefore(node, $thinking), and they land at the BOTTOM out of order.
+        // This breaks the chronological model and T3 (prependEarlier preserves
+        // anchor offset) — see Fable's RCA + TranscriptSeamTests KNOWN_GAP.
+        if let olderHead = detectOlderHead(applied: applied?.messages ?? [], next: next.messages) {
+            // SEAM: prependEarlier(messages) is POSITIONAL (single arg, not
+            // an object). TranscriptTemplate.html:770.
+            plan.statements.append(
+                "window.bc.prependEarlier(\(jsonString(olderHead.payload)))"
+            )
+            // Did the tail ALSO change? (A new agent message arrived during the
+            // same apply cycle.) If so, emit upsertMessages for the tail-only
+            // diff. Both run in the same JS task via `;`-join.
+            if let tailDiff = detectTailDiff(
+                applied: applied?.messages ?? [],
+                next: next.messages,
+                headCount: olderHead.count
+            ) {
+                // SEAM: positional signature. See atomic-settle site.
+                plan.statements.append(
+                    "window.bc.upsertMessages(\(jsonString(tailDiff.payload)),\(jsonString(next.canLoadEarlier)))"
+                )
+            }
+            appendStreamingAndThinking(into: &plan, applied: applied, next: next)
+            return plan
+        }
+
         // Diff messages by id/content. Any change → upsertMessages.
         if messagesChanged(applied: applied?.messages ?? [], next: next.messages) {
             // SEAM: positional signature — see the note at the atomic-settle site
@@ -638,6 +684,90 @@ struct TranscriptJSBuilder {
             return true
         }
         return false
+    }
+
+    // MARK: - Issue 1: head-extension detection (loadEarlier)
+    //
+    // When the user clicks "Load earlier", MessageListObserver expands
+    // `messageLimit` so the window grows BACKWARD. The new window's head
+    // contains older messages that weren't in `applied` at all; the previously-
+    // applied window slides into the middle. We detect this by finding the
+    // first message of `applied` reappearing in `next` — the prefix of `next`
+    // before that point is the older head to prepend.
+    //
+    // If the tail ALSO grew (e.g. a new agent message arrived during the same
+    // apply cycle), `detectTailDiff` returns the suffix of `next` after the
+    // head, starting from where `applied` continues. We emit that as
+    // upsertMessages (in-place edit, no DOM thrash) so the tail-only delta
+    // reaches the document.
+    //
+    // Both prependEarlier and upsertMessages fire in the same JS task via
+    // `;`-join — atomic from the document's perspective, deterministic scroll
+    // anchoring preserved.
+
+    private struct HeadExtension {
+        let messages: [Message]
+        var payload: [[String: Any]] { messages.map(TranscriptPayloadBuilder.messagePayload) }
+        var count: Int { messages.count }
+    }
+
+    private struct TailDiff {
+        let messages: [Message]
+        var payload: [[String: Any]] { messages.map(TranscriptPayloadBuilder.messagePayload) }
+    }
+
+    /// Returns the older head (new messages at the FRONT of `next` that
+    /// aren't in `applied` at all), or nil if the head didn't extend.
+    ///
+    /// Strategy: locate `applied.messages[0]` in `next.messages`. The prefix
+    /// of `next` BEFORE that index is the older head.
+    ///
+    /// Edge cases:
+    ///   - `applied` empty: nil (nothing to slide into — could be first
+    ///     apply-after-recovery; the message-stream path handles that).
+    ///   - `applied[0]` not in `next`: nil (full reorder — the upsert path
+    ///     diffs by id and will replace innerHTML for matches, append the
+    ///     rest; the resulting order may not be chronological but it's
+    ///     correct-by-construction given the data).
+    ///   - `applied[0]` at index 0 of `next`: nil (no head extension).
+    private static func detectOlderHead(applied: [Message], next: [Message]) -> HeadExtension? {
+        guard let firstApplied = applied.first else { return nil }
+        guard let idx = next.firstIndex(where: { $0.id == firstApplied.id }) else {
+            return nil
+        }
+        guard idx > 0 else { return nil }  // applied[0] is still at the head — no extension
+        return HeadExtension(messages: Array(next[0..<idx]))
+    }
+
+    /// Returns the tail diff (new messages at the END of `next` that aren't
+    /// in `applied`), accounting for `headCount` older messages at the front.
+    /// Returns nil if the tail is unchanged.
+    ///
+    /// Logic: `applied` slides into `next` starting at index `headCount`.
+    /// Compare `applied[0..]` to `next[headCount..]`. Any mismatch means the
+    /// tail changed — return the new tail as Message array.
+    private static func detectTailDiff(
+        applied: [Message],
+        next: [Message],
+        headCount: Int
+    ) -> TailDiff? {
+        let tailStart = headCount
+        guard tailStart < next.count else { return nil }  // no tail after the head
+        let nextTail = Array(next[tailStart...])
+        // Compare to applied (same length expected; MessageListObserver only
+        // appends, never reorders).
+        if nextTail.count == applied.count {
+            var sameCountAndContent = true
+            for (a, b) in zip(applied, nextTail) {
+                if a.id != b.id || a.content != b.content {
+                    sameCountAndContent = false
+                    break
+                }
+            }
+            if sameCountAndContent { return nil }  // tail unchanged
+        }
+        // Tail changed — return the new tail for upsertMessages.
+        return TailDiff(messages: nextTail)
     }
 
     /// JSON encoder for JS-bridge payloads. Same logic as before — hoisted

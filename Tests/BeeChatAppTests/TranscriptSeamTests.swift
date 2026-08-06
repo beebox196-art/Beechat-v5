@@ -290,28 +290,53 @@ final class TranscriptSeamTests: XCTestCase {
                       "seam scenarios exist for calls the builder no longer emits: \(missing.sorted())")
     }
 
-    // MARK: - Known seam gaps (documented, not silently ignored)
+    // MARK: - Issue 1: load-earlier routes through prependEarlier
     //
-    // `prependEarlier` is declared in the template (TranscriptTemplate.html:770)
-    // but the host NEVER calls it. Load-earlier grows `state.messages`, which
-    // routes through `upsertMessages`, whose new nodes are appended via
-    // `insertBefore(node, $thinking)` — i.e. older messages land at the BOTTOM,
-    // out of order. This test documents the gap so it is not mistaken for
-    // coverage. Remove the inversion assertion when the host wires
-    // prependEarlier (WP-3).
+    // REGRESSION GUARD for the documented gap (was testLoadEarlierRoutesThroughUpsertNotPrependEarlier_KNOWN_GAP
+    // in the previous commit). The host now detects head extension and emits
+    // `prependEarlier(older)` instead of `upsertMessages(full)`, so older
+    // messages land at the TOP in chronological order with deterministic
+    // scroll anchoring (T3). Exercises the actual JS in a real WKWebView
+    // to assert: (a) no JS exception, (b) DOM order matches chronological
+    // (oldest first), (c) `loadedCount` reflects the total.
+    func testLoadEarlierHeadExtensionRoutesThroughPrependEarlier() async throws {
+        // Setup: 2 messages already applied (the recent suffix of a longer history).
+        let m3 = message(id: "m3", role: "user", content: "third message")
+        let m4 = message(id: "m4", role: "assistant", content: "fourth message")
+        let applied = state([m3, m4], topicId: "topic-A", canLoadEarlier: true)
 
-    func testLoadEarlierRoutesThroughUpsertNotPrependEarlier_KNOWN_GAP() {
-        let recent = [message(id: "m3", role: "user"), message(id: "m4", role: "assistant")]
-        let applied = state(recent, topicId: "topic-A", canLoadEarlier: true)
-        let older = [message(id: "m1", role: "user"), message(id: "m2", role: "assistant")]
-        let next = state(older + recent, topicId: "topic-A", canLoadEarlier: false)
+        // Push the applied state into the live template.
+        await executePlan(plan(applied: nil, next: applied), "setup → setTopic")
+        let setupCount = try await msgCount()
+        XCTAssertEqual(setupCount, 2, "setup must render 2 messages")
+
+        // Now: window expands — older m1, m2 arrive at the head.
+        let m1 = message(id: "m1", role: "user", content: "first message")
+        let m2 = message(id: "m2", role: "assistant", content: "second message")
+        let next = state([m1, m2, m3, m4], topicId: "topic-A", canLoadEarlier: false)
 
         let p = plan(applied: applied, next: next)
+        XCTAssertTrue(p.statements.contains(where: { $0.contains("prependEarlier") }),
+                      "head extension MUST emit prependEarlier (was a documented KNOWN GAP)")
+        XCTAssertFalse(p.statements.contains(where: { $0.contains("upsertMessages") }),
+                       "head-only extension must NOT route through upsertMessages")
 
-        XCTAssertFalse(p.statements.contains(where: { $0.contains("prependEarlier") }),
-                       "KNOWN GAP: host does not call prependEarlier. If this now fails, "
-                       + "the gap is fixed — delete this test and add a prependEarlier scenario.")
-        XCTAssertTrue(p.statements.contains(where: { $0.contains("upsertMessages") }),
-                      "load-earlier currently routes through upsertMessages (append-at-bottom bug)")
+        // Execute against the live template.
+        await executePlan(p, "loadEarlier → prependEarlier")
+
+        // Verify DOM order: oldest first.
+        let orderJSON = try await raw("""
+        JSON.stringify(
+          Array.from(document.querySelectorAll('.msg[data-id]'))
+               .map(n => n.dataset.id)
+        )
+        """) as? String ?? "[]"
+        let ids = (try? JSONSerialization.jsonObject(with: Data(orderJSON.utf8)) as? [String]) ?? []
+        XCTAssertEqual(ids, ["m1", "m2", "m3", "m4"],
+                       "load-earlier must place older messages at the TOP in chronological order, got: \(ids)")
+
+        let finalCount = try await msgCount()
+        XCTAssertEqual(finalCount, 4,
+                       "all 4 messages must be in the DOM after load-earlier")
     }
 }

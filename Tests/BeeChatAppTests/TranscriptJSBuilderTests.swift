@@ -437,4 +437,178 @@ final class TranscriptJSBuilderTests: XCTestCase {
         XCTAssertTrue(result.contains("\"a\":1"))
         XCTAssertTrue(result.contains("\"b\":\"two\""))
     }
+
+    // MARK: - Issue 1: head-extension detection (loadEarlier)
+    //
+    // The route plan §4.3 contract is `prependEarlier(messages)` for older
+    // messages loaded on demand. The host's previous behaviour (route through
+    // upsertMessages) was a documented known gap (Fable RCA §7). These tests
+    // pin the corrected behaviour.
+
+    func testIssue1_loadEarlierHeadExtensionEmitsPrependEarlier() {
+        // Applied: recent window of 2 messages (suffix of full history).
+        let m3 = message(id: "m3", role: "user")
+        let m4 = message(id: "m4", role: "assistant")
+        let applied = TranscriptState(
+            messages: [m3, m4],
+            isStreaming: false,
+            streamingContent: "",
+            completedContent: "",
+            thinkingState: .idle,
+            canLoadEarlier: true,
+            topicId: "topic-A"
+        )
+        // Next: window expanded — older m1, m2 now appear at the head.
+        let m1 = message(id: "m1", role: "user")
+        let m2 = message(id: "m2", role: "assistant")
+        let next = TranscriptState(
+            messages: [m1, m2, m3, m4],
+            isStreaming: false,
+            streamingContent: "",
+            completedContent: "",
+            thinkingState: .idle,
+            canLoadEarlier: false,
+            topicId: "topic-A"
+        )
+        let payloads = [m1, m2, m3, m4].map { payload(for: $0) }
+
+        let plan = TranscriptJSBuilder.build(
+            applied: applied,
+            next: next,
+            messagesPayload: payloads
+        )
+
+        XCTAssertFalse(plan.holdsTopicTransition)
+        XCTAssertEqual(plan.statements.count, 1,
+                       "Issue 1: head extension should emit exactly 1 statement (prependEarlier)")
+        XCTAssertTrue(plan.statements[0].contains("window.bc.prependEarlier"),
+                      "Issue 1: must call prependEarlier, got: \(plan.statements[0])")
+        XCTAssertTrue(plan.statements[0].contains("\"m1\""),
+                      "Issue 1: prependEarlier payload must include m1 (older), got: \(plan.statements[0])")
+        XCTAssertTrue(plan.statements[0].contains("\"m2\""),
+                      "Issue 1: prependEarlier payload must include m2 (older), got: \(plan.statements[0])")
+        XCTAssertFalse(plan.statements[0].contains("\"m3\""),
+                      "Issue 1: prependEarlier must NOT include already-applied messages, got: \(plan.statements[0])")
+        XCTAssertFalse(plan.statements[0].contains("\"m4\""),
+                      "Issue 1: prependEarlier must NOT include already-applied messages, got: \(plan.statements[0])")
+        // SEAM: positional signature — prependEarlier(messages), single arg.
+        XCTAssertFalse(plan.statements[0].contains("\"canLoadEarlier\""),
+                       "Issue 1 SEAM: prependEarlier is positional, not object form")
+    }
+
+    func testIssue1_loadEarlierWithSimultaneousNewAssistantEmitsBoth() {
+        // Load-earlier expanded the window AND a new assistant message arrived
+        // at the same time. The builder should emit TWO statements in the same
+        // JS task: prependEarlier(older) + upsertMessages(tail-only-diff).
+        let m3 = message(id: "m3", role: "user")
+        let m4 = message(id: "m4", role: "assistant")
+        let applied = TranscriptState(
+            messages: [m3, m4],
+            isStreaming: false,
+            streamingContent: "",
+            completedContent: "",
+            thinkingState: .idle,
+            canLoadEarlier: true,
+            topicId: "topic-A"
+        )
+        let m1 = message(id: "m1", role: "user")
+        let m2 = message(id: "m2", role: "assistant")
+        let m5 = message(id: "m5", role: "assistant")
+        let next = TranscriptState(
+            messages: [m1, m2, m3, m4, m5],
+            isStreaming: false,
+            streamingContent: "",
+            completedContent: "",
+            thinkingState: .idle,
+            canLoadEarlier: false,
+            topicId: "topic-A"
+        )
+        let payloads = [m1, m2, m3, m4, m5].map { payload(for: $0) }
+
+        let plan = TranscriptJSBuilder.build(
+            applied: applied,
+            next: next,
+            messagesPayload: payloads
+        )
+
+        XCTAssertEqual(plan.statements.count, 2,
+                       "Issue 1: head+tail change must emit 2 statements in order")
+        XCTAssertTrue(plan.statements[0].contains("prependEarlier"),
+                      "Issue 1: first statement is prependEarlier, got: \(plan.statements[0])")
+        XCTAssertTrue(plan.statements[1].contains("upsertMessages"),
+                      "Issue 1: second statement is upsertMessages, got: \(plan.statements[1])")
+        XCTAssertTrue(plan.statements[1].contains("\"m5\""),
+                      "Issue 1: upsertMessages must include the new tail m5")
+        XCTAssertFalse(plan.statements[1].contains("\"m1\""),
+                       "Issue 1: upsertMessages must NOT re-emit the older head (already prepended)")
+    }
+
+    func testIssue1_sameTopicSameMessagesDoesNotEmitPrependEarlier() {
+        // Sanity check: no head extension → no prependEarlier.
+        let m3 = message(id: "m3", role: "user")
+        let m4 = message(id: "m4", role: "assistant")
+        let applied = TranscriptState(
+            messages: [m3, m4],
+            isStreaming: false,
+            streamingContent: "",
+            completedContent: "",
+            thinkingState: .idle,
+            canLoadEarlier: true,
+            topicId: "topic-A"
+        )
+        let next = applied  // identical
+        let payloads = [m3, m4].map { payload(for: $0) }
+
+        let plan = TranscriptJSBuilder.build(
+            applied: applied,
+            next: next,
+            messagesPayload: payloads
+        )
+
+        XCTAssertFalse(plan.statements.contains(where: { $0.contains("prependEarlier") }),
+                       "no head extension → no prependEarlier")
+        XCTAssertFalse(plan.statements.contains(where: { $0.contains("upsertMessages") }),
+                       "no message change → no upsertMessages")
+    }
+
+    func testIssue1_headExtensionAtIndexZeroIsNotDetected() {
+        // Edge case: applied[0] is still at the head of next (no extension).
+        // This would be the case if some other path reordered or if both
+        // windows happen to have the same first message after a reset. The
+        // builder should NOT emit prependEarlier (the head didn't extend).
+        let m1 = message(id: "m1", role: "user")
+        let m2 = message(id: "m2", role: "assistant")
+        let applied = TranscriptState(
+            messages: [m1, m2],
+            isStreaming: false,
+            streamingContent: "",
+            completedContent: "",
+            thinkingState: .idle,
+            canLoadEarlier: false,
+            topicId: "topic-A"
+        )
+        // Same first message but a new one added at the END (a regular append).
+        let m3 = message(id: "m3", role: "user")
+        let next = TranscriptState(
+            messages: [m1, m2, m3],
+            isStreaming: false,
+            streamingContent: "",
+            completedContent: "",
+            thinkingState: .idle,
+            canLoadEarlier: false,
+            topicId: "topic-A"
+        )
+        let payloads = [m1, m2, m3].map { payload(for: $0) }
+
+        let plan = TranscriptJSBuilder.build(
+            applied: applied,
+            next: next,
+            messagesPayload: payloads
+        )
+
+        XCTAssertFalse(plan.statements.contains(where: { $0.contains("prependEarlier") }),
+                       "no head extension at index 0 → no prependEarlier")
+        XCTAssertTrue(plan.statements.contains(where: { $0.contains("upsertMessages") }),
+                      "tail grew → upsertMessages")
+    }
 }

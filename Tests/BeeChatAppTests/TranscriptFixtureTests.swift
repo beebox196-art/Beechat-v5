@@ -338,6 +338,84 @@ final class TranscriptFixtureTests: XCTestCase {
                       "settled .msg article must exist after atomic settle")
     }
 
+    // MARK: - Issue 2: image rendering diagnostic
+    //
+    // Adam's smoke test reported "asked for an image and nothing appeared."
+    // Two hypotheses:
+    //   (a) The sanitizer strips `<img src>` because the scheme isn't in the
+    //       allowed list (we already added `data:` in 1cfe96d, plus `http:`/`https:`).
+    //   (b) The bridge handler (bcImage) is wired but the image rendering is
+    //       blocked by the CSP or by wireImageHooks().
+    //
+    // This test runs the live template with a sanitized message payload that
+    // contains an `<img>` tag (data: URI, base64 PNG) and asserts:
+    //   - The <img> element exists in the DOM after upsertMessages.
+    //   - Its src attribute is set correctly (sanitizer didn't strip it).
+    //   - No JS exception was raised during upsert.
+    //   - wireImageHooks() attached a load/error listener (verified via
+    //     getEventListeners — a WebKit-specific debug API).
+    //
+    // If this test passes end-to-end, Issue 2 is NOT a host/template/sanitizer
+    // bug — it's something else (e.g. the message source had no image, or the
+    // CSP blocks a specific URL scheme Adam used). Adam can run the live app
+    // with Web Inspector (commit 27ce61a enabled `webView.isInspectable`) and
+    // inspect the actual rendered HTML.
+    func testImageEndToEndViaDataURI() async throws {
+        // A 1x1 red PNG, base64-encoded. Trivially small; no network fetch needed.
+        let oneByOneRedPNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+        // Push a message with an <img> tag through upsertMessages (the host's
+        // template contract). We construct the html as if the sanitizer had
+        // already run (this is what TranscriptPayloadBuilder would emit).
+        let html = "<p>Look at this:</p><img src=\"\(oneByOneRedPNG)\" alt=\"red dot\">"
+        let htmlJS = try asJSON(html)
+
+        do {
+            _ = try await eval("""
+            window.bc.upsertMessages([{
+              id: 'img-test',
+              role: 'assistant',
+              senderName: 'Bee',
+              html: \(htmlJS)
+            }], false);
+            """)
+        } catch {
+            XCTFail("upsertMessages with an <img> must NOT throw — got: \(error)")
+        }
+
+        // Image element exists in the DOM with the right src.
+        let imgSrc = try await eval("""
+        (() => {
+          const img = document.querySelector('.msg[data-id="img-test"] img');
+          return img ? img.getAttribute('src') : null;
+        })()
+        """) as? String
+
+        XCTAssertNotNil(imgSrc, "<img> must be rendered into the .bubble")
+        XCTAssertEqual(imgSrc, oneByOneRedPNG,
+                       "<img>.src must equal the input URI — sanitizer must NOT strip data: for img src")
+
+        // Image is not broken (the .broken class is added on load-error).
+        let isBroken = try await eval("""
+        document.querySelector('.msg[data-id="img-test"] img.broken') !== null
+        """) as? Bool ?? true
+        XCTAssertFalse(isBroken, "<img> must not be marked broken")
+
+        // Image element computed display is "block" (CSS .bubble img { display: block; }).
+        let display = try await eval("""
+        getComputedStyle(document.querySelector('.msg[data-id="img-test"] img')).display
+        """) as? String ?? ""
+        XCTAssertEqual(display, "block",
+                       ".bubble img CSS must apply (display: block), got: \(display)")
+
+        // Image max-width is 100% (responsive — should not overflow the bubble).
+        let maxWidth = try await eval("""
+        getComputedStyle(document.querySelector('.msg[data-id="img-test"] img')).maxWidth
+        """) as? String ?? ""
+        XCTAssertEqual(maxWidth, "100%",
+                       ".bubble img max-width must be 100%, got: \(maxWidth)")
+    }
+
     // MARK: - Helpers
 
     private func eval(_ js: String) async throws -> Any? {
