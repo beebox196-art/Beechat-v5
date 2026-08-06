@@ -74,6 +74,13 @@ private struct TranscriptHost: NSViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        // Web Inspector on the live transcript (Safari ▸ Develop ▸ <Mac> ▸ BeeChatApp).
+        // Deliberately unconditional: BeeChat is a local single-user app, builds
+        // installed via scripts/build-and-install.sh are debug, and the absence of
+        // this line is why the WP-2I upsertMessages defect was chased with `otool`
+        // binary forensics instead of a console. Gate behind #if DEBUG only if the
+        // project ever ships release builds.
+        webView.isInspectable = true
         // Transparency: same posture as MessageWebView — underPageBackgroundColor
         // covers the overscroll/paint flash, drawsBackground via KVO kills the
         // initial white flash.
@@ -559,12 +566,13 @@ struct TranscriptJSBuilder {
                 if let role = dict["role"] as? String { return role == "assistant" }
                 return false
             }
-            let upsertJSON = jsonString([
-                "messages": settledOnly,
-                "canLoadEarlier": next.canLoadEarlier,
-            ])
+            // SEAM: upsertMessages is POSITIONAL — (messages, canLoadEarlier).
+            // See TranscriptTemplate.html:743. Passing a single object makes the
+            // template's `for...of` iterate a non-iterable and throw.
             plan.statements.append("window.bc.setStreaming(null)")
-            plan.statements.append("window.bc.upsertMessages(\(upsertJSON))")
+            plan.statements.append(
+                "window.bc.upsertMessages(\(jsonString(settledOnly)),\(jsonString(next.canLoadEarlier)))"
+            )
             // Don't emit setThinking — the streaming state ended, and setThinking
             // is unchanged from the previous apply.
             return plan
@@ -573,11 +581,11 @@ struct TranscriptJSBuilder {
         // ----- Normal same-topic path --------------------------------------
         // Diff messages by id/content. Any change → upsertMessages.
         if messagesChanged(applied: applied?.messages ?? [], next: next.messages) {
-            let payload: [String: Any] = [
-                "messages": messagesPayload,
-                "canLoadEarlier": next.canLoadEarlier,
-            ]
-            plan.statements.append("window.bc.upsertMessages(\(jsonString(payload)))")
+            // SEAM: positional signature — see the note at the atomic-settle site
+            // above and TranscriptTemplate.html:743.
+            plan.statements.append(
+                "window.bc.upsertMessages(\(jsonString(messagesPayload)),\(jsonString(next.canLoadEarlier)))"
+            )
         }
 
         appendStreamingAndThinking(into: &plan, applied: applied, next: next)
