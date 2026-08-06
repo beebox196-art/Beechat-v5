@@ -28,40 +28,32 @@ struct MessageCanvas: View {
 
     let messages: [Message]
     let isStreaming: Bool
+    /// WP-1 (§4.5 policy move): the HTML to render in the streaming bubble
+    /// position. Nil when the bubble should not be shown. Computed by
+    /// `TranscriptState.streamingHTML` (see TranscriptBoundary.swift) — this
+    /// view no longer computes the visibility decision inline.
+    ///
+    /// Behavioural equivalence is proven by `TranscriptStatePolicyTests`
+    /// (truth-table capture-first, see WP-1 §4.5). The visibility check
+    /// reduces to `streamingHTML != nil`.
+    var streamingHTML: String? = nil
+    /// WP-1 (§4.5 policy move): the HTML to render in the completed-content
+    /// bridge position. Nil when the bridge should not be shown. Computed by
+    /// `TranscriptState.settledBridgeHTML`.
+    var settledBridgeHTML: String? = nil
+    /// Raw streaming content from SyncBridge. Still passed through so the
+    /// typing-indicator guard (`isStreaming && streamingContent.isEmpty`,
+    /// the "first delta hasn't arrived" transition) can keep its original
+    /// semantics — that guard is NOT part of the §4.5 policy move; only
+    /// bubble visibility decisions move to TranscriptState.
     var streamingContent: String = ""
-    /// Bridge content from SyncBridgeObserver.completedContent — the final response
-    /// captured when streaming ends. Fills the gap between streaming stopping and
-    /// GRDB delivering the settled message to the UI.
+    /// Raw completed content from SyncBridge. Passed through so the
+    /// completed-bridge bubble can render the original content unchanged.
     var completedContent: String = ""
     var thinkingState: ThinkingState = .idle
     var canLoadEarlier: Bool = false
     var topicId: String? = nil
     var onLoadEarlier: () -> Void = {}
-
-    private var showStreamingBubble: Bool {
-        guard !streamingContent.isEmpty else { return false }
-        if let lastAssistant = messages.last(where: { $0.role == "assistant" }),
-           let content = lastAssistant.content,
-           !content.isEmpty,
-           content == streamingContent {
-            return false
-        }
-        return true
-    }
-
-    /// Whether to show the completed-content bridge bubble.
-    /// This fills the gap between streaming ending (isStreaming=false) and
-    /// GRDB delivering the settled message to the messages array.
-    private var showCompletedBridge: Bool {
-        guard !isStreaming, !completedContent.isEmpty else { return false }
-        // Only show if the last assistant message is missing or has stale content
-        if let lastAssistant = messages.last(where: { $0.role == "assistant" }),
-           let content = lastAssistant.content, !content.isEmpty {
-            // The settled message already has content — bridge not needed
-            return false
-        }
-        return true
-    }
 
     @State private var isAtBottom: Bool = true
     @State private var measuredWidth: CGFloat = 1200
@@ -132,16 +124,21 @@ struct MessageCanvas: View {
                                 TypingIndicator()
                                     .id("typing-indicator")
                             }
-                        } else if showStreamingBubble {
-                            StreamingBubble(content: streamingContent)
+                        } else if let html = streamingHTML {
+                            // WP-1 (§4.5 policy move): visibility AND content both come
+                            // from `TranscriptState.streamingHTML`. The view no longer
+                            // computes visibility inline.
+                            StreamingBubble(content: html)
                                 .id("streaming-bubble")
                         }
 
                         // Completed-content bridge bubble: fills the gap between
                         // streaming ending and GRDB delivering the settled message.
                         // Renders identically to a settled assistant message.
-                        if showCompletedBridge {
-                            CompletedBridgeBubble(content: completedContent)
+                        // WP-1 (§4.5): visibility AND content both come from
+                        // `TranscriptState.settledBridgeHTML`.
+                        if let html = settledBridgeHTML {
+                            CompletedBridgeBubble(content: html)
                                 .id("completed-bridge")
                         }
 
