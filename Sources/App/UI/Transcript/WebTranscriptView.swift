@@ -130,6 +130,14 @@ private struct TranscriptHost: NSViewRepresentable {
 
         var templateReady = false
 
+        // WP-2I Fix 1a (defer setTopic): when a topic switch arrives but the new
+        // topic's messages are still empty (MessageListObserver.startObserving
+        // sets messages = [] at line 23 of Sources/App/UI/Observers/MessageListObserver.swift),
+        // we must NOT call setTopic({messages: []}) — that would blank the screen.
+        // Hold the topic transition pending until messages arrive; on the next
+        // non-empty state, do the atomic setTopic swap.
+        var pendingTopicSwitch: Bool = false
+
         init(_ parent: TranscriptHost) { self.parent = parent }
 
         /// Push the diff between `pendingState` and `appliedState` to the document.
@@ -142,66 +150,41 @@ private struct TranscriptHost: NSViewRepresentable {
             guard templateReady,
                   let state = pendingState else { return }
 
-            // Topic switched → atomic swap via setTopic.
-            if appliedState?.topicId != state.topicId {
-                let payload: [String: Any] = [
-                    "topicId": state.topicId as Any,
-                    "messages": messagesToPayload(state.messages),
-                    "canLoadEarlier": state.canLoadEarlier,
-                ]
-                evaluate(webView, "window.bc.setTopic(\(Self.jsonString(payload)))")
-                appliedState = state
-                // After setTopic, treat all subsequent state as "applied at the topic level";
-                // a streaming/thinking change still needs its own JS call.
-                applyStreamingAndThinking(state: state, to: webView)
-                applyThemeAndScale(state: state, to: webView)
+            // Build the JS calls via the pure TranscriptJSBuilder. The builder
+            // returns a list of statements (each `window.bc.<fn>(...)`); we
+            // concatenate with `;` so multi-call atomic transitions (Fix 1b:
+            // streaming-end + message-arrival) execute in one JS task with no
+            // intermediate frame. See TranscriptJSBuilder for the strategy.
+            let plan = TranscriptJSBuilder.build(
+                applied: appliedState,
+                next: state,
+                messagesPayload: messagesToPayload(state.messages)
+            )
+
+            // FIX 1a — topic switch with empty messages: hold pending.
+            // If the topic changed and the new messages are empty (transient
+            // state after MessageListObserver.startObserving), DO NOT call
+            // setTopic — the template's setTopic clears the DOM. Hold the
+            // previous transcript on screen; on the next non-empty state,
+            // appliedState is reset to nil so we fall through to setTopic.
+            if plan.holdsTopicTransition {
+                pendingTopicSwitch = true
+                appliedState = nil  // force setTopic on next non-empty state
                 return
             }
-
-            // Same topic — diff the messages array by id/content.
-            // For the WP-2I minimal slice: any change to messages → upsertMessages
-            // (covers both new appends and in-place settles). prependEarlier path is
-            // wired but only triggers when canLoadEarlier flips false→true with new
-            // messages that aren't already in the DOM.
-            if messagesChanged(applied: appliedState?.messages ?? [], next: state.messages) {
-                let payload: [String: Any] = [
-                    "messages": messagesToPayload(state.messages),
-                    "canLoadEarlier": state.canLoadEarlier,
-                ]
-                evaluate(webView, "window.bc.upsertMessages(\(Self.jsonString(payload)))")
+            // If we held before and now have messages, the plan emits setTopic.
+            // Clear the hold flag.
+            if pendingTopicSwitch {
+                pendingTopicSwitch = false
             }
 
-            applyStreamingAndThinking(state: state, to: webView)
+            // Execute the JS plan as one concatenated script.
+            if !plan.statements.isEmpty {
+                evaluate(webView, plan.statements.joined(separator: ";"))
+            }
+
             applyThemeAndScale(state: state, to: webView)
             appliedState = state
-        }
-
-        private func applyStreamingAndThinking(state: TranscriptState, to webView: WKWebView) {
-            // setStreaming: pass null when not streaming OR when the streaming bubble
-            // is suppressed (TranscriptState.streamingHTML == nil). The template's
-            // setStreaming(null) hides the node; the route plan §4.3 R4 settle is
-            // setStreaming(null) + upsertMessages in the same JS call, but for the
-            // WP-2I minimal slice a separate upsertMessages above covers the settle
-            // path; the live-streaming partial still needs setStreaming to refresh.
-            let streamingJSON: String
-            if let html = state.streamingHTML {
-                // Same pipeline as message payloads: streamingContent is raw
-                // markdown from the sync bridge; the template assigns
-                // `bubble.innerHTML = html` so it MUST be sanitized HTML.
-                streamingJSON = Self.jsonString(["html": TranscriptPayloadBuilder.sanitizedStreamingHTML(html)])
-            } else {
-                streamingJSON = "null"
-            }
-            evaluate(webView, "window.bc.setStreaming(\(streamingJSON))")
-
-            // setThinking: mirrors MessageCanvas.swift:108–120 policy mapping.
-            let thinkingRaw: String
-            switch state.thinkingState {
-            case .idle: thinkingRaw = "idle"
-            case .thinking: thinkingRaw = "thinking"
-            case .streaming: thinkingRaw = "streaming"
-            }
-            evaluate(webView, "window.bc.setThinking(\(Self.jsonString(thinkingRaw)))")
         }
 
         private func applyThemeAndScale(state: TranscriptState, to webView: WKWebView) {
@@ -216,17 +199,6 @@ private struct TranscriptHost: NSViewRepresentable {
         }
 
         // MARK: - Diffing helpers
-
-        /// True if the next message list differs from the applied list by id/content.
-        /// O(n) — small topic window; cheap.
-        private func messagesChanged(applied: [Message], next: [Message]) -> Bool {
-            if applied.count != next.count { return true }
-            for (a, b) in zip(applied, next) {
-                if a.id != b.id { return true }
-                if a.content != b.content { return true }
-            }
-            return false
-        }
 
         /// Convert a `[Message]` into the payload the template's `setTopic` /
         /// `upsertMessages` consumes: `{id, role, senderName?, badge?, timeLabel, html}`.
@@ -253,7 +225,7 @@ private struct TranscriptHost: NSViewRepresentable {
         private func evaluate(_ webView: WKWebView, _ js: String) {
             webView.evaluateJavaScript(js) { result, error in
                 if let error = error {
-                    TranscriptHost.logger.error("JS eval error: \(error.localizedDescription) for: \(js.prefix(120))")
+                    TranscriptHost.logger.error("JS eval error: \(error.localizedDescription, privacy: .public) for: \(js.prefix(120), privacy: .public)")
                 }
             }
         }
@@ -490,6 +462,186 @@ private extension Message {
 // `html`, which left the live transcript blank and skipped the sanitizer.
 // Caught by Adam's smoke test 2026-08-06. Extracted as an internal type so
 // `TranscriptHostPayloadTests` can guard the contract.
+
+// MARK: - TranscriptJSBuilder (pure, testable) — WP-2I smoke-test fixes
+//
+// Pure function that takes (appliedState, nextState, messagesPayload) and
+// produces the JS statements the Coordinator should execute in ONE call.
+//
+// Three responsibilities (each addresses a smoke-test bug):
+//
+// 1. **Fix 1a — defer setTopic on empty messages.** When the topic changes
+//    AND `next.messages` is empty (MessageListObserver.startObserving just
+//    cleared it), DO NOT emit setTopic. Return `holdsTopicTransition = true`
+//    so the Coordinator can mark `appliedState = nil` and retry on the next
+//    non-empty state. The previous transcript stays on screen; no flash.
+//
+// 2. **Fix 1b — atomic settle.** When we WERE showing a streaming node
+//    (`appliedState.streamingHTML != nil`) AND the new state has a settled
+//    assistant message in `messages`, emit
+//        `setStreaming(null); upsertMessages([settled], false)`
+//    in ONE concatenated statement. The route plan §4.3 R4 collapse — the
+//    streaming node disappears and the settled .msg article appears in the
+//    same JS task. No intermediate frame shows nothing.
+//
+// 3. **Fix 2a — template width.** Not a host responsibility; lives in the
+//    HTML. See commit message.
+//
+// The builder is intentionally side-effect-free: it returns a `Plan` struct.
+// Tests assert the JS strings, the holdsTopicTransition flag, and the
+// statement ordering. The Coordinator only does I/O (evaluateJavaScript).
+struct TranscriptJSBuilder {
+    /// One unit of JS work. The Coordinator concatenates statements with `;`
+    /// and executes them in one `evaluateJavaScript` call. Multi-statement
+    /// plans run in the same JS task — atomic from the DOM's perspective.
+    struct Plan: Equatable {
+        /// Ordered JS statements, each a complete `window.bc.<fn>(...)` call.
+        var statements: [String] = []
+        /// True when the topic changed but messages are empty; Coordinator
+        /// must mark appliedState = nil and retry on the next state.
+        var holdsTopicTransition: Bool = false
+
+        static let empty = Plan()
+    }
+
+    /// Build the JS plan for a state diff.
+    ///
+    /// - Parameters:
+    ///   - applied: The last state we successfully pushed to the document.
+    ///     Nil = nothing applied yet (first load / recovery).
+    ///   - next: The new state from `updateNSView` / `pendingState`.
+    ///   - messagesPayload: Pre-rendered `[Message]` payload array — already
+    ///     markdown→sanitized (via `TranscriptPayloadBuilder.messagePayload`).
+    static func build(
+        applied: TranscriptState?,
+        next: TranscriptState,
+        messagesPayload: [[String: Any]]
+    ) -> Plan {
+        var plan = Plan()
+
+        // ----- Fix 1a: defer setTopic on empty messages -------------------
+        let topicChanged = applied?.topicId != next.topicId
+        if topicChanged && next.messages.isEmpty {
+            plan.holdsTopicTransition = true
+            return plan
+        }
+
+        // ----- Topic switch (atomic swap) ----------------------------------
+        if topicChanged {
+            let payload: [String: Any] = [
+                "topicId": next.topicId as Any,
+                "messages": messagesPayload,
+                "canLoadEarlier": next.canLoadEarlier,
+            ]
+            plan.statements.append("window.bc.setTopic(\(jsonString(payload)))")
+            // After setTopic, also push streaming/thinking state for the new topic
+            // (the old streaming bubble has been removed by setTopic's atomic swap).
+            appendStreamingAndThinking(into: &plan, applied: applied, next: next)
+            return plan
+        }
+
+        // ----- Fix 1b: atomic settle ---------------------------------------
+        // If we were streaming (applied.streamingHTML != nil) AND the new state
+        // has a new assistant message AND the new state's streamingHTML is nil,
+        // the user just sent a message and it settled. Collapse the two JS calls
+        // into one task to avoid the empty-frame gap.
+        let wasStreaming = applied?.streamingHTML != nil
+        let nowSettled = next.streamingHTML == nil
+        let hasNewAssistant = hasNewAssistantMessage(
+            applied: applied?.messages ?? [],
+            next: next.messages
+        )
+
+        if wasStreaming && nowSettled && hasNewAssistant {
+            // Atomic settle: hide the streaming node AND insert the settled
+            // message in one JS task. The route plan §4.3 R4 collapse.
+            let settledOnly = messagesPayload.filter { dict in
+                if let role = dict["role"] as? String { return role == "assistant" }
+                return false
+            }
+            let upsertJSON = jsonString([
+                "messages": settledOnly,
+                "canLoadEarlier": next.canLoadEarlier,
+            ])
+            plan.statements.append("window.bc.setStreaming(null)")
+            plan.statements.append("window.bc.upsertMessages(\(upsertJSON))")
+            // Don't emit setThinking — the streaming state ended, and setThinking
+            // is unchanged from the previous apply.
+            return plan
+        }
+
+        // ----- Normal same-topic path --------------------------------------
+        // Diff messages by id/content. Any change → upsertMessages.
+        if messagesChanged(applied: applied?.messages ?? [], next: next.messages) {
+            let payload: [String: Any] = [
+                "messages": messagesPayload,
+                "canLoadEarlier": next.canLoadEarlier,
+            ]
+            plan.statements.append("window.bc.upsertMessages(\(jsonString(payload)))")
+        }
+
+        appendStreamingAndThinking(into: &plan, applied: applied, next: next)
+        return plan
+    }
+
+    // MARK: - Helpers
+
+    private static func appendStreamingAndThinking(
+        into plan: inout Plan,
+        applied: TranscriptState?,
+        next: TranscriptState
+    ) {
+        // setStreaming: only emit when streamingHTML changed. Same value →
+        // no-op (the JS template is idempotent but skipping saves a round-trip).
+        if applied?.streamingHTML != next.streamingHTML {
+            let streamingJSON: String
+            if let html = next.streamingHTML {
+                streamingJSON = jsonString(["html": TranscriptPayloadBuilder.sanitizedStreamingHTML(html)])
+            } else {
+                streamingJSON = "null"
+            }
+            plan.statements.append("window.bc.setStreaming(\(streamingJSON))")
+        }
+
+        // setThinking: same — only emit on change.
+        if applied?.thinkingState != next.thinkingState {
+            let thinkingRaw: String
+            switch next.thinkingState {
+            case .idle: thinkingRaw = "idle"
+            case .thinking: thinkingRaw = "thinking"
+            case .streaming: thinkingRaw = "streaming"
+            }
+            plan.statements.append("window.bc.setThinking(\(jsonString(thinkingRaw)))")
+        }
+    }
+
+    private static func messagesChanged(applied: [Message], next: [Message]) -> Bool {
+        if applied.count != next.count { return true }
+        for (a, b) in zip(applied, next) {
+            if a.id != b.id { return true }
+            if a.content != b.content { return true }
+        }
+        return false
+    }
+
+    private static func hasNewAssistantMessage(applied: [Message], next: [Message]) -> Bool {
+        let appliedIds = Set(applied.map { $0.id })
+        for msg in next where msg.role == "assistant" && !appliedIds.contains(msg.id) {
+            return true
+        }
+        return false
+    }
+
+    /// JSON encoder for JS-bridge payloads. Same logic as before — hoisted
+    /// here so the builder is self-contained and unit-testable.
+    static func jsonString(_ value: Any) -> String {
+        JSONStringEncoder.encode(value)
+    }
+}
+
+// MARK: - TranscriptPayloadBuilder (kept below JSBuilder for legacy import)
+// Kept for backwards compat with `TranscriptHostPayloadTests` which imports it
+// directly. See above for the JS-side concerns.
 internal enum TranscriptPayloadBuilder {
     static func messagePayload(_ msg: Message) -> [String: Any] {
         var dict: [String: Any] = [

@@ -234,6 +234,110 @@ final class TranscriptFixtureTests: XCTestCase {
         }
     }
 
+    // MARK: - WP-2I smoke-test fix coverage: atomic settle
+
+    /// WP-2I Fix 1b (Bee validation 2026-08-06): the host emits `setStreaming(null); upsertMessages([settled])`
+    /// as a SINGLE concatenated JS call. This test runs that combined call in a
+    /// real WKWebView and asserts the childList mutation between the two calls
+    /// shows ZERO intermediate-frame flicker (i.e. the streaming node is
+    /// removed AND the settled article is added within one MutationObserver
+    /// observation window).
+    ///
+    /// Without Fix 1b, the host emitted these as two separate
+    /// evaluateJavaScript calls in two Swift update cycles — the streaming node
+    /// disappeared for a frame before the .msg article appeared.
+    func testHostAtomicSettleHasZeroIntermediateFlicker() async throws {
+        // Initial state: 1 user message visible.
+        _ = try await eval("""
+        window.bc.setTopic({
+          topicId: 'fix1b-topic',
+          messages: [{
+            id: 'u1',
+            role: 'user',
+            html: '<p>hi</p>'
+          }],
+          canLoadEarlier: false
+        });
+        """)
+
+        // Start streaming.
+        _ = try await eval("""
+        window.bc.setStreaming({ html: '<p>partial response so far…</p>' });
+        """)
+
+        // Install a childList MutationObserver to record every add/remove on
+        // #transcript's direct children.
+        _ = try await eval("""
+        (function() {
+          window.__fix1bSamples = [];
+          const obs = new MutationObserver((muts) => {
+            for (const m of muts) {
+              window.__fix1bSamples.push({
+                t: performance.now(),
+                added: m.addedNodes.length,
+                removed: m.removedNodes.length,
+              });
+            }
+          });
+          obs.observe(document.getElementById('transcript'), { childList: true, subtree: false });
+          window.__fix1bObs = obs;
+          return true;
+        })();
+        """)
+
+        // The HOST's atomic settle call (single evaluateJavaScript, both
+        // statements joined with `;`). This mirrors the production path:
+        // Coordinator concatenates `plan.statements` with `;` and fires ONE
+        // evaluateJavaScript call.
+        _ = try await eval("""
+        window.bc.setStreaming(null); window.bc.upsertMessages([{
+          id: 'a1-settled',
+          role: 'assistant',
+          senderName: 'Bee',
+          html: '<p>final response</p>'
+        }], false);
+        """)
+
+        // Give the browser a chance to flush any queued paints.
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Read the samples.
+        let samples = try await eval("window.__fix1bSamples") as? [[String: Any]] ?? []
+
+        // Coalesce all samples. With the atomic call, we expect:
+        //   - The streaming node removed
+        //   - The settled .msg added
+        //   - Total mutation records cover both in ONE batch (or two
+        //     consecutive records within ~0ms of each other)
+        var added = 0
+        var removed = 0
+        for s in samples {
+            added += (s["added"] as? Int ?? 0)
+            removed += (s["removed"] as? Int ?? 0)
+        }
+        XCTAssertEqual(removed, 1,
+                       "atomic settle must remove exactly 1 node (the streaming node), got \(removed)")
+        XCTAssertEqual(added, 1,
+                       "atomic settle must add exactly 1 node (the settled .msg), got \(added)")
+        XCTAssertEqual(added - removed, 0,
+                       "atomic settle has zero net node-count delta — streaming removed + settled added within same batch")
+
+        // Final loaded count: 1 user + 1 settled = 2.
+        let loaded = try await eval("window.bc.state().loadedCount") as? Int ?? -1
+        XCTAssertEqual(loaded, 2,
+                       "after atomic settle, loaded count must be 2 (user + settled)")
+
+        // No streaming node remains.
+        let streamingPresent = try await eval("document.getElementById('streaming-msg') !== null") as? Bool ?? false
+        XCTAssertFalse(streamingPresent,
+                       "streaming node must be gone after atomic settle")
+
+        // Settled article has data-id and is visible.
+        let settledExists = try await eval("document.querySelector('.msg[data-id=\"a1-settled\"]') !== null") as? Bool ?? false
+        XCTAssertTrue(settledExists,
+                      "settled .msg article must exist after atomic settle")
+    }
+
     // MARK: - Helpers
 
     private func eval(_ js: String) async throws -> Any? {

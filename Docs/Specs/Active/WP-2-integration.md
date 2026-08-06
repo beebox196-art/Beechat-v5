@@ -1,6 +1,6 @@
 # WP-2I — Transcript Integration (wire the WP-2 document into the app for live testing)
 
-**Status:** BUILD COMPLETE + SMOKE-TEST REGRESSION FIXED — Q built `ad5fa58` on `feat/transcript-integration` (2026-08-06); Kieran build-check PASS; Bee validation PASS. Adam smoke test found a **blank-transcript regression** (raw markdown passed as `html` — no markdown→sanitize pipeline) — **fixed** `ca122a3` via `TranscriptPayloadBuilder` + 6 regression tests. **Re-validating + re-running Adam smoke test.**
+**Status:** SMOKE-TEST FIX CYCLE 2 — Q built `ad5fa58`; Kieran build-check PASS; Bee validation PASS; Adam smoke test → blank-transcript regression fixed `ca122a3` (markdown→sanitize pipeline + 6 tests). Re-test surfaced **3 more bugs** (Q diagnosis, 2026-08-06): Bug 1 messages disappear on topic switch (setTopic with empty transient messages), Bug 2 response disappears at settle (no bridge representation / non-atomic settle), Bug 3 messages centred (column-width vs native parity). **Fix plan approved by Bee — Q building.**
 **Author:** Bee (spec) · **Builder:** Q · **Checker:** Kieran · **Validator:** Bee · **Smoke test:** Adam
 **Branch:** `feat/transcript-integration` (new, off the merge of WP-1 + WP-2)
 **Spec source:** `Docs/Specs/Active/single-webview-transcript-plan.md` §5 (Swift host) + §4.3/§4.5 (bridge contract)

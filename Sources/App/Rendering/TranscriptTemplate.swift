@@ -165,11 +165,18 @@ enum TranscriptTemplate {
   body { overflow-y: auto; }
 
   /* === Scroll surface (route plan §4.1: the ONE scroll surface) ================ */
+  /* WP-2I Fix 2a (Q smoke-test 2026-08-06): drop the centred 760px column.
+     Native path uses canvasWidth * 0.66 bubble width; the web path was a
+     centred column that visually read as "messages centred" even though the
+     bubble alignment per role was correct. Stretching the column to the
+     viewport matches native parity — the bubble's max-width: 66% now
+     applies to the full canvas, so user bubbles flush right and assistant
+     bubbles flush left, with no white margin gap in the middle. */
   #transcript {
     display: block;
     padding: 16px 20px 32px;
-    max-width: 760px;
-    margin: 0 auto;
+    /* max-width: 760px REMOVED in WP-2I Fix 2a — see above. */
+    /* margin: 0 auto REMOVED in WP-2I Fix 2a — see above. */
   }
 
   /* === Load-earlier button (route plan §4.1) =================================== */
