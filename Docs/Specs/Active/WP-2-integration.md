@@ -1,6 +1,6 @@
 # WP-2I — Transcript Integration (wire the WP-2 document into the app for live testing)
 
-**Status:** DRAFT — Q validation SOUND WITH FIXES (2026-08-06); fixes applied §2/§3.1/§3.2/§5. Awaiting Kieran sign-off then dispatch to Q.
+**Status:** BUILD COMPLETE + SMOKE-TEST REGRESSION FIXED — Q built `ad5fa58` on `feat/transcript-integration` (2026-08-06); Kieran build-check PASS; Bee validation PASS. Adam smoke test found a **blank-transcript regression** (raw markdown passed as `html` — no markdown→sanitize pipeline) — **fixed** `ca122a3` via `TranscriptPayloadBuilder` + 6 regression tests. **Re-validating + re-running Adam smoke test.**
 **Author:** Bee (spec) · **Builder:** Q · **Checker:** Kieran · **Validator:** Bee · **Smoke test:** Adam
 **Branch:** `feat/transcript-integration` (new, off the merge of WP-1 + WP-2)
 **Spec source:** `Docs/Specs/Active/single-webview-transcript-plan.md` §5 (Swift host) + §4.3/§4.5 (bridge contract)
