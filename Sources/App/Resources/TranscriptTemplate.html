@@ -403,7 +403,9 @@
  * to Swift via webkit.messageHandlers.
  *
  * Scroll engine is ported verbatim from TranscriptSpike/.../transcript.html
- * (WP-0 G2 PASS, 100/100 assertions including 50/120 hysteresis + bounce probe).
+ * (WP-0 G2 PASS, 100/100 assertions incl. bounce probe; user-scroll detection
+ * is via scrollTop-vs-engineScrollTop mismatch — the 50/120 hysteresis from
+ * route plan §4.4 was DELIBERATELY REJECTED, see transcript.html:216-217).
  * Field-tested fixes (Fix 1: engineScrollTop = scrollHeight − clientHeight;
  * Fix 2: userScrolledUp persists until explicit re-pin) are preserved unchanged.
  * ========================================================================= */
