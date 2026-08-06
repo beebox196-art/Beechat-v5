@@ -59,6 +59,7 @@ Tests live at `Tests/BeeChatAppTests/TranscriptTemplateTests.swift`. All four ar
 
 The proven engine from `Experiments/TranscriptSpike/Sources/TranscriptSpike/Resources/transcript.html` was ported with **two critical fixes preserved**:
 
+> **Correction (2026-08-06, Fable super-check B-2):** the earlier drafts of this section claimed the engine used "50/120 hysteresis" validated by G2. That is FALSE. The spike's own source (`transcript.html:216-217`) explicitly states the 50/120 hysteresis from route plan §4.4 was **deliberately rejected** as incompatible with high-rate streaming (each chunk pushes distance-from-bottom past 120 in one frame, leaving the engine falsely unpinned). The shipped engine detects user scroll by `scrollTop`-vs-`engineScrollTop` mismatch — there is NO 120 threshold. The stale "50/120" comments in `TranscriptTemplate.html` (lines 406/420) have been corrected. WP-3 must not re-introduce 50/120 as fact.
 - **Fix 1** (engineScrollTop clamped): the engine stores `$scroller.scrollHeight - $scroller.clientHeight` (clamped), not `$scroller.scrollHeight`. Without this, the user-scroll detector misclassified every engine repin as a user scroll-up because the 680px scrollHeight-vs-clientHeight mismatch leaked through the detector. WP-0 G2 re-run under this fix: PASS.
 - **Fix 2** (userScrolledUp persists): the flag is set by an explicit user scroll AND cleared ONLY by an explicit re-pin (jump-to-latest click, pinToBottom, swapTopic, user returning to bottom band). Crucially, NOT cleared as a side-effect of an engine repin. WP-0 G2 bounce probe: PASS under this fix.
 
@@ -68,7 +69,7 @@ The T2 test specifically exercises Fix 2 — it scrolls up, confirms userScrolle
 
 - `evaluateJavaScript` cannot return `Promise` values from WKWebView (returns WKError Code=5 "unsupported type"). The test helper `waitForTwoRAFs()` uses a Swift-side 50ms sleep (≈3 frames at 60fps) instead of awaiting rAF in JS — this is the same pattern the spike harness's G2/G5 measurement-methodology used.
 - `evaluateJavaScript` cannot bridge `MutationObserver` instances. The T4 helper wraps the observer install in `(function(){...; return true;})()` so the return value is bridgeable (a boolean), not the observer.
-- `window.scrollTo(x, y)` does NOT fire a scroll event in WebKit (Fable Fix 4). T2 and T3 explicitly dispatch the scroll event on `document.scrollingElement` after the programmatic scroll, because the engine's listener is on `$scroller = document.scrollingElement || document.documentElement` (not on `window`). Bubbling from `window` does NOT reach the document-level listener.
+- `window.scrollTo(x, y)` DOES fire a scroll event in WebKit; it fires at the Document and bubbles to window. The old claim ("does NOT fire") was a misdiagnosis — the real defect (B-1, Fable super-check 2026-08-06) was that the engine's listener was attached to `$scroller = document.scrollingElement` (a child of Document), so the bubbled event never traversed that node. Fixed: the listener now attaches to `document`. T2/T3 use a REAL `window.scrollTo` with no manual dispatch, so they exercise the genuine wiring — they fail before the B-1 fix and pass after.
 
 ---
 
@@ -297,3 +298,48 @@ Re-verifier: Kieran (independent reviewer). Status: **CONDITIONS CLEARED**.
 **Optional follow-up — bridge-helper doc-comment at line ~403 of TranscriptTemplate.html: ✅ RESOLVED 2026-08-06.** The in-source header previously listed `bcPinned` + `bcSelectionCopied` in its comment ("Bridge events (bcReady, bcLink, bcImage, bcLoadEarlier, bcPinned, bcCopyMessage, bcSelectionCopied) post back to Swift via webkit.messageHandlers."). Call sites were always correct (5, verified above); only the comment was stale. The header in BOTH `TranscriptTemplate.html` and the regenerated `TranscriptTemplate.swift` now lists only the 5 real events (`bcReady, bcLink, bcImage, bcLoadEarlier, bcCopyMessage`), and `swift scripts/embed-template.swift --check TranscriptTemplate` exits 0 (in sync). Contract-truthful end to end.
 
 **Verdict:** B2 engineering gate is ready for Bee validation + Adam sign-off.
+
+---
+
+## Fable super-check — WP-2 (2026-08-06) — REQUEST CHANGES → response
+
+External super-checker Fable reviewed the WP-2 transcript document by RUNNING it in a real WKWebView (not just reading source). Verdict: **REQUEST CHANGES** — two blockers (B-1, B-2) plus two carry-forwards (C-1, C-2). All addressed below.
+
+### B-1 (blocker) — scroll listener wired to the wrong node → FIXED
+
+**Finding:** `TranscriptTemplate.html` attached the scroll listener to `$scroller` = `document.scrollingElement` (a child of Document). Viewport scroll events fire at the Document and bubble to **window** — bubbling goes upward from the target, so the event never traverses `<html>`. Instrumentation in a real WKWebView: `hits = {document:2, window:2, scrollingElement:0, documentElement:0, body:0, controlDiv:1}`; `userScrolledUp` stayed false after real scrolls. **Fix 2 was non-functional in production** — the WP-0 bounce probe and T2 both synthesised the event aimed directly at the listener node, validating logic while masking the wiring.
+
+**Fix:** listen on `document` instead. `$scroller` stays the node for reading/writing scroll geometry. One-line change.
+
+**Regression guard (per Fable):** T2 and T3 now use a REAL `window.scrollTo` with no manual `dispatchEvent`. Verified: with the old `$scroller` listener, T2 **FAILS** (pinned + userScrolledUp assertions); with the `document` listener, T2 **PASSES**. T2 is now a genuine wiring test.
+
+**Also corrected (wrong conclusion):** G2-evidence Fix 4 claimed "`window.scrollTo` does NOT fire a scroll event in WebKit." It does — the real defect was the listener-target bug. G2-evidence updated with the correction.
+
+### B-2 (blocker) — "50/120 hysteresis" claim is false → FIXED
+
+**Finding:** Lines 406/420 claimed enter-50/leave-120 hysteresis "validated by G2." `grep '120'` returns only those two comments + three unrelated `setTimeout(…, 1200)`. The spike's own source (`transcript.html:216-217`) says 50/120 was **deliberately rejected** as incompatible with high-rate streaming. Same defect class as the bcPinned comment — it had propagated into the test header, B2 evidence, and the review prompt.
+
+**Fix:** corrected the comments in `TranscriptTemplate.html` and regenerated the .swift constant to state clearly the 50/120 hysteresis is NOT implemented (rejected by the spike). Added a correction note to B2-evidence.
+
+### C-1 (carry-forward) — `userScrolledUp` cleared on any `d < 50` → FIXED
+
+**Finding:** `_updatePinned` cleared `userScrolledUp` on any `d < 50` from any cause. Scroll up 60px, resize window taller → intent silently discarded. The engine/user provenance flag recommended at WP-0 wasn't implemented.
+
+**Fix:** `_updatePinned(d, fromUser)` — `userScrolledUp` is now cleared ONLY on an explicit user re-pin (`fromUser=true` from the scroll listener / jump / scrollToBottom / setTopic). Engine repins and resize observers pass `fromUser=false`, so a near-bottom approach caused by an engine repin or resize no longer discards the user's scroll intent.
+
+### C-2 (carry-forward) — missing `#scroller` div → DOCUMENTED for WP-3
+
+**Finding:** route plan :154 specifies `<div id="scroller">` as the ONE scroll surface (`overflow-y:auto`); the shipped template uses document scrolling (`document.scrollingElement`). Undisclosed deviation; direct cause of B-1.
+
+**Disposition:** B-1 is fixed via the `document`-listener approach (Fable's stated one-line fix), so the element-scroll refactor is not required for correctness. The DOM deviation is documented here; **WP-3 should decide** whether to adopt the spec'd `#scroller` element model or formally accept document scrolling. Not a blocker for B2.
+
+### What Fable verified clean (unchanged by this round)
+
+- Fix 1 correct at all four write paths; tolerance 2→4px justified.
+- Bridge contract genuinely honest — exactly 5 call sites; bcPinned/bcSelectionCopied gone from both files.
+- CSP `form-action 'none'` present; `frame-ancestors` correctly documented as absent from meta CSP.
+- A4 selection handling correct.
+- `embed-template.swift --check` verified by breaking it (append line → exit 1; revert → exit 0).
+- Suite 396/0/0 as claimed.
+
+**Status after fixes:** `swift test` TranscriptTemplateTests 13/13 PASS (incl. real-scroll T2/T3); `embed-template.swift --check` exit 0. Ready for re-verification by Fable and Adam sign-off.

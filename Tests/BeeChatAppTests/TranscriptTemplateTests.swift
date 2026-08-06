@@ -274,19 +274,16 @@ final class TranscriptTemplateTests: XCTestCase {
         var st = try await stateDict()
         XCTAssertEqual(st["pinned"] as? Bool, true, "must be pinned after setTopic")
 
-        // (2) User scrolls up 200px. Window.scrollTo does NOT fire a scroll event
-        // in WebKit per Fable super-check Fix 4. We must dispatch the scroll event
-        // manually. The engine's listener is on document.scrollingElement (not
-        // window), so dispatch there — bubbling from window does NOT reach the
-        // document.scrollingElement listener.
-        _ = try await eval("""
-        (function() {
-          window.scrollTo(0, 200);
-          const sc = document.scrollingElement || document.documentElement;
-          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
-          return sc.scrollTop;
-        })();
-        """)
+        // (2) User scrolls up 200px. This is a REAL window.scrollTo — no manual
+        // dispatchEvent. The engine's scroll listener is on `document` (B-1 fix,
+        // Fable super-check 2026-08-06): viewport scroll events fire at the
+        // Document and bubble to window, so a document-level listener catches
+        // the real user scroll. If the listener were still on
+        // document.scrollingElement (the old B-1 defect), this real scroll would
+        // NOT reach it and userScrolledUp would stay false → this test FAILS.
+        // This is the regression guard: T2 must fail before the B-1 fix and
+        // pass after.
+        _ = try await eval("(function(){ window.scrollTo(0, 200); return document.scrollingElement.scrollTop; })();")
         try await waitForTwoRAFs()
 
         st = try await stateDict()
@@ -352,14 +349,9 @@ final class TranscriptTemplateTests: XCTestCase {
         """)
 
         // User scrolls up to read older messages — let's go to scrollTop=300.
-        _ = try await eval("""
-        (function() {
-          window.scrollTo(0, 300);
-          const sc = document.scrollingElement || document.documentElement;
-          sc.dispatchEvent(new Event('scroll', { bubbles: true }));
-          return sc.scrollTop;
-        })();
-        """)
+        // Real window.scrollTo; the document-level scroll listener (B-1 fix)
+        // catches the real bubbled event. No manual dispatchEvent.
+        _ = try await eval("(function(){ window.scrollTo(0, 300); return document.scrollingElement.scrollTop; })();")
         try await waitForTwoRAFs()
 
         let stBefore = try await stateDict()

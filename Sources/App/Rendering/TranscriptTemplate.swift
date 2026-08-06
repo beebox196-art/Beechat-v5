@@ -484,11 +484,19 @@ const $scroller = document.scrollingElement || document.documentElement;
 /* ============================================================================
  * Scroll engine — ported from spike/proven (route plan §4.4).
  *
- *   - hysteresis enter 50 / leave 120 (route plan §4.4)
+ *   - user-scroll detection via scrollTop-vs-engineScrollTop mismatch (the
+ *     spike's chosen mechanism — see transcript.html:216-217; the 50/120
+ *     hysteresis from route plan §4.4 was DELIBERATELY REJECTED as
+ *     incompatible with high-rate streaming and is NOT implemented)
  *   - ResizeObserver on documentElement + #transcript
  *   - two-rAF deferred repin (Fix 1/2 from Fable re-check)
  *   - engineScrollTop clamped (Fix 1, was the 680px mismatch defect)
  *   - userScrolledUp persists (Fix 2, was the bounce-probe FAIL defect)
+ *   - scroll listener is on `document`, NOT `$scroller`: viewport scroll
+ *     events fire at the Document and bubble to window — they never traverse
+ *     `document.scrollingElement` (<html>, a child of Document), so a listener
+ *     there never fires on a real user scroll. (B-1, Fable super-check 2026-08-06)
+ *     $scroller stays the node for reading/writing scroll geometry.
  * ========================================================================= */
 let pinned = true;
 let lastPinTransition = performance.now();
@@ -498,12 +506,23 @@ let engineHasPinnedOnce = false;
 function _distFromBottom() {
   return $scroller.scrollHeight - $scroller.scrollTop - $scroller.clientHeight;
 }
-function _updatePinned(d) {
+function _updatePinned(d, fromUser) {
   if (userScrolledUp) {
-    if (d < 50) {
+    // C-1 (Fable): only an explicit user re-pin clears userScrolledUp.
+    // A near-bottom approach caused by an ENGINE repin or RESIZE must NOT
+    // silently discard the user's scroll intent (e.g. scroll up 60px, then
+    // window grows taller → intent preserved). `fromUser` is set only by
+    // explicit user re-pin actions (jump-to-latest, scrollToBottom, setTopic,
+    // user actively scrolling back to the bottom band themselves).
+    if (d < 50 && fromUser) {
       if (!pinned) { lastPinTransition = performance.now(); }
       pinned = true;
       userScrolledUp = false;
+    } else if (d < 50) {
+      // near bottom but not user-initiated — hold the pin flag but keep
+      // userScrolledUp so intent survives an engine/resize repin.
+      if (!pinned) { lastPinTransition = performance.now(); }
+      pinned = true;
     } else {
       pinned = false;
     }
@@ -513,7 +532,7 @@ function _updatePinned(d) {
   }
   if ($jump) $jump.hidden = pinned;
 }
-$scroller.addEventListener('scroll', () => {
+document.addEventListener('scroll', () => {
   const d = _distFromBottom();
   // User-scroll detection (Fix 2): scrollTop differs from engineScrollTop beyond
   // tolerance → user scrolled. Only detect AFTER the engine has pinned once,
@@ -521,19 +540,19 @@ $scroller.addEventListener('scroll', () => {
   if (engineHasPinnedOnce && engineScrollTop >= 0 && Math.abs($scroller.scrollTop - engineScrollTop) > 4) {
     userScrolledUp = true;
   }
-  _updatePinned(d);
+  _updatePinned(d, true);
 }, { passive: true });
 
 const deferredRepin = () => {
   requestAnimationFrame(() => {
     const d = _distFromBottom();
-    _updatePinned(d);
+    _updatePinned(d, false);
     if (pinned) {
       engineHasPinnedOnce = true;
       engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
       $scroller.scrollTop = engineScrollTop;
       requestAnimationFrame(() => {
-        _updatePinned(_distFromBottom());
+        _updatePinned(_distFromBottom(), false);
         if (pinned) {
           engineScrollTop = $scroller.scrollHeight - $scroller.clientHeight;
           $scroller.scrollTop = engineScrollTop;
