@@ -193,31 +193,17 @@ struct NativeTranscriptView: View {
     }
 }
 
-// MARK: - WebTranscriptView (stub — WP-3 ships the real implementation)
-//
-// The web engine is NOT built yet. WP-3 (Swift Host) replaces this stub
-// with a WKWebView-backed renderer consuming the same `TranscriptState`
-// + `TranscriptCallbacks`. Per the WP-1 spec, the stub renders `EmptyView`
-// — flipping the flag to `.web` should produce a clean blank transcript
-// area with no crash.
-
-struct WebTranscriptView: View {
-    let state: TranscriptState
-    let callbacks: TranscriptCallbacks
-
-    var body: some View {
-        // Stub: render nothing. WP-3 will replace this with a WKWebView host
-        // that consumes state.streamingHTML / state.settledBridgeHTML.
-        EmptyView()
-    }
-}
-
 // MARK: - transcriptView free @ViewBuilder function
 //
 // Free function (not a View extension, not a computed property) per spec §2.1.
 // Dispatches on `engine` to the appropriate concrete renderer. Both renderers
 // consume the same `TranscriptState` + `TranscriptCallbacks`, guaranteeing
 // behavioural parity on shared inputs.
+//
+// The `.web` case wires the WP-2I Swift host (`WebTranscriptView.swift` in this
+// directory). WP-1's `WebTranscriptView` stub (formerly `EmptyView()`) was
+// deleted as part of the WP-2I merge per spec §3.1 naming-collision resolution
+// (Option α — clean): single source of truth for the type.
 
 @ViewBuilder
 func transcriptView(

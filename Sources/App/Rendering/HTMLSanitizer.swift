@@ -93,8 +93,27 @@ enum HTMLSanitizer {
     /// Global attributes allowed on any tag.
     private static let globalAttributes: Set<String> = ["class", "id"]
 
-    /// URL schemes allowed in `href` and `src` attributes.
-    static let allowedSchemes: Set<String> = ["http", "https", "mailto"]
+    /// URL schemes allowed in `href` attributes.
+    /// `data:` is NOT permitted here — a `data:text/html,...` href is an XSS
+    /// vector (clickable navigates to attacker-controlled HTML/JS). The
+    /// browser will only follow hrefs whose scheme is in this list.
+    /// Mirrors the WP-2 CSP contract (`WP-2-csp-handoff.md` line 125, signed by Mel):
+    /// "`https:`, `http:`, `mailto:` for `href`".
+    static let hrefSchemes: Set<String> = ["http", "https", "mailto"]
+
+    /// URL schemes allowed in `src` attributes (img, script, etc.).
+    /// `data:` IS permitted here — inline base64 images are common in markdown
+    /// renderers and the CSP contract allows them. Stays safe because the
+    /// browser will not *execute* a data URL inside an `<img>`; only an `<a>`
+    /// navigation to `data:` is dangerous (XSS), and that path uses `hrefSchemes`.
+    /// Mirrors the WP-2 CSP contract: "`https:`, `data:` for `img src`".
+    static let srcSchemes: Set<String> = ["http", "https", "data"]
+
+    /// Backward-compat alias for `LinkPolicy.allowedWebSchemes`. Maps the legacy
+    /// single-set API to the union of `hrefSchemes` + `srcSchemes` (minus `data`,
+    /// which is not a web-scheme and must not appear in `LinkPolicy`'s allow list).
+    /// Existing callers (LinkPolicy.swift:38) read this property.
+    static var allowedSchemes: Set<String> { hrefSchemes.union(srcSchemes).subtracting(["data"]) }
 
     /// URL attributes that need scheme validation.
     private static let urlAttributes: Set<String> = ["href", "src"]
@@ -225,10 +244,12 @@ enum HTMLSanitizer {
                 continue
             }
 
-            // Validate URL attributes
+            // Validate URL attributes — per-attribute scheme allow-list (WP-2I §3.2).
+            // `href` uses `hrefSchemes` (no `data:` — XSS guard); `src` uses
+            // `srcSchemes` (allows `data:` for inline base64 images).
             if urlAttributes.contains(key) {
                 let value = attr.getValue()
-                if !isURLAllowed(value) {
+                if !isURLAllowed(value, attribute: key) {
                     continue
                 }
             }
@@ -257,10 +278,24 @@ enum HTMLSanitizer {
 
     // MARK: - URL Validation
 
-    /// Check if a URL is allowed based on its scheme.
-    /// Entity-decodes the URL before checking to defeat obfuscation like
-    /// `&#106;avascript:...` or `java&#115;cript:...`.
-    private static func isURLAllowed(_ urlString: String) -> Bool {
+    /// Check if a URL is allowed based on its scheme and the attribute it appears in.
+    ///
+    /// Per WP-2I §3.2: `href` and `src` use DIFFERENT scheme allow-lists.
+    /// `href` (navigation target) does NOT permit `data:` — a `data:text/html,...`
+    /// href is an XSS vector. `src` (resource locator) DOES permit `data:` —
+    /// inline base64 images are common in markdown and the browser will not
+    /// execute `data:` URLs inside `<img>`.
+    ///
+    /// Entity-decodes the URL before checking the scheme to defeat obfuscation
+    /// like `&#106;avascript:...` or `java&#115;cript:...`.
+    ///
+    /// - Parameters:
+    ///   - urlString: The attribute value (e.g. "https://example.com" or
+    ///     "data:image/png;base64,iVBORw0KG...").
+    ///   - attribute: The attribute name (`"href"` or `"src"`). Drives which
+    ///     scheme allow-list applies.
+    /// - Returns: True if the URL is permitted in this attribute context.
+    private static func isURLAllowed(_ urlString: String, attribute: String) -> Bool {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         // Entity-decode before checking scheme to defeat obfuscation
@@ -272,13 +307,26 @@ enum HTMLSanitizer {
             decoded = trimmed
         }
 
+        // Pick the right allow-list per attribute.
+        let allowed: Set<String>
+        switch attribute {
+        case "href":
+            allowed = hrefSchemes
+        case "src":
+            allowed = srcSchemes
+        default:
+            // Unknown URL attribute — be strict and reject. (Existing call
+            // sites only pass `href` / `src`; this is defence-in-depth.)
+            return false
+        }
+
         // Check for scheme
         if let colonRange = decoded.range(of: ":", options: .literal) {
             let scheme = String(decoded[decoded.startIndex..<colonRange.lowerBound])
                 .trimmingCharacters(in: .whitespaces)
 
-            // Scheme must be in the allowlist
-            return allowedSchemes.contains(scheme)
+            // Scheme must be in the per-attribute allowlist
+            return allowed.contains(scheme)
         }
 
         // No scheme found — could be a relative URL, anchor (#), or query (?)

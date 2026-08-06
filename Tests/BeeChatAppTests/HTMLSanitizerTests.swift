@@ -541,4 +541,65 @@ final class HTMLSanitizerTests: XCTestCase {
         XCTAssertFalse(result.contains("default"), "form content should be removed")
         XCTAssertTrue(result.contains("Safe content outside form"))
     }
+
+    // MARK: - WP-2I §3.2: per-attribute scheme allow-list (`data:` for img src only)
+
+    /// WP-2I §3.2 / §5 B2I-2: `data:image/png;base64,...` MUST survive on `<img src>`.
+    /// Inline base64 images are common in markdown renderers and the CSP contract
+    /// (`WP-2-csp-handoff.md` line 125) explicitly allows them.
+    /// This is the positive test that was missing pre-WP-2I.
+    func testDataImagePNGAllowedOnImgSrc() {
+        let html = #"<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" alt="dot">"#
+        let result = HTMLSanitizer.sanitize(html)
+        XCTAssertTrue(result.contains("src=\"data:image/png;base64,"),
+                      "data:image/png must survive on img src. Result: \(result)")
+        XCTAssertTrue(result.contains("<img"), "img tag must remain")
+        XCTAssertTrue(result.contains("alt=\"dot\""), "alt attribute must survive")
+    }
+
+    /// WP-2I §3.2: `data:image/jpeg;base64,...` MUST also survive (model providers
+    /// emit PNG, JPEG, and GIF in their base64 emissions — cover all three).
+    func testDataImageJPEGAllowedOnImgSrc() {
+        let html = #"<img src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAA==" alt="jpg">"#
+        let result = HTMLSanitizer.sanitize(html)
+        XCTAssertTrue(result.contains("src=\"data:image/jpeg;base64,"),
+                      "data:image/jpeg must survive on img src. Result: \(result)")
+    }
+
+    /// WP-2I §3.2: `data:image/gif;base64,...` MUST also survive.
+    func testDataImageGIFAllowedOnImgSrc() {
+        let html = #"<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="gif">"#
+        let result = HTMLSanitizer.sanitize(html)
+        XCTAssertTrue(result.contains("src=\"data:image/gif;base64,"),
+                      "data:image/gif must survive on img src. Result: \(result)")
+    }
+
+    /// WP-2I §3.2: `data:text/html,<script>...</script>` MUST still be stripped on
+    /// `<a href>` even though `data:` is allowed on `src`. This is the XSS guard —
+    /// a clickable navigation to `data:` is the dangerous path; an inline image is not.
+    func testDataTextHtmlStillBlockedOnHref() {
+        let html = #"<a href="data:text/html,<script>alert('xss')</script>">click me</a>"#
+        let result = HTMLSanitizer.sanitize(html)
+        XCTAssertFalse(result.contains("data:text/html"),
+                       "data:text/html MUST be stripped from href. Result: \(result)")
+        XCTAssertFalse(result.contains("<script"),
+                       "No script content may reach the document. Result: \(result)")
+        // The link tag itself stays; only the dangerous href is removed.
+        XCTAssertTrue(result.contains("click me"), "link text must survive")
+    }
+
+    /// WP-2I §3.2: `data:` in any attribute other than `src` (e.g. a synthetic
+    /// `data:` in a non-standard attribute) MUST still be rejected — the per-attribute
+    /// allow-list is strict; only `href` and `src` get the relaxed treatment.
+    /// The `data:` scheme is special-cased only for `src`.
+    func testDataSchemeOnlyAllowedOnSrcNotOnHref() {
+        // data: in href → blocked (XSS)
+        let hrefResult = HTMLSanitizer.sanitize(#"<a href="data:text/html,safe">x</a>"#)
+        XCTAssertFalse(hrefResult.contains("href=\"data:"),
+                       "data: in href must be blocked. Result: \(hrefResult)")
+        // data: in src → allowed
+        let srcResult = HTMLSanitizer.sanitize(#"<img src="data:image/png;base64,abc">"#)
+        XCTAssertTrue(srcResult.contains("src=\"data:"),
+                      "data: in src must be allowed. Result: \(srcResult)")
+    }
 }
