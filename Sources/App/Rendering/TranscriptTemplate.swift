@@ -521,10 +521,12 @@ function _updatePinned(d, fromUser) {
       pinned = true;
       userScrolledUp = false;
     } else if (d < 50) {
-      // near bottom but not user-initiated — hold the pin flag but keep
-      // userScrolledUp so intent survives an engine/resize repin.
-      if (!pinned) { lastPinTransition = performance.now(); }
-      pinned = true;
+      // near bottom but not user-initiated (engine repin / resize). Keep
+      // userScrolledUp AND do NOT set pinned=true — authorising a repin here
+      // would move the user (e.g. scroll up 60px, window grows 20px taller
+      // → intent survives the flag but the user still gets moved). Leave the
+      // pin state untouched; the jump button stays visible and the user can
+      // re-pin explicitly.
     } else {
       pinned = false;
     }

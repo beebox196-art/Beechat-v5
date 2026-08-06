@@ -343,3 +343,25 @@ External super-checker Fable reviewed the WP-2 transcript document by RUNNING it
 - Suite 396/0/0 as claimed.
 
 **Status after fixes:** `swift test` TranscriptTemplateTests 13/13 PASS (incl. real-scroll T2/T3); `embed-template.swift --check` exit 0. Ready for re-verification by Fable and Adam sign-off.
+
+---
+
+## Fable super-check RE-CHECK (2026-08-06) — APPROVE WITH CONDITIONS → response
+
+Fable re-verified B-1 by running code (same probe: real scrolls, no dispatchEvent). Verdict: **APPROVE WITH CONDITIONS** — "B2 is signable, WP-3 can start." B-1 proven fixed (event topology unchanged, but engine now receives the event; `userScrolledUp=true` for a real user scroll). Fable independently reverted the B-1 line and confirmed T2 fails at :290/:292 and passes with the fix — "the strongest gate evidence this programme has produced."
+
+**Three small residues raised — all addressed:**
+
+1. **B-2 residue (test file):** `TranscriptTemplateTests.swift` still asserted "50/120 hysteresis" at lines 17/28/250 while line 253 denied it (self-contradiction, first thing WP-3 reads). **Fixed** — all three now correctly state 50/120 was deliberately rejected (see `transcript.html:216-217`); no 120 threshold.
+
+2. **C-1 residue (middle branch):** the non-user `d < 50` branch still set `pinned = true`, authorising `deferredRepin` to move the user. **Fixed** — that branch now leaves pin state untouched (jump button stays visible; only explicit re-pin moves the user). Added `testC1_resizeIntoPinBandPreservesUserScroll` (tall content, real frame resize 600→700) — verifies resize does NOT clear `userScrolledUp` or move scrollTop. Suite now 397/0/0.
+
+3. **B-1a (withdrawn by Fable):** G2's bounce criterion is superseded by production T2. **Added** a superseded-note to G2-evidence so it is not cited as independent proof.
+
+**G4 visual-parity flag (Fable's pre-sign-off warning):** G4's visual parity has now been deferred TWICE (E5-SIGNOFF-STATUS.md:16 → WP-2; WP-2's 8-theme tests assert structure, not appearance). Every WP-2 check — Fable's included — is structural or behavioural. **Nobody has verified how this looks.** This must be discharged in WP-3 or explicitly re-assigned with Mel's agreement — NOT silently rolled forward a third time. → **Tracked in BEECHAT-BUILD-PROGRESS as an open obligation.**
+
+**Programme-wide open items (unchanged, re-confirmed):**
+- **G5 (Kieran)** — last WP-0 gate, methodology sign pending.
+- **C-9 (G1 plateau window)** — from the earlier re-check, still open.
+
+**Status:** `swift test` 397/0/0; `--check` exit 0; tree clean. Ready for Adam sign-off on B2 (Fable: "B2 is signable").

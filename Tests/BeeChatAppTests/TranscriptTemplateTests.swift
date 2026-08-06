@@ -14,7 +14,7 @@ import os
 //   - Wait for layout/paint between operations with expectation + polling.
 //
 // T1 — setTopic lands scrollTop == scrollHeight − clientHeight before first paint callback
-// T2 — pin hysteresis across scripted scrolls (50/120)
+// T2 — user-intent detection (Fix 2) preserves scroll position across streaming
 // T3 — prependEarlier preserves anchor offset exactly
 // T4 — streaming settle produces zero node-count flicker
 //
@@ -25,8 +25,10 @@ import os
 // MARK: E1–E7 reminders:
 //   E1 — pre-registered criteria: each test asserts specific observable contract.
 //   E2 — log .info+: failures use .error; progress uses .debug.
-//   E3 — thresholds before run: tolerances are constants in the test (50/120 px,
-//         3-node MutationObserver threshold, etc.).
+//   E3 — thresholds before run: tolerances are constants in the test (50 px
+//         pin-re-engage band, 3-node MutationObserver threshold, etc.).
+//         (The 50/120 hysteresis from route plan §4.4 was deliberately
+//         rejected — see transcript.html:216-217; there is no 120 threshold.)
 //   E4 — real-data fixtures: fixture corpus renders real sanitized HTML.
 //   E5 — implementer + verifier differ: Q builds, Kieran checks, Bee validates.
 //   E6 — negative results recorded: every FAIL captured with full state dump.
@@ -247,10 +249,11 @@ final class TranscriptTemplateTests: XCTestCase {
                        "pinned must be true after setTopic")
     }
 
-    // MARK: - T2 — pin hysteresis across scripted scrolls (50/120)
+    // MARK: - T2 — user-intent detection (Fix 2) preserves scroll position
 
     /// T2 (route plan §9): the engine uses user-intent detection (Fix 2 from
-    /// the WP-0 re-check) instead of pure 50/120 dfb hysteresis for the
+    /// the WP-0 re-check) instead of 50/120 dfb hysteresis (which the spike
+    /// deliberately rejected — see transcript.html:216-217) for the
     /// "leave pinned" path. We verify both legs:
     ///   - At dfb=0 (just-set-bottom), engine is pinned.
     ///   - A user scroll up by 200px triggers userScrolledUp=true; engine
@@ -330,6 +333,56 @@ final class TranscriptTemplateTests: XCTestCase {
         XCTAssertEqual(st["distanceFromBottom"] as? Int, 0,
                        "after scrollToBottom, dfb must be 0")
         _ = preScrollTop  // silence unused
+    }
+
+    // MARK: - C-1 — near-bottom engine/resize repin preserves user scroll intent
+
+    /// C-1 regression guard (Fable super-check re-check 2026-08-06): scroll up,
+    /// then a RESIZE. The user's scroll intent must survive AND the engine must
+    /// NOT move them. Uses TALL content so the user stays clearly scrolled up
+    /// (distance-from-bottom > 50) after the resize — reproducing Fable's exact
+    /// scenario ("scroll up 60px, window grows taller"). Resizes the REAL
+    /// webView frame so clientHeight grows and the ResizeObserver fires.
+    func testC1_resizeIntoPinBandPreservesUserScroll() async throws {
+        // Tall transcript so the user is clearly scrolled up after a modest resize.
+        let messages = fixtureMessages(count: 20, contentLength: 800)
+        _ = try await eval("""
+        window.bc.setTopic({
+          topicId: 'c1-topic',
+          messages: \(asJSON(messages)),
+          canLoadEarlier: true
+        });
+        """)
+        try await waitForTwoRAFs()
+
+        // (1) User scrolls up 60px (real scroll; document listener catches it).
+        _ = try await eval("(function(){ window.scrollTo(0, 60); return document.scrollingElement.scrollTop; })();")
+        try await waitForTwoRAFs()
+        var st = try await stateDict()
+        XCTAssertEqual(st["userScrolledUp"] as? Bool, true,
+                       "real scroll up must set userScrolledUp")
+        let scrollTopAfterScroll = st["scrollTop"] as? Int ?? 0
+        XCTAssertGreaterThan(scrollTopAfterScroll, 0, "must be scrolled up")
+        // Confirm we are clearly above the 50px pin band (d >> 50).
+        let dfbBefore = st["distanceFromBottom"] as? Int ?? 0
+        XCTAssertGreaterThan(dfbBefore, 100,
+                             "fixture must keep user clearly above the pin band")
+
+        // (2) Grow the frame modestly (600 -> 700). ResizeObserver +
+        // deferredRepin fire with fromUser=false. Must NOT clear userScrolledUp
+        // and must NOT repin/move the user.
+        self.webView.frame = NSRect(x: 0, y: 0, width: 760, height: 700)
+        try await waitForTwoRAFs()
+        try await waitForTwoRAFs()
+
+        st = try await stateDict()
+        XCTAssertEqual(st["userScrolledUp"] as? Bool, true,
+                       "resize must NOT clear userScrolledUp (C-1)")
+        let scrollTopAfterResize = st["scrollTop"] as? Int ?? 0
+        XCTAssertEqual(scrollTopAfterResize, scrollTopAfterScroll,
+                       "resize must NOT move the user (C-1): scrollTop unchanged")
+        XCTAssertEqual(st["pinned"] as? Bool, false,
+                       "resize must NOT repin the user (C-1)")
     }
 
     // MARK: - T3 — prependEarlier preserves anchor offset exactly
