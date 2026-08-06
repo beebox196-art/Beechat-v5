@@ -185,7 +185,10 @@ private struct TranscriptHost: NSViewRepresentable {
             // path; the live-streaming partial still needs setStreaming to refresh.
             let streamingJSON: String
             if let html = state.streamingHTML {
-                streamingJSON = Self.jsonString(["html": html])
+                // Same pipeline as message payloads: streamingContent is raw
+                // markdown from the sync bridge; the template assigns
+                // `bubble.innerHTML = html` so it MUST be sanitized HTML.
+                streamingJSON = Self.jsonString(["html": TranscriptPayloadBuilder.sanitizedStreamingHTML(html)])
             } else {
                 streamingJSON = "null"
             }
@@ -231,24 +234,11 @@ private struct TranscriptHost: NSViewRepresentable {
         /// `timeLabel` already locale-formatted. For the WP-2I minimal slice we
         /// pass through the Message fields the template needs and let the template
         /// handle rendering — pre-sanitization is the caller's contract.
-        private func messagesToPayload(_ messages: [Message]) -> [[String: Any]] {
-            messages.map { msg in
-                var dict: [String: Any] = [
-                    "id": msg.id,
-                    "role": msg.role,
-                    "html": msg.content ?? "",
-                ]
-                if let senderName = msg.senderName {
-                    dict["senderName"] = senderName
-                }
-                if let timeLabel = msg.timeLabel {
-                    dict["timeLabel"] = timeLabel
-                }
-                if let badge = msg.badge {
-                    dict["badge"] = badge
-                }
-                return dict
-            }
+        // Payload building is delegated to the internal `TranscriptPayloadBuilder`
+        // so the WP-2I contract is unit-testable (regression guard: payload `html`
+        // must be markdown→sanitized, never raw).
+        func messagesToPayload(_ messages: [Message]) -> [[String: Any]] {
+            messages.map { TranscriptPayloadBuilder.messagePayload($0) }
         }
 
         private static func jsonString(_ value: Any) -> String {
@@ -462,8 +452,9 @@ private enum JSONStringEncoder {
 // is `{id, role, html}` plus optional `{senderName, timeLabel, badge}`. The
 // `Message` struct already has `senderName`; `timeLabel` and `badge` are
 // derived (not stored on `Message`) so we synthesise them via extensions here.
-// `html` is pre-rendered content — sanitization is the upstream caller's
-// contract (HTMLSanitizer runs before the host sees the message).
+// `html` is pre-rendered content — the host runs the markdown→HTML→sanitize
+// pipeline itself (see `messagesToPayload`) because the template assigns
+// `bubble.innerHTML = html` directly and MUST NOT receive raw/unsanitized input.
 //
 // These live here (rather than as extensions on Message in BeeChatPersistence)
 // because the host's payload contract is host-specific — adding them to
@@ -482,5 +473,45 @@ private extension Message {
     /// Optional per-message badge (e.g. "thinking"). Reserved for future use.
     var badge: String? {
         return nil
+    }
+}
+
+// MARK: - TranscriptPayloadBuilder (internal, testable)
+//
+// Builds the message payload the template's `setTopic` / `upsertMessages`
+// consume: `{id, role, senderName?, badge?, timeLabel, html}`.
+//
+// CRITICAL contract (route plan §4.3/§5): the template assigns
+// `bubble.innerHTML = html` directly, so `html` MUST be pre-rendered AND
+// sanitized — `HTMLSanitizer.sanitize(MarkdownToHTML.convert(content))`,
+// exactly as the native path (MessageContent / StreamingBubble) does.
+//
+// Regression: Q's first WP-2I build passed raw `msg.content` (markdown) as
+// `html`, which left the live transcript blank and skipped the sanitizer.
+// Caught by Adam's smoke test 2026-08-06. Extracted as an internal type so
+// `TranscriptHostPayloadTests` can guard the contract.
+internal enum TranscriptPayloadBuilder {
+    static func messagePayload(_ msg: Message) -> [String: Any] {
+        var dict: [String: Any] = [
+            "id": msg.id,
+            "role": msg.role,
+            "html": HTMLSanitizer.sanitize(MarkdownToHTML.convert(msg.content ?? "")),
+        ]
+        if let senderName = msg.senderName {
+            dict["senderName"] = senderName
+        }
+        if let timeLabel = msg.timeLabel {
+            dict["timeLabel"] = timeLabel
+        }
+        if let badge = msg.badge {
+            dict["badge"] = badge
+        }
+        return dict
+    }
+
+    /// Sanitize raw streaming content for the template's `setStreaming`.
+    /// Same pipeline as `messagePayload` (streaming content is raw markdown).
+    static func sanitizedStreamingHTML(_ raw: String) -> String {
+        HTMLSanitizer.sanitize(MarkdownToHTML.convert(raw))
     }
 }
