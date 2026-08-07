@@ -41,7 +41,11 @@
     color-scheme: light dark;
     --bc-font-base: 13;          /* pt; multiplied by --bc-font-scale */
     --bc-font-scale: 1;
-    --bc-bg:        #FFFFFF;
+    /* --bc-bg resolves to the theme-injected --bc-bg-surface so the message
+       window matches the sidebar exactly (Tweak 1, Aug 2026). The hardcoded
+       fallback (#FFFFFF / #1F1F1F) only matters if the WebView is loaded
+       without theme tokens — e.g. a debug page load or a standalone fixture. */
+    --bc-bg:        var(--bc-bg-surface, #FFFFFF);
     --bc-text:      #212121;
     --bc-text-dim:  rgba(33,33,33,0.55);
     --bc-link:      #8A6420;
@@ -52,7 +56,11 @@
     --bc-code-bd:   rgba(33,33,33,0.12);
     --bc-tbl-bd:    rgba(33,33,33,0.18);
     --bc-hr:        rgba(33,33,33,0.15);
-    --bc-shadow-bubble: none;
+    /* Tweak 3 (Aug 2026): gentle outline, not stark. 0 1px 2px with low alpha
+       reads as a soft drop on the white surface — enough to lift the bubble
+       off the sidebar without becoming visually loud. System bubbles still
+       override to none (see .msg[data-role="system"] .bubble). */
+    --bc-shadow-bubble: 0 1px 2px rgba(0,0,0,0.08);
     --bc-radius-bubble: 16px;
     --bc-pad-h-bubble: 16px;
     --bc-pad-v-bubble: 12px;
@@ -62,7 +70,7 @@
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bc-bg:       #1F1F1F;
+      --bc-bg:       var(--bc-bg-surface, #1F1F1F);
       --bc-text:     #E0E0E0;
       --bc-text-dim: rgba(224,224,224,0.55);
       --bc-link:     #E8C583;
@@ -72,6 +80,11 @@
       --bc-code-bd:  rgba(224,224,224,0.16);
       --bc-tbl-bd:   rgba(224,224,224,0.22);
       --bc-hr:       rgba(224,224,224,0.18);
+      /* Tweak 3 (Aug 2026): dark surface is much darker than light, so the
+         same 0.08 alpha would read as invisible. Bump the alpha slightly and
+         the y-offset by 1px so the outline is still gentle but actually
+         visible. Still well under the "stark" threshold. */
+      --bc-shadow-bubble: 0 1px 3px rgba(0,0,0,0.35);
     }
   }
 
@@ -171,6 +184,11 @@
   .bubble {
     border-radius: var(--bc-radius-bubble);
     padding: var(--bc-pad-v-bubble) var(--bc-pad-h-bubble);
+    /* Tweak 2 (Aug 2026): anchor for the absolutely-positioned .time at the
+       bottom-right. Also reserves extra padding-bottom so the time doesn't
+       overlap the last line of short messages. */
+    position: relative;
+    padding-bottom: calc(var(--bc-pad-v-bubble) + 1.4em);
     /* Native parity: MessageBubble.BubbleWidthModifier uses canvasWidth * 0.66
        with no per-theme variation. Hardcoded here for the same parity. */
     max-width: 66%;
@@ -197,13 +215,32 @@
     max-width: 100%;
     text-align: center;
   }
+  /* Tweak 2 (Aug 2026): system bubbles don't carry a meaningful timestamp —
+     the absolute-positioned time at bottom-right of a centred italic bubble
+     reads as visual noise. Hide it. The .bubble padding-bottom reservation
+     above is also removed for system since no time is shown. */
+  .msg[data-role="system"] .bubble {
+    padding-bottom: var(--bc-pad-v-bubble);
+  }
+  .msg[data-role="system"] .bubble .time {
+    display: none;
+  }
 
   .bubble .time {
-    display: block;
+    /* Tweak 2 (Aug 2026): Telegram-style — small dim timestamp at the
+       bottom-right INSIDE the bubble. Absolute positioning anchored to the
+       bubble (the parent has position:relative). pointer-events:none lets
+       text-selection drags pass through the time element to the message
+       text underneath — preserves the FR-MULTICOPY A1/A4 selection contract.
+       The extra padding-bottom on .bubble reserves space so the time doesn't
+       overlap the last line of short messages. */
+    position: absolute;
+    bottom: 4px;
+    right: 8px;
     font-size: 0.72em;
     color: var(--bc-text-dim);
-    margin-top: 4px;
     -webkit-user-select: none;
+    pointer-events: none;
   }
 
   /* === Content rendering (lifted from MessageTemplate.html, field-tested) ===== */
@@ -654,7 +691,11 @@ function buildMessage({ id, role, senderName, badge, timeLabel, html }) {
     t.className = 'time';
     t.textContent = timeLabel;
     t.setAttribute('datetime', '');
-    article.appendChild(t);
+    // Tweak 2 (Aug 2026): the time is appended INSIDE the bubble (was a
+    // sibling) so the CSS can position it at the bottom-right corner,
+    // Telegram-style. The seam contract is unchanged — this is pure DOM
+    // placement, not pipeline logic.
+    bubble.appendChild(t);
   }
   // FR-MULTICOPY A2: copy button on every pre/code block.
   bubble.querySelectorAll('pre').forEach(attachCopyButton);
