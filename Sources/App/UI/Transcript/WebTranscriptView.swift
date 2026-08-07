@@ -74,13 +74,12 @@ private struct TranscriptHost: NSViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        #if DEBUG
         // Web Inspector on the live transcript (Safari ▸ Develop ▸ <Mac> ▸ BeeChatApp).
-        // Deliberately unconditional: BeeChat is a local single-user app, builds
-        // installed via scripts/build-and-install.sh are debug, and the absence of
-        // this line is why the WP-2I upsertMessages defect was chased with `otool`
-        // binary forensics instead of a console. Gate behind #if DEBUG only if the
-        // project ever ships release builds.
+        // Gated to DEBUG: debug builds are what scripts/build-and-install.sh ships today.
+        // When the project introduces release builds, this defaults off automatically.
         webView.isInspectable = true
+#endif
         // Transparency: same posture as MessageWebView — underPageBackgroundColor
         // covers the overscroll/paint flash, drawsBackground via KVO kills the
         // initial white flash.
@@ -232,7 +231,11 @@ private struct TranscriptHost: NSViewRepresentable {
         private func evaluate(_ webView: WKWebView, _ js: String) {
             webView.evaluateJavaScript(js) { result, error in
                 if let error = error {
-                    TranscriptHost.logger.error("JS eval error: \(error.localizedDescription, privacy: .public) for: \(js.prefix(120), privacy: .public)")
+                    // Fable checklist close-out: drop `privacy: .public` so OSLog
+                    // redacts by default. The JS prefix can contain the start of
+                    // message HTML, and the error description can leak DOM
+                    // structure — neither is safe to ship in cleartext.
+                    TranscriptHost.logger.error("JS eval error: \(error.localizedDescription) for: \(js.prefix(120))")
                 }
             }
         }
@@ -285,7 +288,11 @@ private struct TranscriptHost: NSViewRepresentable {
                 if let body = message.body as? [String: Any],
                    let ok = body["ok"] as? Bool, !ok {
                     let messageId = (body["id"] as? String) ?? "?"
-                    TranscriptHost.logger.error("bcCopyMessage: template-side pasteboard write failed for id=\(messageId, privacy: .public)")
+                    // Fable checklist close-out: drop `privacy: .public` so
+                    // OSLog redacts the message id by default. Not message
+                    // content, but consistent with the policy on the JS eval
+                    // error path and easy to be conservative.
+                    TranscriptHost.logger.error("bcCopyMessage: template-side pasteboard write failed for id=\(messageId)")
                 }
 
             default:
