@@ -179,11 +179,10 @@ final class ThemeManager {
         // --bc-radius-bubble : rounded-rect corner radius (Theme.radius.xl = 16pt)
         // --bc-pad-bubble    : bubble interior padding (Theme.spacing.lg = 16pt horizontal,
         //                      Theme.spacing.md = 12pt vertical)
-        // --bc-gap-msg       : inter-message vertical gap (Theme.spacing.sm = 8pt).
-        //                      Was .xs (4pt) — too subtle, Adam couldn't tell the
-        //                      gap had been bumped. .md (12pt) was too much; Adam
-        //                      asked for the 8pt half-step. .sm gives a clean
-        //                      half-line separation between messages.
+        // --bc-gap-msg       : inter-message vertical gap (Theme.spacing.lg = 16pt).
+        //                      Was .xs (4pt) — too subtle. .sm (8pt) still too tight
+        //                      for Adam. .lg (16pt) gives clear separation between
+        //                      send/reply bubbles.
         //                      NOTE: this token is set on documentElement via
         //                      setTheme() and always wins over the :root CSS
         //                      hardcode. The CSS hardcode is the fallback only.
@@ -192,7 +191,7 @@ final class ThemeManager {
         let radiusXl = (currentTheme.radius[.xl] ?? 16) * CGFloat(scale)
         let padH = (currentTheme.spacing[.lg] ?? 16) * CGFloat(scale)
         let padV = (currentTheme.spacing[.md] ?? 12) * CGFloat(scale)
-        let gapMsg = (currentTheme.spacing[.sm] ?? 8) * CGFloat(scale)
+        let gapMsg = (currentTheme.spacing[.lg] ?? 16) * CGFloat(scale)
         tokens["--bc-radius-bubble"] = formatPx(radiusXl)
         tokens["--bc-pad-h-bubble"] = formatPx(padH)
         tokens["--bc-pad-v-bubble"] = formatPx(padV)

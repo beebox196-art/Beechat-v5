@@ -136,7 +136,7 @@ enum TranscriptTemplate {
        sets the actual value via setTheme() on documentElement, which always
        wins in the cascade. Both must agree, otherwise the hardcode is dead
        code. ThemeManager.swift sources this from SpacingToken.md (12pt). */
-    --bc-gap-msg: 8px;   /* 8pt half-step — Adam: space between messages (matches Theme.spacing.sm) */
+    --bc-gap-msg: 16px;  /* 16pt — Adam: clear separation between messages (matches Theme.spacing.lg) */
     /* Scrollbar reserved space so the jump-to-latest button stays clear of the gutter. */
     --bc-scrollbar-w: 16px;
   }
