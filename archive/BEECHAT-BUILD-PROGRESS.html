@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BeeChat — Option B Build Progress</title>
+<style>
+  :root { --bg: #0d1117; --surface: #161b22; --surface2: #1c2128; --border: #30363d; --text: #e6edf3; --dim: #8b949e; --green: #7ee787; --green-dim: #0d2818; --amber: #d29922; --amber-dim: #2d2000; --blue: #58a6ff; --blue-dim: #0d2847; --red: #f85149; --red-dim: #3d0c0c; --purple: #d2a8ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem; }
+  h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; }
+  h3 { color: var(--blue); margin-bottom: 0.5rem; font-size: 1rem; }
+  h4 { font-size: 0.9rem; margin-top: 0.75rem; margin-bottom: 0.5rem; }
+  .subtitle { color: var(--dim); margin-bottom: 0.3rem; font-size: 0.9rem; }
+  .timestamp { color: var(--dim); font-size: 0.8rem; margin-bottom: 1.5rem; }
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; text-align: center; }
+  .stat-num { font-size: 1.8rem; font-weight: 700; }
+  .stat-label { font-size: 0.75rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
+  .progress-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; height: 28px; margin-bottom: 2rem; overflow: hidden; position: relative; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #238636, #7ee787); border-radius: 7px; transition: width 0.5s ease; }
+  .progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.75rem; font-weight: 600; color: var(--text); text-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+  .gate { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 1rem; overflow: hidden; transition: border-color 0.2s; }
+  .gate:hover { border-color: var(--blue); }
+  .gate-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; cursor: pointer; user-select: none; }
+  .gate-left { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+  .gate-id { font-size: 0.8rem; font-weight: 700; padding: 0.2rem 0.6rem; border-radius: 5px; min-width: 2.5rem; text-align: center; }
+  .gate-name { font-weight: 600; font-size: 0.95rem; }
+  .gate-spec { color: var(--dim); font-size: 0.8rem; margin-left: 0.5rem; }
+  .gate-right { display: flex; align-items: center; gap: 1rem; }
+  .gate-est { color: var(--dim); font-size: 0.8rem; }
+  .gate-status { font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.65rem; border-radius: 5px; }
+  .status-ready { background: var(--blue-dim); color: var(--blue); }
+  .status-active { background: var(--amber-dim); color: var(--amber); }
+  .status-done { background: var(--green-dim); color: var(--green); }
+  .status-blocked { background: var(--red-dim); color: var(--red); }
+  .status-waiting { background: var(--surface2); color: var(--dim); }
+  .status-kill { background: linear-gradient(135deg, #2d2000, #3d0c0c); color: var(--red); border: 1px solid #f85149; }
+  .gate-body { padding: 0 1.25rem 1rem; display: none; }
+  .gate.open .gate-body { display: block; }
+  .gate-body p { color: var(--dim); font-size: 0.85rem; margin-bottom: 0.5rem; }
+  .gate-body ul { color: var(--dim); font-size: 0.85rem; margin-left: 1.25rem; margin-bottom: 0.5rem; }
+  .gate-body li { margin-bottom: 0.2rem; }
+  .check { color: var(--green); }
+  .uncheck { color: var(--dim); }
+  .note { background: var(--surface2); border-left: 3px solid var(--blue); padding: 0.5rem 0.75rem; margin-top: 0.5rem; font-size: 0.82rem; color: var(--dim); border-radius: 0 4px 4px 0; }
+  .note-time { color: var(--blue); font-weight: 600; font-size: 0.75rem; }
+  .bug { background: var(--red-dim); border-left: 3px solid var(--red); padding: 0.5rem 0.75rem; margin-top: 0.5rem; font-size: 0.82rem; color: var(--dim); border-radius: 0 4px 4px 0; }
+  .bug-label { color: var(--red); font-weight: 600; }
+  .milestone { background: linear-gradient(135deg, #0d2847 0%, #161b22 100%); border: 2px solid var(--blue); border-radius: 10px; padding: 1.25rem; margin-bottom: 2rem; }
+  .milestone p { color: var(--dim); font-size: 0.85rem; }
+  .milestone .emoji { font-size: 1.5rem; margin-right: 0.5rem; vertical-align: middle; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; margin-top: 0.75rem; }
+  .metric-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem; text-align: center; }
+  .metric-val { font-size: 1.3rem; font-weight: 700; }
+  .metric-lbl { font-size: 0.7rem; color: var(--dim); text-transform: uppercase; letter-spacing: 0.05em; }
+  .principle { background: var(--surface2); border-radius: 6px; padding: 0.5rem 0.75rem; margin: 0.3rem 0; font-size: 0.82rem; color: var(--dim); }
+  .principle-label { color: var(--blue); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .step-table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
+  .step-table th { text-align: left; color: var(--dim); font-size: 0.75rem; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.05em; }
+  .step-table td { padding: 0.35rem 0.5rem; font-size: 0.82rem; color: var(--dim); border-bottom: 1px solid var(--border); }
+  .step-table .step-id { color: var(--blue); font-weight: 600; font-size: 0.8rem; }
+  .assignee { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.72rem; font-weight: 600; }
+  .assignee-q { background: var(--blue-dim); color: var(--blue); }
+  .assignee-k { background: rgba(210,168,255,0.15); color: var(--purple); }
+  .assignee-m { background: rgba(210,168,255,0.15); color: var(--purple); }
+  .assignee-bee { background: var(--green-dim); color: var(--green); }
+  .assignee-adam { background: var(--amber-dim); color: var(--amber); }
+  .rollback-box { background: rgba(35,134,54,0.1); border: 1px solid rgba(35,134,54,0.3); border-radius: 8px; padding: 0.75rem 1rem; margin-top: 0.75rem; font-size: 0.82rem; color: var(--dim); }
+  .rollback-box strong { color: var(--green); }
+  .outstanding-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+  .outstanding-table th { text-align: left; color: var(--blue); font-size: 0.8rem; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+  .outstanding-table td { padding: 0.4rem 0.6rem; font-size: 0.82rem; color: var(--dim); border-bottom: 1px solid var(--border); }
+  .p1 { color: var(--amber); font-weight: 600; }
+  .p2 { color: var(--blue); }
+  .p0 { color: var(--green); font-weight: 600; }
+  footer { text-align: center; color: #484f58; font-size: 0.75rem; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+  code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85em; background: rgba(110,118,129,0.15); padding: 0.15rem 0.4rem; border-radius: 3px; }
+  .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .tab { background: var(--surface); border: 1px solid var(--border); color: var(--dim); padding: 0.4rem 0.9rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+  .tab.active { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+  .tab-section { display: none; }
+  .tab-section.active { display: block; }
+  @media (max-width: 768px) { .summary { grid-template-columns: repeat(2, 1fr); } .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>🐝 BeeChat — Option B Build Progress</h1>
+<p class="subtitle">Single-WebView Transcript &nbsp;|&nbsp; Scope: <code>Docs/Specs/Active/single-webview-transcript-plan.md</code> &nbsp;|&nbsp; Evidence: <code>Docs/Reviews/optionb/</code></p>
+<p class="timestamp" id="timestamp">Updated: loading...</p>
+
+<div class="summary">
+  <div class="stat"><div class="stat-num" id="done-count">0</div><div class="stat-label">Gates Done</div></div>
+  <div class="stat"><div class="stat-num" id="active-count">0</div><div class="stat-label">In Progress</div></div>
+  <div class="stat"><div class="stat-num" id="total-est">0</div><div class="stat-label">Est. Days</div></div>
+  <div class="stat"><div class="stat-num" id="pct-done">0%</div><div class="stat-label">Complete</div></div>
+</div>
+
+<div class="progress-bar">
+  <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+  <div class="progress-text" id="progress-text">0 / 0 gates</div>
+</div>
+
+<div class="milestone" style="border-color:var(--green);background:linear-gradient(135deg,#0d2818 0%,#161b22 100%);">
+  <h3><span class="emoji">🎉</span> Message Window COMPLETE — Signed Off as Firm Rollback Point (7 Aug 2026)</h3>
+  <p>The single-WebView transcript message window is <strong>done and Adam-signed</strong> — a clean foundation point. Load-earlier works, cosmetic pass landed, day-boundary date headers added, and the version is nailed as a rollback point. <strong>Tests: 336/0/0.</strong> Latest build <code>0.9.5k (2026.08.07)</code> — the only BeeChat app in /Applications.</p>
+  <ul style="color:var(--dim);font-size:0.85rem;margin-left:1.25rem;">
+    <li><strong style="color:var(--green)">Load-earlier</strong> — proper <code>prependEarlier</code> path, Kieran-signed after E10 backstop fix.</li>
+    <li><strong style="color:var(--green)">Cosmetic pass</strong> — sidebar-matched bg, Telegram-style timestamp, gentle shadows, 16pt message gap.</li>
+    <li><strong style="color:var(--green)">Day-boundary date headers</strong> — "Yesterday" / "Tuesday 6 Aug" separators, seam-tested for load-earlier prepend.</li>
+    <li><strong style="color:var(--green)">Close-out</strong> — diagnostic logging stripped, <code>isInspectable</code> gated behind <code>#if DEBUG</code>, old builds cleared.</li>
+    <li><strong style="color:var(--amber)">Images</strong> — parked (embedded-image pipeline gap); sanitizer CSP alignment still a correct defensive fix.</li>
+  </ul>
+  <p style="margin-top:0.5rem;">Full record in the WP-2I gate below. Real-life usage still to prove it out, but the message window is a solid, stable foundation.</p>
+</div>
+
+<div class="milestone">
+  <h3><span class="emoji">🚦</span> Programme Kickoff — Decisions D1–D4 (4 Aug 2026)</h3>
+  <p>Fable scoped the Option B programme (2026-08-04). Six review cycles and ~6 weeks have been spent on the whitespace/bounce bug class; the fix is architectural — put height + scroll in the same layout engine. <strong>D1–D4 decided by Adam (2026-08-05)</strong> — see Decisions tab.</p>
+  <ul style="color:var(--dim);font-size:0.85rem;margin-left:1.25rem;">
+    <li><strong style="color:var(--green)">D1 (decided):</strong> leave current version alone — no whitespace work on the existing build while Option B lands (accepted whitespace/bounce as interim).</li>
+    <li><strong style="color:var(--green)">D2 (decided):</strong> parallel — WP-1 + WP-0 run in parallel.</li>
+    <li><strong style="color:var(--green)">D3 (decided):</strong> full G1–G6 spike depth (2–3 days).</li>
+    <li><strong style="color:var(--green)">D4 (decided):</strong> macOS-only for this programme (with .macOS(.v26) deployment floor — modern WebKit load-bearing-eligible).</li>
+  </ul>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('workpackages')">Work Packages</div>
+  <div class="tab" onclick="switchTab('gates')">Gate Register</div>
+  <div class="tab" onclick="switchTab('decisions')">Decisions D1–D4</div>
+  <div class="tab" onclick="switchTab('evidence')">Evidence Rules</div>
+</div>
+
+<!-- ============ WORK PACKAGES ============ -->
+<div class="tab-section active" id="tab-workpackages">
+
+  <!-- WP-1 -->
+  <div class="gate" id="gate-wp1">
+    <div class="gate-header" onclick="toggleGate('wp1')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--blue-dim);color:var(--blue)">WP-1</span>
+        <span class="gate-name">Transcript Boundary Refactor <span class="gate-spec">standalone value · ships even if Option B dies</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">1d</span>
+        <span class="gate-status status-active">Built ✅ — awaiting Adam smoke walk</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Swappable transcript engine boundary. <strong>Standalone value — ship this regardless of Option B outcome.</strong> Builder: <span class="assignee assignee-q">Q</span> · Spec validation: <span class="assignee assignee-k">Kieran</span> + <span class="assignee assignee-q">Q</span> · Check: <span class="assignee assignee-k">Kieran</span> + <span class="assignee assignee-bee">Bee</span> · Branch: <code>feat/transcript-boundary</code> · Spec: <code>Docs/Specs/Active/WP-1-transcript-boundary.md</code></p>
+      <ul>
+        <li class="check"><code>TranscriptBoundary.swift</code> — <code>TranscriptState</code>, <code>TranscriptCallbacks</code>, <code>TranscriptEngine</code>, <code>transcriptView(engine:state:callbacks:)</code></li>
+        <li class="check"><code>FeatureFlags.transcriptEngine: TranscriptEngine</code> (string-backed, defaults <code>.native</code>) + tests</li>
+        <li class="check"><code>NativeTranscriptView</code> — rename-and-wrap of <code>canvasWithMacOS15Chrome</code> + <code>MessageCanvas</code>. Zero logic changes.</li>
+        <li class="check"><code>MainWindow.swift:234</code> calls <code>transcriptView(...)</code></li>
+        <li class="check">Streaming/bridge policy moved to <code>TranscriptState</code> extensions (one derived <code>streamingHTML</code> / <code>settledBridgeHTML</code>)</li>
+        <li class="check"><code>WebTranscriptView</code> stubbed to <code>EmptyView</code></li>
+      </ul>
+      <div class="note"><span class="note-time">✅ STATUS (2026-08-05)</span> <strong>BUILT + APPROVED.</strong> Q built on <code>feat/transcript-boundary</code> (4 commits); tests 407/0/0 (380 baseline + 27 new). Kieran APPROVED + rollback drill passed (policy-move revert independently compiles, §4.6 contract holds). Bee validated. Flag default uses <code>object(forKey:)</code> nil-coalesce (not <code>bool(forKey:)</code>) per Kieran. Spec baseline 823/0/1 was stale — real 380/0/0. <strong>Outstanding:</strong> Adam 3-topic manual smoke walk (§4.1) + merge/push decision. Engine-agnostic — unaffected by WP-0 fork.</div>
+      <div class="rollback-box"><strong>🔄 Rollback:</strong> revert one commit. No behavioural surface touched.</div>
+      <div class="note"><span class="note-time">Exit gate B1</span> App behaviourally identical; flag flips <code>.native</code>↔<code>.native</code>; <code>swift build && swift test</code> green; no diff on 3-topic manual walk. Signs: Q.</div>
+    </div>
+  </div>
+
+  <!-- WP-0 -->
+  <div class="gate" id="gate-wp0">
+    <div class="gate-header" onclick="toggleGate('wp0')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:linear-gradient(135deg,#2d2000,#3d0c0c);color:var(--red);border:1px solid #f85149;">WP-0</span>
+        <span class="gate-name">Feasibility Spike (KILL GATE) <span class="gate-spec">PREMISE VALIDATED · all six gates PASS · Fable SIGN-OFF</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">2–3d</span>
+        <span class="gate-status status-done">Validated — E5 sign-offs pending</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Bare <code>NSWindow</code> hosting one <code>WKWebView</code> + prototype transcript doc. <strong>Any G-gate FAIL halts the programme</strong> → Exit 1 (§11). Builder: <span class="assignee assignee-q">Q</span> · Spec validation: <span class="assignee assignee-k">Kieran</span> + <span class="assignee assignee-q">Q</span> · Gate verifiers: <span class="assignee assignee-adam">Adam</span> (G1,G2,G6), <span class="assignee assignee-q">Q</span> (G3,G5), <span class="assignee assignee-m">Mel</span> (G4) · Branch: <code>spike/transcript-webview</code> (throwaway) · Spec: <code>Docs/Specs/Active/WP-0-feasibility-spike.md</code></p>
+      <div class="bug"><span class="bug-label">✅ STATUS (2026-08-05):</span> <strong>WP-0 COMPLETE — all six gates G1–G6 PASS. Premise validated, Fable SIGN-OFF (Option A, not Exit 1).</strong>
+      <ul style="color:var(--dim);font-size:0.82rem;margin-left:1.25rem;margin-top:0.4rem;">
+        <li><strong>G1 Memory PASS</strong> (corrected re-run): exactly 1 spike-attributable WebContent PID (65974), RSS 103.5MB max, app plateau 1.3MB, 0 contamination. Overlay (C1–C6) is load-bearing. C-9 plateau logic carried to WP-2.</li>
+        <li><strong>G2 Scroll PASS</strong> (final re-run, Fable's 3 fixes + Q's Fix 4): 100/100 assertions dfb≤4px (50 stream + 10 image + 40 resize) + bounce probe honours user scroll-up (<code>pinned=false userScrolledUp=true</code> across 12 frames). All 10 criteria green incl. gating 5+9. <strong>Fable's root causes:</strong> scrollHeight−clientHeight (680px off), userScrolledUp persistence, probe contamination. <strong>Q's Fix 4:</strong> window.scrollTo doesn't fire scroll event in WebKit → probe dispatches it explicitly. E8 all-10-criteria audit clean.</li>
+        <li><strong>G3 Selection PASS</strong> — genuinely paste-verified (FR-MULTICOPY A5): real Cmd+C, NSPasteboard 194B plain + RTF + HTML, consumer pbpaste, oracle passes.</li>
+        <li><strong>G4 Theme</strong> — FONT_SCALE_SWAP PASS; VISUAL_PARITY NOT_ASSESSED (blocked on production-template screenshot + Mel sign-off).</li>
+        <li><strong>G5 Topic swap PASS</strong> (avg 11.85ms / max 27ms, budget 100ms). E5 resolved — verifier Kieran (pending).</li>
+        <li><strong>G6 Input PASS</strong> — 136-char deterministic keystroke, zero drops, focus retained.</li>
+      </ul>
+      <strong>Both expensive risks retired: memory (G1) + pinning (G2).</strong> The single-WebView transcript premise rests on real evidence. Fable SIGN-OFF: "100 honest pin assertions under async content growth with no imperative help… the bug class tested honestly for the first time, and passing." <strong>Gating:</strong> G2 re-run passed criteria 5+9 → WP-2 scroll engine cleared to port. Rest of WP-2 (DOM/CSS/theme/fixtures) proceeds in parallel. <strong>Deployment floor change (Adam):</strong> Package.swift now .macOS(.v26) — P11 deleted, S9 (content-visibility) unblocked &amp; Tier 1, modern WebKit load-bearing-eligible. <strong>E5 sign-offs (2026-08-05):</strong> G1/G2/G3/G6 SIGNED by Adam; G4 SIGNED WITH CAVEAT by Mel (visual parity deferred to WP-2); <strong>G5 still PENDING (Kieran)</strong> — the only remaining WP-0 gate. <strong>Non-blocking (do not drop):</strong> C-9 G1 plateau, G4 visual parity + Mel, G3 TextEdit clarification.</div>
+      <div class="rollback-box"><strong>🔄 Rollback / Exit:</strong> branch never merged. Any G-gate FAIL → Exit 1: native <code>Grid</code> rendering + Whitespace-Fix-Scope Phases 1–3 completed. WP-1 boundary kept regardless.</div>
+      <div class="note"><span class="note-time">Exit gate G1–G6</span> All six feasibility gates PASS (see Gate Register tab). Evidence: <code>Docs/Reviews/optionb/</code> + Fable review prompt drafted at <code>FABLE-REVIEW-PROMPT-WP0.md</code>.</div>
+    </div>
+  </div>
+
+  <!-- WP-2 -->
+  <div class="gate" id="gate-wp2">
+    <div class="gate-header" onclick="toggleGate('wp2')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--blue-dim);color:var(--blue)">WP-2</span>
+        <span class="gate-name">Transcript Document <span class="gate-spec">HTML/CSS/JS + bridge + tokens</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">2.5–3.5d</span>
+        <span class="gate-status status-done">Built + Fable APPROVE — B2 signable, awaiting integration</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>DOM per route plan §4.1, CSS §4.2, JS API §4.3, scroll engine §4.4, events §4.5, CSP §4.6. Owner: <span class="assignee assignee-bee">Bee</span> (impl) + <span class="assignee assignee-m">Mel</span> (CSP/sanitizer review) · Reviewer: <span class="assignee assignee-q">Q</span> · Branch: <code>feat/transcript-document</code></p>
+      <div class="note"><span class="note-time">✅ STATUS (2026-08-06)</span> <strong>WP-2 DOCUMENT BUILT + FABLE APPROVE WITH CONDITIONS — B2 signable, WP-3 can start.</strong> Fable super-check (2026-08-06) found 3 real production defects the internal chain cleared (B-1 scroll listener wired to <code>document.scrollingElement</code> instead of <code>document</code> — Fix 2 non-functional in production; B-2 false "50/120 hysteresis" claim; C-1 near-bottom repin discarding user scroll intent). All fixed + re-verified by Fable running code. Suite 397/0/0, <code>--check</code> exit 0. Commits: <code>5d814fa</code> (B-1/B-2/C-1 fixes), <code>c0df445</code> (stale 50/120 header), <code>726a514</code> (re-check residues + C-1 regression test). <strong>⚠️ NOT YET WIRED INTO THE APP</strong> — see WP-2-INTEGRATION below.</div>
+      <ul>
+        <li class="check"><code>TranscriptTemplate.html</code> + <code>TranscriptTemplate.swift</code> (generated constant)</li>
+        <li class="check"><strong><code>scripts/embed-template.swift</code> written for real</strong> (§3.1 — pre-existing defect: file referenced but never existed; template has been hand-maintained)</li>
+        <li class="check">ThemeManager <strong>geometry</strong> token group (§3.2): <code>--bc-radius-bubble</code>, <code>--bc-pad-bubble</code>, <code>--bc-gap-msg</code>, <code>--bc-shadow-bubble</code></li>
+        <li class="check">Headless tests T1–T4 + fixture corpus (18 converter cases + General's real window)</li>
+        <li class="check">Bridge contract <strong>frozen at WP-2 entry</strong> — changes need Q sign-off + same-day note to WP-3</li>
+      </ul>
+      <div class="note"><span class="note-time">Exit gate B2</span> T1–T4 PASS; fixture corpus renders across all 8 themes (screenshot-diff); <code>embed-template.swift --check</code> exits 0; CSP reviewed by Mel. Signs: Mel + Q. <strong>Fable: "B2 is signable."</strong> B2 sign-off still pending (Adam) — the gate the integration task feeds.</div>
+    </div>
+  </div>
+
+  <!-- WP-2-INTEGRATION -->
+  <div class="gate" id="gate-wp2int">
+    <div class="gate-header" onclick="toggleGate('wp2int')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--amber-dim);color:var(--amber)">WP-2I</span>
+        <span class="gate-name">Transcript Integration <span class="gate-spec">wire WP-2 doc into the app for live testing</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">1–2d</span>
+        <span class="gate-status status-done">COMPLETE — message window signed off (2026-08-07)</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p><strong>Why this exists:</strong> the WP-2 transcript document is built and Fable-approved, but <strong>no Swift code drives it</strong> — <code>window.bc.setTopic</code> has no caller. The running app (0.9.5f) uses the legacy per-message WebView path, so the WP-2 feature cannot be smoke-tested live. This task wires the transcript into the topic view behind the existing <code>htmlRenderingEnabled</code> flag so Adam can test WP-2 in a live environment.</p>
+      <p><strong>Process (Adam-mandated, 2026-08-05):</strong> Bee writes spec → Kieran + Q validate → Q builds → Kieran checks → Bee validates → Adam smoke-tests. <strong>Q builds everything.</strong> External super-checker (Fable) at milestone only, manual copy.</p>
+      <div class="note"><span class="note-time">✅ SPEC DRAFTED (2026-08-06)</span> <code>Docs/Specs/Active/WP-2-integration.md</code> committed (<code>85cddab</code>). Covers: branch sequencing (WP-1 + WP-2 diverged — must merge first), the confirmed <code>data:</code> image sanitizer defect (per-attribute scheme fix, security-sensitive), flag gating, out-of-scope deferrals to WP-3, B2I acceptance criteria. <strong>Next: Kieran + Q validate the spec.</strong></div>
+      <div class="note"><span class="note-time">✅ VALIDATED + SIGNED OFF (2026-08-06)</span> Full validation trail complete: <strong>Q</strong> SOUND WITH FIXES (8 findings, reconciled <code>bf3a5ef</code>) → <strong>Kieran</strong> round-2 SOUND WITH FIXES (3 must-fix + 3 nit, reconciled <code>71c8774</code>) → <strong>Kieran</strong> round-3 SIGN-OFF CONDITIONAL (1 §6/§7 contradiction, patched <code>9ce5721</code>). Key conditions: <code>bcReady</code> inverse invariant (always applyState, no fault tripwire), conflict-free merge (disjoint file sets), <code>bcCopyMessage</code> pasteboard path verification (DOM writes, Swift is no-op). <strong>Q dispatched to build 2026-08-06.</strong></div>
+      <div class="note"><span class="note-time">✅ BUILD COMPLETE + CHECK PASS (2026-08-06)</span> <strong>Q built</strong> on <code>feat/transcript-integration</code> @ <code>ad5fa58</code>: <code>WebTranscriptView.swift</code> host (~486 LOC), stub deleted, sanitizer split into <code>hrefSchemes</code>/<code>srcSchemes</code>, +5 sanitizer tests. Full suite 431/0/1. <strong>Kieran build-check PASS</strong> (conf 0.96): data: security boundary sound (no <code>data:</code> leak into LinkPolicy), bcCopyMessage pasteboard path correct (DOM writes, defer to Adam's B2I-5), parallel-test flake pre-existing & documented. 1 WP-3 candidate (applyStreamingAndThinking always-fires — perf, not correctness). <strong>Bee validation PASS</strong> (build clean, suite 0 fail, 5 bridge handlers no bcHeight, bcReady invariant honored).</div>
+      <div class="note"><span class="note-time">🚨 SMOKE-TEST REGRESSION FOUND + FIXED (2026-08-06)</span> Adam's smoke test reported a <strong>blank transcript</strong> — no history, no response after "bee is thinking". <strong>Root cause:</strong> the <code>.web</code> host passed raw <code>msg.content</code> (markdown) directly as the template's <code>html</code> field. The template does <code>bubble.innerHTML = html</code>, so raw markdown rendered blank AND skipped the sanitizer (security regression). Route plan §4.3/§5 requires pre-rendered sanitized HTML. <strong>Fix (<code>ca122a3</code>):</strong> extracted <code>TranscriptPayloadBuilder</code> — <code>messagePayload()</code> + <code>sanitizedStreamingHTML()</code> run <code>HTMLSanitizer.sanitize(MarkdownToHTML.convert())</code>, exactly like the native path; applied to both message + streaming payloads; corrected the false "HTMLSanitizer runs before the host" comment. <strong>+6 regression tests</strong> (TranscriptHostPayloadTests) guard the contract. Full suite 430/0/0. <strong>Build reinstalled to /Applications, flag still <code>.web</code> — ready for Adam re-test.</strong></div>
+      <ul>
+        <li class="uncheck"><strong>Spec</strong> — <code>Docs/Specs/Active/WP-2-integration.md</code> (Bee): bridge contract, state diffing, flag gating, rollback, exit criteria</li>
+        <li class="uncheck"><strong>Validate</strong> — Kieran + Q review spec soundness</li>
+        <li class="uncheck"><strong>Build</strong> — Q: Swift host driving <code>TranscriptTemplate.html</code> via <code>window.bc.*</code>; wire into topic view behind flag</li>
+        <li class="uncheck"><strong>Check</strong> — Kieran verifies; Bee validates before returning to Adam</li>
+        <li class="uncheck"><strong>Smoke test</strong> — Adam live walk (scroll, images, copy buttons, themes, load-earlier, topic-switch whitespace)</li>
+      </ul>
+      <div class="bug"><span class="bug-label">⚠️ CONFIRMED DEFECT (2026-08-06 smoke test + probe):</span> <strong>the sanitizer strips <code>data:</code> URI images.</strong> Live probe: <code>&lt;img src="data:image/png;base64,..."&gt;</code> → <code>&lt;img alt="generated"&gt;</code> (src removed). CSP allows <code>data:</code> but the sanitizer (earlier gate) strips it. If agents emit data-URI images (common for generated images), they are silently dropped. Affects both legacy and WP-2 paths. <strong>Must be fixed as part of this integration.</strong></div>
+      <div class="note"><span class="note-time">Smoke-test context (2026-08-06)</span> Adam tested 0.9.5f (legacy path — WP-2 not wired). Results: scroll-up + jump-to-latest ✅, themes ✅, load-earlier ✅, topic bouncing better ✅; copy buttons ❌ (feature only in WP-2 template, not in legacy), images ❌ (data: URI stripped), intermittent topic-switch whitespace (legacy known issue, self-heals on re-entry). <strong>G4 visual-parity still open</strong> — nobody has seen the WP-2 transcript render; this integration is what enables that check.</div>
+      <div class="note"><span class="note-time">✅ MESSAGE WINDOW COMPLETE + SIGNED OFF (2026-08-07)</span> <strong>The message window is done — Adam signed off as a firm rollback point.</strong> Full record of the successful close-out on <code>feat/transcript-integration</code>:
+      <ul style="color:var(--dim);font-size:0.82rem;margin-left:1.25rem;margin-top:0.4rem;">
+        <li><strong>Load-earlier fixed</strong> (<code>4ebe1fb</code>) — proper <code>prependEarlier</code> path (was routing through <code>upsertMessages</code>, dumping older messages at the bottom). New <code>detectOlderHead</code> + <code>detectTailDiff</code> helpers. Kieran build-check CONDITIONAL PASS → E10 backstop gap fixed (<code>91097e6</code>) → clean sign-off.</li>
+        <li><strong>Images</strong> — diagnosed, not a host bug. Sanitizer aligned to CSP contract (<code>1bc2ea9</code>, dropped <code>http</code> from <code>srcSchemes</code>). Embedded-image pipeline gap (data-URI) parked as later-build item per Adam.</li>
+        <li><strong>Cosmetic pass</strong> (<code>b685646</code>) — message bg = sidebar <code>bgSurface</code> token; timestamp → bottom-right inside bubble (Telegram style); gentle light-grey shadow.</li>
+        <li><strong>Message gap</strong> — 4px→7px→12px→8pt→16pt. <strong>Root cause found:</strong> ThemeManager injects <code>--bc-gap-msg</code> as inline style which always overrides the :root CSS hardcode (the 7px bump was dead code). Fixed at source; final 16pt (<code>Theme.spacing.lg</code>) — Adam happy.</li>
+        <li><strong>Day-boundary date headers</strong> (<code>65f4dee</code>) — "Yesterday" / "Tuesday 6 Aug" separators (Kieran's brainstorm pick). Spec'd first (<code>WP-2I-day-headers.md</code>), seam-tested for the load-earlier prepend-across-boundary case (caught a real first-message-header bug on first run).</li>
+        <li><strong>Close-out</strong> — diagnostic <code>privacy: .public</code> logging stripped + <code>isInspectable</code> gated behind <code>#if DEBUG</code> (Kieran §4.2). Old <code>BeeChatApp-g.app</code> build removed from /Applications — only the current build remains.</li>
+        <li><strong>Tests:</strong> 336/0/0 throughout. Latest build <code>0.9.5k (2026.08.07)</code> installed + relaunched as the firm rollback point.</li>
+      </ul>
+      <strong>Recurring drift class flagged:</strong> CSS hardcode vs ThemeManager token source can silently disagree (same class as the sanitizer fix). Q recommended a <code>--check</code> invariant guard — not yet implemented, worth adding before merge to main.</div>
+      <div class="rollback-box"><strong>🔄 Rollback:</strong> flag flips back to <code>.native</code> (one UserDefault, no reinstall). WP-1 <code>TranscriptBoundary</code> seam is the integration point.</div>
+    </div>
+  </div>
+
+  <!-- WP-3 -->
+  <div class="gate" id="gate-wp3">
+    <div class="gate-header" onclick="toggleGate('wp3')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--blue-dim);color:var(--blue)">WP-3</span>
+        <span class="gate-name">Swift Host <span class="gate-spec">one app-lifetime WKWebView</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">2d</span>
+        <span class="gate-status status-waiting">Blocked: WP-0 + WP-1</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p><code>WebTranscriptView.swift</code> (~300 LOC), one app-lifetime <code>WKWebView</code>, state diffing in <code>updateNSView</code>, content prep memoized by hash, process-death replay, context-menu filtering. Owner: <span class="assignee assignee-k">Kieran</span> · Reviewer: <span class="assignee assignee-q">Q</span> · Branch: <code>feat/transcript-host</code></p>
+      <ul>
+        <li class="uncheck">Explicitly <strong>deleted</strong>: <code>BubbleWebView.scrollWheel</code> inversion hack (existed only because bubbles sat inside a native scroll view)</li>
+        <li class="uncheck"><strong>Bundle identifier fix</strong> — currently unset, which is why <code>log show --predicate 'subsystem == "com.beebox.beechat"'</code> returns nothing. <strong>E2 evidence uncollectable until fixed → WP-3 blocker.</strong></li>
+      </ul>
+      <div class="note"><span class="note-time">Exit gate B3</span> Flag <code>.web</code> renders General end-to-end with live streaming; <code>kill -9</code> WebContent → self-restores at bottom ≤1s; bundle-id fix verified via <code>log show</code>. Signs: Q.</div>
+    </div>
+  </div>
+
+  <!-- WP-4 -->
+  <div class="gate" id="gate-wp4">
+    <div class="gate-header" onclick="toggleGate('wp4')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--blue-dim);color:var(--blue)">WP-4</span>
+        <span class="gate-name">Parity & Hardening <span class="gate-spec">P1–P16 parity matrix</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">2–3d</span>
+        <span class="gate-status status-waiting">Blocked: B2 + B3</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>P1–P12 all PASS or PASS-WITH-CONCERNS-with-owner; soak test; screenshot-diff corpus across all 8 themes. Owner: <span class="assignee assignee-bee">Bee</span> (fixes) · Verifier: <span class="assignee assignee-adam">Adam</span> + <span class="assignee assignee-q">Q</span> + <span class="assignee assignee-m">Mel</span> · Branch: <code>feat/transcript-parity</code></p>
+      <ul>
+        <li class="uncheck">P1–P12 parity + regression sweep P13–P16 (delete/archive, reset marker, font scale, reconnect)</li>
+        <li class="uncheck">Soak test + screenshot-diff corpus (8 themes)</li>
+      </ul>
+      <div class="note"><span class="note-time">Exit gate B4 — <strong style="color:var(--amber)">Adam personally signs</strong></span> P1–P12 all PASS/concerns-with-owner; soak passes; zero open P0/P1. Authorises default-on for Adam's daily driver.</div>
+    </div>
+  </div>
+
+  <!-- WP-5 -->
+  <div class="gate" id="gate-wp5">
+    <div class="gate-header" onclick="toggleGate('wp5')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--blue-dim);color:var(--blue)">WP-5</span>
+        <span class="gate-name">Rollout <span class="gate-spec">2 release cycles · calendar time</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">2 cycles</span>
+        <span class="gate-status status-waiting">Blocked: B4</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Owner: <span class="assignee assignee-adam">Adam</span> (release decisions) · <span class="assignee assignee-bee">Bee</span> (builds). <strong>The escape hatch is the point.</strong></p>
+      <ul>
+        <li class="uncheck"><strong>R1</strong> — release with default <code>.native</code>, <code>.web</code> via toggle. Adam + Bee agents dogfood <code>.web</code> ≥5 days.</li>
+        <li class="uncheck"><strong>R2</strong> — default <code>.web</code>, native retained as escape hatch (flip-back = one UserDefault, no reinstall)</li>
+        <li class="uncheck"><strong>R3</strong> — after two stable releases on <code>.web</code>, authorise WP-6</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- WP-6 -->
+  <div class="gate" id="gate-wp6">
+    <div class="gate-header" onclick="toggleGate('wp6')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--blue-dim);color:var(--blue)">WP-6</span>
+        <span class="gate-name">Retirement <span class="gate-spec">deletion ledger · net −1,228 LOC</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">0.5d</span>
+        <span class="gate-status status-waiting">Blocked: R3</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Execute the deletion ledger (§12). Owner: <span class="assignee assignee-k">Kieran</span>.</p>
+      <ul>
+        <li class="uncheck">Delete: <code>MessageWebView.swift</code> (267), <code>WebViewHeightCache.swift</code> (36), <code>HTMLMessageConverter.swift</code> + SwiftSoup (326), <code>ConvertedMessageView.swift</code> (206), <code>MessageCanvas.swift</code> (528), converter branches (~120), <code>MessageBubble.swift</code> + width plumbing (155), converter tests (~300)</li>
+        <li class="uncheck">Kept: <code>TranscriptBoundary</code> — the boundary is the permanence, not the dead code</li>
+      </ul>
+      <div class="rollback-box"><strong>Removed ~1,938 · Added ~710 · Net −1,228.</strong> One rendering pipeline instead of three; one OS path instead of macOS 14/15 forks; zero undocumented SwiftUI scroll semantics.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ GATE REGISTER ============ -->
+<div class="tab-section" id="tab-gates">
+
+  <!-- G1-G6 -->
+  <div class="gate" id="gate-g1">
+    <div class="gate-header" onclick="toggleGate('g1')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">G1</span>
+        <span class="gate-name">Memory Feasibility <span class="gate-spec">kill gate · WP-0</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-est">—</span>
+        <span class="gate-status status-done">PASS</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Load General's real message set (bypass 25-window), soak 30 min.</p>
+      <ul>
+        <li class="check">Exactly <strong>1</strong> WebContent process — <strong>PASS</strong> (PID 65974, stable across soak)</li>
+        <li class="check">app + WebContent RSS <strong>&lt; 400 MB</strong> — <strong>PASS</strong> (103.5MB spike-attributable max)</li>
+        <li class="check">RSS <strong>plateaus</strong> — <strong>PASS</strong> (app 1.3MB spread; WebContent 103.5MB bounded)</li>
+        <li class="check">Actual message count re-derived — <strong>427</strong> (stale "422" corrected)</li>
+      </ul>
+      <div class="note"><span class="note-time">Verifier</span> Adam (PENDING sign-off) · Maps to: 12.9 GB WebContent blowup (Round 3) · Corrected re-run via baseline-delta/lsof attribution (Kieran REJECTED original system-wide measure; re-run proves 1 spike-attributable proc). C-9 plateau logic carried to WP-2.</div>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-g2">
+    <div class="gate-header" onclick="toggleGate('g2')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">G2</span>
+        <span class="gate-name">Scroll Feasibility <span class="gate-spec">kill gate · WP-0</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">PASS</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Pinned-at-bottom while: streaming appends, 10 images late arrival, continuous live resize 10s.</p>
+      <ul>
+        <li class="check">Never unpins, never strands, no visible jump — <strong>PASS</strong> (100/100 assertions dfb≤4px: 50 stream + 10 image + 40 resize)</li>
+        <li class="check">Bounce probe honours user scroll-up — <strong>PASS</strong> (<code>pinned=false userScrolledUp=true</code> across 12 frames under content growth)</li>
+      </ul>
+      <div class="note"><span class="note-time">Verifier</span> Adam (PENDING sign-off) · Maps to: the whitespace/bounce bug class itself · <strong>Final re-run PASS</strong> after Fable's 3 root-cause fixes + Q's Fix 4 (window.scrollTo doesn't fire scroll event → probe dispatches explicitly). E8 all-10-criteria audit clean.</div>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-g3">
+    <div class="gate-header" onclick="toggleGate('g3')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">G3</span>
+        <span class="gate-name">Selection Feasibility <span class="gate-spec">kill gate · WP-0 · FR-MULTICOPY</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">PASS</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Drag-select across 5 messages incl. a table and code block; Cmd+C; paste into TextEdit.</p>
+      <ul>
+        <li class="check">Coherent multi-message plain text; table rows legible as rows — <strong>PASS</strong> (content-in-order oracle)</li>
+        <li class="check"><strong>FR-MULTICOPY A1</strong> — <strong>PASS</strong> — genuinely paste-verified (real Cmd+C via execCommand, NSPasteboard 194B plain + RTF + HTML, consumer pbpaste, oracle passes)</li>
+      </ul>
+      <div class="note"><span class="note-time">Verifier</span> Adam (PENDING sign-off) · Maps to: <strong>FR-MULTICOPY</strong> (Adam's requirement, added 2026-08-05) · FR-MULTICOPY A2/A3 (code-block + per-message copy buttons) are a WP-2 deliverable, verified at P6. Minor residual: TextEdit-consumer byte-count equals pasteboard (may re-read pasteboard) — clarify at WP-2.</div>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-g4">
+    <div class="gate-header" onclick="toggleGate('g4')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">G4</span>
+        <span class="gate-name">Theme Feasibility <span class="gate-spec">kill gate · WP-0</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">FONT_SCALE PASS · PARITY NOT ASSESSED</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Port 1 of the 8 themes + fontScale slider live.</p>
+      <ul>
+        <li class="check">fontScale steps (0.8/1.0/1.2/1.5) — <strong>PASS</strong> (raf 53–95ms, documented perf target)</li>
+        <li class="uncheck">Visual parity with native bubble chrome — <strong>NOT ASSESSED</strong> (blocked on production-template screenshot + Mel sign-off)</li>
+      </ul>
+      <div class="note"><span class="note-time">Verifier</span> Mel (PENDING sign-off) · Maps to: 8-theme token plumbing risk (Round 1) · Reference screenshot <code>G4-reference-light.png</code> committed. Production-template capture timed out (2s) — different approach needed at WP-2.</div>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-g5">
+    <div class="gate-header" onclick="toggleGate('g5')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">G5</span>
+        <span class="gate-name">Topic Swap Feasibility <span class="gate-spec">kill gate · WP-0</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">PASS</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Swap between two 25-message topics <strong>20×</strong>.</p>
+      <ul>
+        <li class="check">Lands at bottom 20/20 — <strong>PASS</strong></li>
+        <li class="check">Perceived <strong>&lt; 100ms</strong> — <strong>PASS</strong> (avg 11.85ms / max 27ms)</li>
+        <li class="check">White flash — recorded (40/40 white samples, documented perf target; white-flash criterion now in verdict logic per E8)</li>
+      </ul>
+      <div class="note"><span class="note-time">Verifier</span> Kieran (PENDING sign-off — E5 resolved, was Q-signed) · Maps to: topic-switch flash</div>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-g6">
+    <div class="gate-header" onclick="toggleGate('g6')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--amber-dim);color:var(--amber)">G6</span>
+        <span class="gate-name">Input Feasibility <span class="gate-spec">kill gate · WP-0 · ⚠️ the honest risk</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">PASS</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Type in native composer while transcript streams.</p>
+      <ul>
+        <li class="check">No focus theft — <strong>PASS</strong> (focus retained)</li>
+        <li class="check"><strong>Zero dropped keystrokes</strong> — <strong>PASS</strong> (136-char deterministic NSEvent dispatch, typed == composer)</li>
+      </ul>
+      <div class="note"><span class="note-time">Verifier</span> Adam (PENDING sign-off)</div>
+    </div>
+  </div>
+
+  <!-- B-series -->
+  <div class="gate" id="gate-b1">
+    <div class="gate-header" onclick="toggleGate('b1')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">B1</span>
+        <span class="gate-name">WP-1 Exit Gate <span class="gate-spec">boundary refactor</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-active">Built — awaiting Adam smoke walk</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>App behaviourally identical; flag flips <code>.native</code>↔<code>.native</code> (web stubbed); <code>swift build && swift test</code> fully green (E7); no diff on 3-topic manual walk. <strong>Signs: Q</strong>.</p>
+      <div class="note"><span class="note-time">✅ STATUS (2026-08-05)</span> Built on <code>feat/transcript-boundary</code> (4 commits, 407/0/0 tests). Kieran APPROVED + rollback drill passed (§4.6 revert independently compiles). Bee validated. <strong>Awaiting Adam 3-topic manual smoke walk (§4.1) then merge/push.</strong> Engine-agnostic — unaffected by WP-0 fork.</div>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-b2">
+    <div class="gate-header" onclick="toggleGate('b2')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">B2</span>
+        <span class="gate-name">WP-2 Exit Gate <span class="gate-spec">transcript document</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-active">Fable APPROVE — signable, awaiting Adam sign-off</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>T1–T4 PASS; fixture corpus renders across all 8 themes (screenshot-diff); <code>embed-template.swift --check</code> exits 0; CSP reviewed and signed by Mel. <strong>Signs: Mel + Q</strong>.</p>
+      <div class="note"><span class="note-time">✅ STATUS (2026-08-06)</span> <strong>Fable super-check + re-check: APPROVE WITH CONDITIONS — "B2 is signable, WP-3 can start."</strong> Fable found 3 real production defects (B-1 scroll listener wiring, B-2 false hysteresis claim, C-1 repin discarding user intent) — all fixed and re-verified by Fable running code. Suite 397/0/0, <code>--check</code> exit 0. <strong>B2 sign-off pending Adam</strong> — the WP-2I integration task is what enables the live smoke test that feeds this sign-off. G4 visual-parity obligation still open (deferred twice; WP-2 tests assert structure not appearance).</div>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-b3">
+    <div class="gate-header" onclick="toggleGate('b3')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">B3</span>
+        <span class="gate-name">WP-3 Exit Gate <span class="gate-spec">Swift host</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-waiting">Awaiting WP-3</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Flag <code>.web</code> renders General end-to-end with live streaming vs gateway; <code>kill -9</code> on WebContent → transcript self-restores at bottom within 1s; bundle-id fix verified by successful <code>log show</code>. <strong>Signs: Q</strong>.</p>
+    </div>
+  </div>
+
+  <div class="gate" id="gate-b4">
+    <div class="gate-header" onclick="toggleGate('b4')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--amber-dim);color:var(--amber)">B4</span>
+        <span class="gate-name">WP-4 Exit Gate — Default-On <span class="gate-spec">Adam personally signs</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-waiting">Awaiting WP-4</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>P1–P12 all PASS or PASS-WITH-CONCERNS-with-owner; soak passes; <strong>zero open P0/P1 defects</strong>. Authorises default-on for Adam's own daily driver. <strong>Signs: Adam</strong>.</p>
+    </div>
+  </div>
+
+  <!-- T-series -->
+  <div class="gate" id="gate-t">
+    <div class="gate-header" onclick="toggleGate('t')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">T1–T5</span>
+        <span class="gate-name">Automated Document Tests <span class="gate-spec">CI-enforced · keep the bug class dead</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-waiting">Written in WP-2</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Extend <code>MessageTemplateTests.swift</code> headless-WKWebView harness. Run in CI on every commit.</p>
+      <ul>
+        <li class="uncheck"><strong>T1</strong> — <code>setTopic</code> lands <code>scrollTop == scrollHeight − clientHeight</code> before first paint callback</li>
+        <li class="uncheck"><strong>T2</strong> — pin hysteresis: enters pinned at d&lt;50, leaves at d&gt;120, no oscillation in 50–120 band</li>
+        <li class="uncheck"><strong>T3</strong> — <code>prependEarlier</code> preserves anchor offset exactly</li>
+        <li class="uncheck"><strong>T4</strong> — streaming settle produces zero node-count flicker (MutationObserver)</li>
+        <li class="uncheck"><strong>T5</strong> (recommended) — assert <code>bcHeight</code> does <em>not</em> exist in bridge surface (prevents reintroducing the height protocol "just for one case")</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- P-series -->
+  <div class="gate" id="gate-p">
+    <div class="gate-header" onclick="toggleGate('p')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">P1–P16</span>
+        <span class="gate-name">Parity Matrix <span class="gate-spec">must-pass before default-on</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-waiting">WP-4</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <h4 style="color:var(--blue)">Must-pass (blockers for default-on)</h4>
+      <table class="step-table">
+        <tr><th>#</th><th>Scenario</th><th>Verifier</th></tr>
+        <tr><td class="step-id">P1</td><td>Topic switch ×20 incl. General — lands at bottom, no flash, no whitespace</td><td class="p0">Adam</td></tr>
+        <tr><td class="step-id">P2</td><td>ThinkingBee → stream → settle — one continuous bubble, no remount flash</td><td class="p0">Adam</td></tr>
+        <tr><td class="step-id">P3</td><td>Load earlier ×3 — viewport anchored</td><td class="p2">Q</td></tr>
+        <tr><td class="step-id">P4</td><td>All 8 themes + fontScale range — full restyle, no reload</td><td class="p2">Mel</td></tr>
+        <tr><td class="step-id">P5</td><td>Live resize 10s — pinned stays pinned</td><td class="p2">Q</td></tr>
+        <tr><td class="step-id">P6</td><td><strong>FR-MULTICOPY</strong> — cross-message selection + Cmd+C incl. table + code; code-block copy button (A2); per-message copy-full-text (A3); paste-verified into TextEdit + code editor (A5)</td><td class="p0">Adam</td></tr>
+        <tr><td class="step-id">P7</td><td>Links (allowed + blocked), image tap — LinkPolicy parity</td><td class="p2">Mel</td></tr>
+        <tr><td class="step-id">P8</td><td>Archived read-only view, reset indicator overlay — unchanged</td><td class="p2">Q</td></tr>
+        <tr><td class="step-id">P9</td><td>WebContent kill during streaming — self-heal ≤1s, no blank bubble</td><td class="p2">Q</td></tr>
+        <tr><td class="step-id">P10</td><td>VoiceOver walk + arrival announcement — aria-live fires</td><td class="p2">Mel</td></tr>
+        <tr><td class="step-id">P11</td><td>macOS 14 run — identical path, no <code>#available</code> forks</td><td class="p0">Bee</td></tr>
+        <tr><td class="step-id">P12</td><td>Memory census after 1h mixed use — 1 WebContent, RSS plateau</td><td class="p0">Adam</td></tr>
+      </table>
+      <h4 style="color:var(--blue)">Regression sweep (must also pass)</h4>
+      <table class="step-table">
+        <tr><th>#</th><th>Area</th><th>Check</th></tr>
+        <tr><td class="step-id">P13</td><td>Topic delete / archive</td><td><code>DIAG-001</code> behaviour unchanged</td></tr>
+        <tr><td class="step-id">P14</td><td>Session reset marker</td><td><code>FR-005</code> feedback unchanged</td></tr>
+        <tr><td class="step-id">P15</td><td>Font scale persistence</td><td><code>FontScaleTests</code> green, visual check</td></tr>
+        <tr><td class="step-id">P16</td><td>Gateway reconnect (<code>FR-002</code>)</td><td>Status bar + transcript recover together</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- R-series -->
+  <div class="gate" id="gate-r">
+    <div class="gate-header" onclick="toggleGate('r')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">R1–R3</span>
+        <span class="gate-name">Rollout Gates <span class="gate-spec">calendar time</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-waiting">After B4</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <table class="step-table">
+        <tr><th>Gate</th><th>Trigger</th><th>Criteria</th><th>Signs</th></tr>
+        <tr><td class="step-id">R1</td><td>Release with <code>.web</code> opt-in</td><td>Build ships; Adam + Bee agents on <code>.web</code> ≥5 days</td><td>Adam</td></tr>
+        <tr><td class="step-id">R2</td><td>Flip default to <code>.web</code></td><td>R1 produced zero P0/P1 defects; census evidence (E2 logs, <code>log show</code>)</td><td>Adam</td></tr>
+        <tr><td class="step-id">R3</td><td>Authorise retirement</td><td>Two stable releases on <code>.web</code> default; zero P0/P1; no flip-backs</td><td>Adam</td></tr>
+      </table>
+      <div class="note"><span class="note-time">Escape hatch</span> Between R2 and R3 the native engine stays. Flip-back is one UserDefault, no reinstall. Do not delete anything before R3.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ DECISIONS ============ -->
+<div class="tab-section" id="tab-decisions">
+
+  <!-- D1 -->
+  <div class="gate" id="gate-d1">
+    <div class="gate-header" onclick="toggleGate('d1')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--green-dim);color:var(--green)">D1</span>
+        <span class="gate-name">The Tactical Line <span class="gate-spec">DECIDED 2026-08-05 · leave current version alone</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">Decided</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>The clamp branch <code>fix/whitespace-phase1-clamp</code> is unmerged under REQUEST CHANGES for a one-line logging fix, while <code>main</code> has no whitespace work at all. Adam is running a build with either no mitigation, or an unreviewed local build.</p>
+      <table class="step-table">
+        <tr><th>Option</th><th>Description</th></tr>
+        <tr><td class="step-id">(a) ★ Recommended</td><td>Fix F-N1, merge Phase 1 to <code>main</code>, ship as interim. Drop Phases 2–3. One line buys three weeks of livability; all in deletion ledger anyway.</td></tr>
+        <tr><td class="step-id">(b)</td><td>Complete Phases 1–3 fully in parallel — real effort on code scheduled for deletion.</td></tr>
+        <tr><td class="step-id">(c) ✓ ADAM'S CALL</td><td>Abandon branch; run on <code>main</code> ~3 weeks — no mitigation at all. BeeChat is working; Adam can live with whitespace/bounce while Option B lands. <strong>No D1 work required to start the programme.</strong></td></tr>
+      </table>
+      <div class="note"><span class="note-time">Outcome (Adam, 2026-08-05)</span> <strong>Chose (c) — leave the current version alone.</strong> No work on the existing build unless Option B itself requires it. The clamp branch stays unmerged; focus is entirely on WP-0 → WP-6. v0.9.5f/g remain the running baseline with the known whitespace/bounce issue accepted for the duration.</div>
+    </div>
+  </div>
+
+  <!-- D2 -->
+  <div class="gate" id="gate-d2">
+    <div class="gate-header" onclick="toggleGate('d2')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--green-dim);color:var(--green)">D2</span>
+        <span class="gate-name">Owner Allocation <span class="gate-spec">DECIDED 2026-08-05 · parallel</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">Decided</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>WP-1 and WP-0 run in parallel, independent briefs.</p>
+      <table class="step-table">
+        <tr><th>Option</th><th>Description</th></tr>
+        <tr><td class="step-id">Parallel ★ ✓ ADAM'S CALL</td><td>Kieran on WP-1 + Bee on WP-0, as scoped. WP-1 has standalone value, doesn't depend on spike outcome. Serialising adds 2–3 days for nothing.</td></tr>
+        <tr><td class="step-id">Serialise</td><td>One owner does both — slower, no benefit.</td></tr>
+      </table>
+      <div class="note"><span class="note-time">Outcome (Adam, 2026-08-05)</span> <strong>Chose parallel.</strong> Adam wants efficient dev practices — full team + external validators used to deliver quickly. Kieran → WP-1, Bee → WP-0, in parallel.</div>
+    </div>
+  </div>
+
+  <!-- D3 -->
+  <div class="gate" id="gate-d3">
+    <div class="gate-header" onclick="toggleGate('d3')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--green-dim);color:var(--green)">D3</span>
+        <span class="gate-name">Spike Depth <span class="gate-spec">DECIDED 2026-08-05 · full G1–G6</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">Decided</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <table class="step-table">
+        <tr><th>Option</th><th>Description</th></tr>
+        <tr><td class="step-id">Full G1–G6 ★ ✓ ADAM'S CALL</td><td>2–3 days, all six gates. G4 (theme ×8) and G5 (topic swap) are exactly where "looked fine in the prototype" costs a week later.</td></tr>
+        <tr><td class="step-id">G1/G2/G6 only</td><td>~1 day, accept G3/G4/G5 risk into WP-4. Trades 2 days now for the programme's main schedule risk.</td></tr>
+      </table>
+      <div class="note"><span class="note-time">Outcome (Adam, 2026-08-05)</span> <strong>Chose full G1–G6.</strong> "We need to get this right — happy for extra effort and time to ensure we do." All six kill gates run to completion in WP-0.</div>
+    </div>
+  </div>
+
+  <!-- D4 -->
+  <div class="gate" id="gate-d4">
+    <div class="gate-header" onclick="toggleGate('d4')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--green-dim);color:var(--green)">D4</span>
+        <span class="gate-name">Platform Target <span class="gate-spec">DECIDED 2026-08-05 · macOS only</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-done">Decided</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p>Bee stated the feature was for BeeChat-Mobile; Q's spec + Adam's instruction said macOS.</p>
+      <table class="step-table">
+        <tr><th>Option</th><th>Description</th></tr>
+        <tr><td class="step-id">macOS only ★ ✓ ADAM'S CALL</td><td>As scoped. iOS gets a separate scope once the macOS engine is proven. <code>TranscriptBoundary</code> seam makes that cheap later — document + bridge port; only the host is platform-specific.</td></tr>
+        <tr><td class="step-id">macOS + iOS</td><td>Doubles the host scope now.</td></tr>
+      </table>
+      <div class="note"><span class="note-time">Outcome (Adam, 2026-08-05)</span> <strong>Chose macOS-only.</strong> "Until this is bomb-proof I don't want to divert attention to iOS." iOS = separate scope later, via the <code>TranscriptBoundary</code> seam.</div>
+    </div>
+  </div>
+
+  <!-- FR-MULTICOPY -->
+  <div class="gate" id="gate-multicopy">
+    <div class="gate-header" onclick="toggleGate('multicopy')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--green-dim);color:var(--green)">FR</span>
+        <span class="gate-name">FR-MULTICOPY — Multi-line copy <span class="gate-spec">gated requirement · added 2026-08-05 · Adam</span></span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-ready">Gated</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <p><strong>First-class, gated requirement of Option B — designed in from the start, not an incidental by-product.</strong> Current native transcript only ever lets Adam grab a single rendered line, making it near-impossible to copy commands/code across line breaks to another app. The single-document rewrite is the fix — but it must be explicitly enforced, not assumed.</p>
+      <table class="step-table">
+        <tr><th>#</th><th>Acceptance criterion</th><th>Enforced at</th></tr>
+        <tr><td class="step-id">A1</td><td>Drag-select any contiguous text across line breaks <em>and</em> across messages; Cmd+C → clean coherent plain text (no stray HTML, no dropped lines)</td><td>Gate G3 + parity P6</td></tr>
+        <tr><td class="step-id">A2</td><td>Every <code>pre</code>/code block has a one-click copy button that grabs the whole block (all lines) as a unit</td><td>WP-2 doc deliverable + P6</td></tr>
+        <tr><td class="step-id">A3</td><td>Every message has a copy-full-text action (complete content, multi-line, incl. code), regardless of what's selected</td><td>WP-2 doc deliverable + P6</td></tr>
+        <tr><td class="step-id">A4</td><td>Scroll engine / pin hysteresis / jump-to-latest never snaps or clips a selection</td><td>P6</td></tr>
+        <tr><td class="step-id">A5</td><td>Copied output pastes correctly into TextEdit (plain text) and a code editor (command block intact, line breaks preserved)</td><td>P6</td></tr>
+      </table>
+      <div class="note"><span class="note-time">Design notes</span> A1 falls out free (native browser selection across one document). A2/A3 are small deliberate DOM additions — copy button on each <code>pre</code> wired to <code>navigator.clipboard.writeText(textContent)</code>, and a per-<code>.msg</code> copy action via <code>bcCopyMessage {id}</code> bridge. A4 is the real gate — pin hysteresis uses <code>scroll</code> events only (don't run during drag-select), but it's gated explicitly so a regression can't ship silently. Context-menu filter (B-3) keeps Copy/Copy Link/Look Up/Share; strips Reload/Go Back/Inspect Element.</div>
+      <div class="note"><span class="note-time">Blockers for default-on</span> Gate G3 + parity P6 are the pass/fail chokepoints; a failure at either stops the phase and is written up per the E1–E7 evidence rules. Doc source: <code>Docs/Specs/Active/single-webview-transcript-plan.md</code> §0.1 + Active Specs index (FR-MULTICOPY).</div>
+    </div>
+  </div>
+
+  <!-- Housekeeping -->
+  <div class="gate" id="gate-housekeeping">
+    <div class="gate-header" onclick="toggleGate('housekeeping')">
+      <div class="gate-left">
+        <span class="gate-id" style="background:var(--surface2);color:var(--dim)">House</span>
+        <span class="gate-name">Housekeeping — needs decision, doesn't block</span>
+      </div>
+      <div class="gate-right">
+        <span class="gate-status status-waiting">Note</span>
+      </div>
+    </div>
+    <div class="gate-body">
+      <div class="note"><span class="note-time">✅ FIXED (2026-08-06)</span> <strong>Keychain-access prompt storm in tests eliminated.</strong> <code>KeychainTokenStoreTests</code> constructed the real <code>KeychainTokenStore</code> in every setUp, firing one macOS keychain-access dialog per <code>SecItem</code> call per fresh test process. Fixed on <code>fix/keychain-test-prompts</code>: <code>InMemoryTokenStore</code> (thread-safe mock) now backs the contract tests; the real-keychain path is gated behind <code>RUN_KEYCHAIN_TESTS=1</code>; a regression guard fails on any future un-gated <code>KeychainTokenStore()</code> in tests. Full suite 398 tests / 1 skipped / 0 failures in ~36s, no dialogs. Commits <code>0de258e</code> + <code>381dec9</code>.</div>
+      <ul>
+        <li class="uncheck"><strong>Docs in git.</strong> Several rendering docs untracked across multiple rounds — commit <code>Docs/Specs/Active/</code> + <code>Docs/Reviews/</code> before WP-1.</li>
+        <li class="uncheck"><strong>Untracked root dirs</strong> <code>Investigations/</code>, <code>Reviews/</code>, <code>Specs/</code>, <code>debug-logs/</code> — commit or <code>.gitignore</code>, not ambiguous.</li>
+        <li class="uncheck"><strong>Bundle identifier</strong> scheduled WP-3, but gates E2 evidence. Pull forward into WP-0 if spike needs log evidence.</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ EVIDENCE ============ -->
+<div class="tab-section" id="tab-evidence">
+
+  <div class="milestone" style="border-color:var(--green)">
+    <h3 style="color:var(--green)"><span class="emoji">📋</span> Evidence Standard E1–E7 — binding on every gate</h3>
+    <p>Each rule maps to a specific review cycle this project lost. <strong>No gate passes on code inspection alone.</strong></p>
+  </div>
+
+  <div class="principle"><span class="principle-label">E1 —</span> No gate passes on code inspection alone. Every gate requires an artifact from <em>running</em> something: log capture, test run, screenshot, measured number. "I read the diff and it looks right" is a review comment, not a gate pass. <span style="color:var(--red)">← Round 5</span></div>
+  <div class="principle"><span class="principle-label">E2 —</span> Any log line that is gate evidence must be <strong><code>.info</code> or higher</strong>. <code>Logger.debug</code> is not persisted by macOS and cannot be audited after the fact. <span style="color:var(--red)">← Round 7</span></div>
+  <div class="principle"><span class="principle-label">E3 —</span> Thresholds are <strong>pre-registered</strong> before the run. Adjusted-after-seeing-results invalidates the gate and requires a re-run under the new number. <span style="color:var(--red)">← W4 probe</span></div>
+  <div class="principle"><span class="principle-label">E4 —</span> <strong>Real-data fixtures.</strong> Gates run against General's actual message window from GRDB, not synthetic transcripts. <span style="color:var(--red)">← Round 8</span></div>
+  <div class="principle"><span class="principle-label">E5 —</span> The <strong>author cannot sign their own gate</strong>. Implementer produces evidence; a second party verifies and signs. <span style="color:var(--red)">← AgentDrop convention</span></div>
+  <div class="principle"><span class="principle-label">E6 —</span> <strong>Negative results are recorded, not discarded.</strong> A failed gate gets an artifact too; a gate that passed on the 4th attempt must show the 3 failures. <span style="color:var(--red)">← Round 6b</span></div>
+  <div class="principle"><span class="principle-label">E7 —</span> Green suite means the <strong>whole suite, run concurrently.</strong> No cherry-picked runs. <span style="color:var(--red)">← AgentDrop convention</span></div>
+
+  <div class="note" style="margin-top:0.75rem;">
+    <span class="note-time">Verdicts</span> <code>PASS</code> · <code>FAIL</code> · <code>PASS-WITH-CONCERNS</code> (concern gets an owner + a later gate that re-tests it — stops rounding partial results up to PASS).
+  </div>
+
+  <div class="principle" style="margin-top:0.75rem;"><span class="principle-label">Artifact format</span> One markdown file per gate at <code>Docs/Reviews/optionb/&lt;GATE-ID&gt;-evidence.md</code> — date/build/machine, operator + verifier (must differ, E5), pre-registered criteria (verbatim), method (reproducible), raw evidence, verdict, prior attempts (E6).</div>
+
+  <div class="milestone" style="border-color:var(--green)">
+    <h3 style="color:var(--green)"><span class="emoji">🔄</span> Development Workflow (Adam-approved 2026-08-05) — the standing process</h3>
+    <p>Adam codified the exact delivery loop that works. Binding for all BeeChat work going forward:</p>
+    <ol style="color:var(--dim);font-size:0.85rem;margin-left:1.25rem;line-height:1.7;">
+      <li><strong>Bee</strong> writes the spec</li>
+      <li><strong>Kieran + Q</strong> validate the spec is sound</li>
+      <li>Once all agreed → dispatch to <strong>Q</strong> to build</li>
+      <li><strong>Kieran</strong> checks the work is done and correct</li>
+      <li><strong>Bee</strong> validates before coming back to Adam</li>
+      <li>At a <strong>MAJOR piece of work / MILESTONE only</strong>: Bee creates a detailed review prompt as a <code>.md</code> file → Adam copies it manually to <strong>Claude/Fable</strong> (external super-checker) → they sign off or give improvements/corrections</li>
+    </ol>
+    <ul style="color:var(--dim);font-size:0.82rem;margin-left:1.25rem;">
+      <li><strong style="color:var(--red)">The super-checker is MANUAL.</strong> Bee writes the <code>.md</code> prompt; Adam copies it to Claude/Fable. <strong>No automation, no invented sub-agents.</strong></li>
+      <li>Fable/Claude is invoked at <strong>major milestones only</strong>, not per-task — the external final review gate.</li>
+      <li>E5 still applies inside the loop: implementer cannot sign their own gate.</li>
+      <li><strong>Builder allocation (Adam, 2026-08-05):</strong> <strong>Q builds everything</strong> — he is the coding agent, for WP-0, WP-1 and all downstream work. Q also dips into spec review, adding his slant to the spec alongside Kieran as required.</li>
+    </ul>
+  </div>
+
+  <div class="bug" style="margin-top:0.75rem;"><span class="bug-label">Standing rule:</span> any recurrence of bottom whitespace, bounce, or scroll stranding in the <code>.web</code> engine is <strong>automatically P0</strong>, regardless of repro narrowness. A single reproducible instance falsifies the programme's premise.</div>
+
+</div>
+
+<footer>BeeChat Option B Build Progress &bull; Scope: <code>Docs/Specs/Active/single-webview-transcript-plan.md</code> &bull; <span id="footer-time"></span></footer>
+
+</div>
+
+<script>
+function toggleGate(id) {
+  var el = document.getElementById('gate-' + id);
+  if (el) el.classList.toggle('open');
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelectorAll('.tab-section').forEach(function(s){ s.classList.remove('active'); });
+  var tabEl = document.querySelector('.tab[onclick="switchTab(\'' + name + '\')"]');
+  if (tabEl) tabEl.classList.add('active');
+  var sec = document.getElementById('tab-' + name);
+  if (sec) sec.classList.add('active');
+}
+
+// Timestamp
+const now = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London' });
+document.getElementById('timestamp').textContent = 'Updated: ' + now;
+document.getElementById('footer-time').textContent = now;
+
+// Summary stats — gates with hard PASS criteria (tracking the programme's tracked units)
+// G1-G6 (6) + B1-B4 (4) + T-series (1) + P-series (1) + R-series (1) = 13 tracked units
+// 2026-08-05: G1-G6 all PASS (WP-0 kill gate complete) → 6 done; WP-1 built (awaiting Adam smoke walk) → active
+// 2026-08-06: WP-2 document Fable APPROVE (B2 signable) → 7 done; WP-2I integration is the next piece of work
+// 2026-08-07: WP-2I message window COMPLETE + signed off (load-earlier, cosmetic pass, day-headers, close-out) → 8 done
+const totalGates = 13;
+const doneGates = 8;
+const activeGates = 0;
+const totalEst = 12; // WP-0..WP-4 effort: 2-3 + 2.5-3.5 + 2 + 2-3 ≈ 12 core days
+const pctDone = Math.round((doneGates / totalGates) * 100);
+
+document.getElementById('done-count').textContent = doneGates;
+document.getElementById('active-count').textContent = activeGates;
+document.getElementById('total-est').textContent = totalEst;
+document.getElementById('pct-done').textContent = pctDone + '%';
+document.getElementById('progress-fill').style.width = pctDone + '%';
+document.getElementById('progress-text').textContent = doneGates + ' / ' + totalGates + ' gates';
+</script>
+</body>
+</html>

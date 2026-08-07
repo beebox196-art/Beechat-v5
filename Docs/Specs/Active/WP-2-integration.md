@@ -1,6 +1,6 @@
 # WP-2I — Transcript Integration (wire the WP-2 document into the app for live testing)
 
-**Status:** SMOKE-TEST FIX CYCLE 2 — Q built `ad5fa58`; Kieran build-check PASS; Bee validation PASS; Adam smoke test → blank-transcript regression fixed `ca122a3` (markdown→sanitize pipeline + 6 tests). Re-test surfaced **3 more bugs** (Q diagnosis, 2026-08-06): Bug 1 messages disappear on topic switch (setTopic with empty transient messages), Bug 2 response disappears at settle (no bridge representation / non-atomic settle), Bug 3 messages centred (column-width vs native parity). **Fix plan approved by Bee — Q building.**
+**Status:** SMOKE-TEST FIX CYCLE 3 — Kieran build-check PASS on fix cycle 2 (`1cfe96d`). Adam re-test → **load-earlier ordering bug** (older messages appended at bottom) + **image-render question**. Fable gate-review RCA (`FABLE-WP2I-SEAM-RCA.md`) found the seam root cause (upsertMessages positional signature) → fixed `27ce61a` + prependEarlier path + image diagnostic `4ebe1fb`. **Awaiting Kieran build-check on `4ebe1fb` + §4.2 decision (`isInspectable` unconditional vs `#if DEBUG`).**
 **Author:** Bee (spec) · **Builder:** Q · **Checker:** Kieran · **Validator:** Bee · **Smoke test:** Adam
 **Branch:** `feat/transcript-integration` (new, off the merge of WP-1 + WP-2)
 **Spec source:** `Docs/Specs/Active/single-webview-transcript-plan.md` §5 (Swift host) + §4.3/§4.5 (bridge contract)
