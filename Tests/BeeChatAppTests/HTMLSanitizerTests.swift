@@ -282,6 +282,38 @@ final class HTMLSanitizerTests: XCTestCase {
         XCTAssertTrue(result.contains("<img"), "img tag should survive without dangerous src")
     }
 
+    /// WP-2I sanitizer-CSP alignment: `http://` on `<img src>` MUST be stripped.
+    ///
+    /// Regression guard for the silent drift where `srcSchemes` allowed `http`
+    /// even though the CSP `img-src https: data:` would block it at render time.
+    /// The mismatch meant an agent returning `http://example.com/img.png` would
+    /// survive sanitization, reach the document, and then fail to render — with
+    /// the failure attributed to CSP rather than the real cause (sanitizer drift).
+    /// Now the sanitizer strips `http` at sanitize time, matching the contract.
+    ///
+    /// `href` URLs are unaffected: `hrefSchemes` still allows `http` per the
+    /// WP-2 CSP handoff (`https:`, `http:`, `mailto:` for `href`).
+    func testHttpImgSrcStripped() {
+        let html = "<img src=\"http://example.com/photo.jpg\" alt=\"an http image\">"
+        let result = HTMLSanitizer.sanitize(html)
+        XCTAssertFalse(result.contains("http://example.com"),
+                       "http:// on img src MUST be stripped (CSP would block it anyway). Result: \(result)")
+        XCTAssertFalse(result.contains("src=\"http:"),
+                       "src attribute with http: scheme MUST be removed. Result: \(result)")
+        // The img tag may survive (sans src) or be removed entirely depending on
+        // the sanitizer's behaviour; either is correct. We only require the
+        // dangerous src is gone.
+        XCTAssertTrue(result.contains("alt=\"an http image\"") || !result.contains("<img"),
+                      "img with stripped src should either keep alt or be removed. Result: \(result)")
+
+        // Sanity: http: on href is still allowed (different scheme list).
+        let hrefResult = HTMLSanitizer.sanitize(
+            "<a href=\"http://example.com/page\">link</a>"
+        )
+        XCTAssertTrue(hrefResult.contains("http://example.com/page"),
+                      "http:// on href MUST still be allowed. Result: \(hrefResult)")
+    }
+
     func testRelativeURLsAllowed() {
         let cases = [
             "<a href=\"/path/to/page\">link</a>",

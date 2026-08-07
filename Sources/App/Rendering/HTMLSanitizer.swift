@@ -106,8 +106,12 @@ enum HTMLSanitizer {
     /// renderers and the CSP contract allows them. Stays safe because the
     /// browser will not *execute* a data URL inside an `<img>`; only an `<a>`
     /// navigation to `data:` is dangerous (XSS), and that path uses `hrefSchemes`.
-    /// Mirrors the WP-2 CSP contract: "`https:`, `data:` for `img src`".
-    static let srcSchemes: Set<String> = ["http", "https", "data"]
+    /// `http:` is intentionally ABSENT — the CSP `img-src https: data:` would
+    /// block it anyway, so the sanitizer must strip it at sanitize time. If an
+    /// agent returns an http:// image URL, the sanitizer removes it here rather
+    /// than letting it reach the document and produce a confusing CSP-blocked
+    /// render failure. Mirrors the WP-2 CSP contract: "`https:`, `data:` for `img src`".
+    static let srcSchemes: Set<String> = ["https", "data"]
 
     /// Backward-compat alias for `LinkPolicy.allowedWebSchemes`. Maps the legacy
     /// single-set API to the union of `hrefSchemes` + `srcSchemes` (minus `data`,
