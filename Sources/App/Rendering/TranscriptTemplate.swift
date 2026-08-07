@@ -131,7 +131,12 @@ enum TranscriptTemplate {
     --bc-radius-bubble: 16px;
     --bc-pad-h-bubble: 16px;
     --bc-pad-v-bubble: 12px;
-    --bc-gap-msg: 7px;   /* ~half line height at 13pt base — Adam: space between messages */
+    /* Tweak (Aug 2026): bump from 7px to 12px for clearly visible separation
+       between messages. Note: the CSS hardcode is the FALLBACK — ThemeManager
+       sets the actual value via setTheme() on documentElement, which always
+       wins in the cascade. Both must agree, otherwise the hardcode is dead
+       code. ThemeManager.swift sources this from SpacingToken.md (12pt). */
+    --bc-gap-msg: 12px;
     /* Scrollbar reserved space so the jump-to-latest button stays clear of the gutter. */
     --bc-scrollbar-w: 16px;
   }
@@ -251,11 +256,11 @@ enum TranscriptTemplate {
   .bubble {
     border-radius: var(--bc-radius-bubble);
     padding: var(--bc-pad-v-bubble) var(--bc-pad-h-bubble);
-    /* Tweak 2 (Aug 2026): anchor for the absolutely-positioned .time at the
-       bottom-right. Also reserves extra padding-bottom so the time doesn't
-       overlap the last line of short messages. */
+    /* Tweak (Aug 2026): anchor for the absolutely-positioned .time at the
+       bottom-right. Adam prefers the timestamp sit close to the last line of
+       text rather than having a reserved gap, so padding-bottom is symmetric
+       with padding-top — no extra reservation. */
     position: relative;
-    padding-bottom: calc(var(--bc-pad-v-bubble) + 1.4em);
     /* Native parity: MessageBubble.BubbleWidthModifier uses canvasWidth * 0.66
        with no per-theme variation. Hardcoded here for the same parity. */
     max-width: 66%;
@@ -282,13 +287,11 @@ enum TranscriptTemplate {
     max-width: 100%;
     text-align: center;
   }
-  /* Tweak 2 (Aug 2026): system bubbles don't carry a meaningful timestamp —
+  /* Tweak (Aug 2026): system bubbles don't carry a meaningful timestamp —
      the absolute-positioned time at bottom-right of a centred italic bubble
-     reads as visual noise. Hide it. The .bubble padding-bottom reservation
-     above is also removed for system since no time is shown. */
-  .msg[data-role="system"] .bubble {
-    padding-bottom: var(--bc-pad-v-bubble);
-  }
+     reads as visual noise. Hide it. (The padding-bottom override that used
+     to live here is gone — it was only there to undo the +1.4em reservation,
+     which itself is now removed; symmetric padding is the new default.) */
   .msg[data-role="system"] .bubble .time {
     display: none;
   }
