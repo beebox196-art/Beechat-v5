@@ -268,12 +268,34 @@ final class TranscriptSeamTests: XCTestCase {
         let settledGrown = grown + [message(id: "a2", role: "assistant", content: "partial")]
         collect(plan(applied: streamingState, next: state(settledGrown, topicId: "topic-A")))
 
+        // Scenario 5: head-extension → prependEarlier.
+        // Regression guard for Issue 1: when older messages arrive at the head
+        // (load-earlier), the builder must emit `prependEarlier(older)` rather
+        // than `upsertMessages(full)`. Without this scenario in the backstop,
+        // a future builder refactor that drops the head-extension branch would
+        // pass `testEverySeamStatementIsExecutable` vacuously (the test would
+        // see no new emit, but also nothing in `covered` to demand it).
+        let m3 = message(id: "m3", role: "user", content: "third message")
+        let m4 = message(id: "m4", role: "assistant", content: "fourth message")
+        let appliedHead = state([m3, m4], topicId: "topic-A", canLoadEarlier: true)
+        let m1 = message(id: "m1", role: "user", content: "first message")
+        let m2 = message(id: "m2", role: "assistant", content: "second message")
+        let nextHead = state([m1, m2, m3, m4], topicId: "topic-A", canLoadEarlier: false)
+        let headPlan = plan(applied: appliedHead, next: nextHead)
+        // Sanity: this scenario must actually exercise prependEarlier — if it
+        // doesn't, the backstop is lying about coverage and we'd rather fail
+        // loud here than in production.
+        XCTAssertTrue(headPlan.statements.contains(where: { $0.contains("prependEarlier") }),
+                      "head-extension scenario must emit prependEarlier (backstop self-check)")
+        collect(headPlan)
+
         // Every call this suite has a scenario for.
         let covered: Set<String> = [
             "window.bc.setTopic",
             "window.bc.upsertMessages",
             "window.bc.setStreaming",
             "window.bc.setThinking",
+            "window.bc.prependEarlier",
         ]
 
         let uncovered = emitted.subtracting(covered)
