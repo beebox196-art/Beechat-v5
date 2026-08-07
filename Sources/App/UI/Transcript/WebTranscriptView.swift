@@ -796,6 +796,11 @@ internal enum TranscriptPayloadBuilder {
         if let badge = msg.badge {
             dict["badge"] = badge
         }
+        // WP-2I day-headers: epoch ms in JS Date form. The template uses this
+        // to compute local-date keys for the .day-header insertion logic.
+        // Field is additive — older payloads without `timestamp` degrade
+        // gracefully (no headers render, but the rest of the template works).
+        dict["timestamp"] = msg.timestamp.timeIntervalSince1970 * 1000
         return dict
     }
 

@@ -253,6 +253,19 @@ enum TranscriptTemplate {
   }
   .msg .badge[hidden] { display: none; }
 
+  /* WP-2I day-headers: centred, dim separator between messages when the
+     calendar date rolls over. Margins use --bc-gap-msg so the header reads
+     as part of the inter-message spacing rhythm (composes with 7a165db).
+     data-date holds the YYYY-MM-DD local-time key for seam tests. */
+  .day-header {
+    text-align: center;
+    font-size: 0.78em;
+    color: var(--bc-text-dim);
+    margin: var(--bc-gap-msg) 0;
+    -webkit-user-select: none;
+    letter-spacing: 0.02em;
+  }
+
   .bubble {
     border-radius: var(--bc-radius-bubble);
     padding: var(--bc-pad-v-bubble) var(--bc-pad-h-bubble);
@@ -732,11 +745,16 @@ function fallbackCopy(text) {
  * Message construction — `html` MUST already be sanitized natively
  * (HTMLSanitizer.sanitize); this document is the rendering surface only.
  * ========================================================================= */
-function buildMessage({ id, role, senderName, badge, timeLabel, html }) {
+function buildMessage({ id, role, senderName, badge, timeLabel, html, timestamp }) {
   const article = document.createElement('article');
   article.className = 'msg';
   article.dataset.id = id || '';
   article.dataset.role = role || 'assistant';
+  // WP-2I day-headers: cache the local-date key on the .msg so upsertMessages
+  // can look up the previous adjacent message's date in O(1) without
+  // re-parsing the timestamp. Falls back to today if the bridge omits
+  // `timestamp` (older payloads) — matches the msgTimestamp() helper.
+  article.dataset.date = dateKey(timestamp != null ? timestamp : Date.now());
   if (senderName) {
     const s = document.createElement('div');
     s.className = 'sender';
@@ -776,6 +794,64 @@ function buildMessage({ id, role, senderName, badge, timeLabel, html }) {
 
 function findMsgById(id) {
   return $transcript.querySelector(`.msg[data-id="${CSS.escape(id)}"]`);
+}
+
+/* ============================================================================
+ * Day-boundary headers (WP-2I day-headers spec).
+ *
+ * Headers are .day-header divs inserted between .msg elements in #transcript
+ * when the calendar date rolls over. The label follows the iMessage/WhatsApp
+ * convention (Today / Yesterday / weekday / "Tue 6 Aug" / with year if
+ * different year). Invariants after every DOM-mutating bridge call are
+ * documented in Docs/Specs/Active/WP-2I-day-headers.md.
+ * ========================================================================= */
+function dateKey(ts) {
+  // ts is epoch ms (from the bridge payload `timestamp` field) OR a Date.
+  // Returns local-time YYYY-MM-DD. Used to detect day boundaries.
+  const d = ts instanceof Date ? ts : new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function dayHeaderLabel(key) {
+  // key is a YYYY-MM-DD string in local time. Compute the label per the spec.
+  const today = new Date();
+  const todayKey = dateKey(today);
+  if (key === todayKey) return 'Today';
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (key === dateKey(yesterday)) return 'Yesterday';
+  const d = new Date(key + 'T00:00:00');
+  const diffDays = Math.round((today - d) / 86400000);
+  if (diffDays < 7 && diffDays >= 0) {
+    return d.toLocaleDateString(undefined, { weekday: 'long' });
+  }
+  const sameYear = d.getFullYear() === today.getFullYear();
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: sameYear ? undefined : 'numeric',
+  });
+}
+
+function makeDayHeader(key) {
+  const el = document.createElement('div');
+  el.className = 'day-header';
+  el.dataset.date = key;
+  el.textContent = dayHeaderLabel(key);
+  return el;
+}
+
+// Resolve the timestamp for a message payload. Falls back to the current
+// time if the bridge omits `timestamp` (older payloads). Templates built
+// before the timestamp field degrade gracefully — no headers, but the
+// rest of the rendering still works.
+function msgTimestamp(m) {
+  if (typeof m.timestamp === 'number') return m.timestamp;
+  return Date.now();
 }
 
 /* ============================================================================
@@ -829,11 +905,25 @@ window.bc = {
     userScrolledUp = false;
     // Build all nodes off-DOM.
     const frag = document.createDocumentFragment();
-    for (const m of (messages || [])) frag.appendChild(buildMessage(m));
+    let prevKey = null;
+    for (const m of (messages || [])) {
+      const key = dateKey(msgTimestamp(m));
+      if (key !== prevKey) {
+        // First message OR date rolled over → insert a header before it.
+        // No header before the first message of the conversation (iMessage
+        // convention). Actually wait — the spec says NO header before the
+        // first message; this `prevKey === null` check handles that.
+        // (When prevKey === null this is the very first message → skip.)
+        if (prevKey !== null) frag.appendChild(makeDayHeader(key));
+        prevKey = key;
+      }
+      frag.appendChild(buildMessage(m));
+    }
     // Clear existing message nodes (preserve load-earlier + thinking).
     const toRemove = [];
     for (const child of $transcript.children) {
-      if (child.id !== 'load-earlier' && child.id !== 'thinking') toRemove.push(child);
+      if (child.id !== 'load-earlier' && child.id !== 'thinking' &&
+          !child.classList.contains('day-header')) toRemove.push(child);
     }
     toRemove.forEach((n) => n.remove());
     // Re-append the load-earlier button if needed, then messages, then thinking.
@@ -868,6 +958,26 @@ window.bc = {
         }
       } else {
         const node = buildMessage(m);
+        // WP-2I day-headers: if this new message is on a different calendar
+        // date than the previous adjacent .msg (or there is no previous),
+        // insert a header before it. The previous .msg is the last .msg
+        // immediately before #thinking; its dataset.date was set by
+        // buildMessage(). If there is no previous .msg, prevKey is null
+        // and we still insert a header (it's the first message of the
+        // conversation).
+        const prevMsg = (() => {
+          let cur = $thinking ? $thinking.previousElementSibling : null;
+          while (cur && !cur.classList.contains('msg')) cur = cur.previousElementSibling;
+          return cur;
+        })();
+        const prevKey = prevMsg ? prevMsg.dataset.date : null;
+        const newKey = node.dataset.date;
+        // No header before the very first message of the conversation
+        // (iMessage convention). prevKey === null means there are no
+        // existing messages yet.
+        if (prevKey !== null && prevKey !== newKey) {
+          $transcript.insertBefore(makeDayHeader(newKey), $thinking);
+        }
         $transcript.insertBefore(node, $thinking);
         appended += 1;
         wireImageHooks(node);
@@ -883,13 +993,53 @@ window.bc = {
     const shBefore = $scroller.scrollHeight;
     const stBefore = $scroller.scrollTop;
     const frag = document.createDocumentFragment();
-    for (const m of (messages || [])) frag.appendChild(buildMessage(m));
-    // Insert after #load-earlier so the button stays at the top.
-    if ($loadEarlier && $loadEarlier.nextSibling) {
-      $transcript.insertBefore(frag, $loadEarlier.nextSibling);
-    } else {
-      $transcript.insertBefore(frag, $thinking);
+    // WP-2I day-headers: walk the prepended block, insert a header before
+    // each message whose dateKey differs from the previous prepended
+    // message's dateKey. The first prepended message ALWAYS gets a
+    // header — it's chronologically the earliest message in the
+    // conversation now, and the conversation starts on its date.
+    // (Different from setTopic/upsertMessages where the first message
+    // gets no header per iMessage convention; here we already have
+    // existing content above, so we're not "starting" the conversation.)
+    let prevKey = null;
+    for (const m of (messages || [])) {
+      const node = buildMessage(m);
+      const key = node.dataset.date;
+      if (prevKey === null || prevKey !== key) {
+        frag.appendChild(makeDayHeader(key));
+      }
+      prevKey = key;
+      frag.appendChild(node);
     }
+    // Check the boundary between the last prepended message and the first
+    // existing message. If their dates differ, insert a header between
+    // them (labelled with the existing message's date — the header sits
+    // before the existing message). The first existing message is the
+    // first .msg child of #transcript after the fragment insertion point.
+    const insertBeforeNode = ($loadEarlier && $loadEarlier.nextSibling)
+      ? $loadEarlier.nextSibling
+      : (() => {
+          // Find the first .msg child of #transcript.
+          for (const c of $transcript.children) {
+            if (c.classList.contains('msg')) return c;
+          }
+          return $thinking;
+        })();
+    // Capture the existing first .msg BEFORE the fragment is inserted.
+    const existingFirstMsg = (() => {
+      for (const c of $transcript.children) {
+        if (c.classList.contains('msg')) return c;
+      }
+      return null;
+    })();
+    if (existingFirstMsg && prevKey !== null) {
+      const existingKey = existingFirstMsg.dataset.date;
+      if (prevKey !== existingKey) {
+        frag.appendChild(makeDayHeader(existingKey));
+      }
+    }
+    // Insert after #load-earlier so the button stays at the top.
+    $transcript.insertBefore(frag, insertBeforeNode);
     wireImageHooks($transcript);
     // Deterministic anchor (route plan §4.3 — no reliance on overflow-anchor).
     $scroller.scrollTop = stBefore + ($scroller.scrollHeight - shBefore);

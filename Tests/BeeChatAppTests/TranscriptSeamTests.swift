@@ -104,7 +104,8 @@ final class TranscriptSeamTests: XCTestCase {
 
     private func message(id: String,
                          role: String,
-                         content: String = "hello **world**") -> Message {
+                         content: String = "hello **world**",
+                         timestamp: Date = Date(timeIntervalSince1970: 1_700_000_000)) -> Message {
         Message(
             id: id,
             sessionId: "session-1",
@@ -113,7 +114,7 @@ final class TranscriptSeamTests: XCTestCase {
             senderName: role == "user" ? nil : "Bee",
             senderId: nil,
             agentId: nil,
-            timestamp: Date(timeIntervalSince1970: 1_700_000_000)
+            timestamp: timestamp
         )
     }
 
@@ -360,5 +361,253 @@ final class TranscriptSeamTests: XCTestCase {
         let finalCount = try await msgCount()
         XCTAssertEqual(finalCount, 4,
                        "all 4 messages must be in the DOM after load-earlier")
+    }
+
+    // MARK: - WP-2I day-headers: setTopic across boundary
+    //
+    // REGRESSION GUARD for the day-header insertion on setTopic.
+    // Spec: Docs/Specs/Active/WP-2I-day-headers.md §"Per-call insertion logic".
+    // When setTopic is given messages spanning two calendar days, exactly
+    // one .day-header must be inserted between them, labelled with the
+    // second message's date. The first message gets no header (iMessage
+    // convention).
+    func testDayHeaderInsertedOnSetTopicAcrossBoundary() async throws {
+        // Construct two messages on different calendar days. Use noon UTC
+        // to avoid DST / timezone edge cases in label computation — the
+        // template uses local time, so we anchor to a stable timezone in
+        // the assertions below.
+        let cal = Calendar(identifier: .gregorian)
+        let today = cal.startOfDay(for: Date())
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+
+        // m1 on yesterday, m2 on today → exactly one header between them.
+        let m1 = message(id: "d1m1", role: "user",
+                         content: "yesterday msg",
+                         timestamp: yesterday.addingTimeInterval(60 * 60 * 12))  // noon
+        let m2 = message(id: "d1m2", role: "assistant",
+                         content: "today msg",
+                         timestamp: today.addingTimeInterval(60 * 60 * 12))     // noon
+        let st = state([m1, m2], topicId: "topic-headers")
+        await executePlan(plan(applied: nil, next: st), "setTopic → day headers")
+
+        // Query DOM for .day-header elements.
+        let headersJSON = try await raw("""
+        JSON.stringify(
+          Array.from(document.querySelectorAll('.day-header')).map(h => ({
+            date: h.dataset.date, text: h.textContent
+          }))
+        )
+        """) as? String ?? "[]"
+        let headers = (try? JSONSerialization.jsonObject(with: Data(headersJSON.utf8)) as? [[String: String]]) ?? []
+        XCTAssertEqual(headers.count, 1,
+                       "exactly one day-header between two messages on different days, got: \(headers)")
+
+        // The single header must be labelled with today's date (since it
+        // sits before today's message).
+        if let only = headers.first {
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            df.locale = Locale(identifier: "en_US_POSIX")
+            let todayKey = df.string(from: today)
+            XCTAssertEqual(only["date"], todayKey,
+                           "header data-date must be today's local date, got: \(only)")
+            // Label should be 'Today' (we constructed messages at noon local).
+            XCTAssertEqual(only["text"], "Today",
+                           "header text should be 'Today' for current day, got: \(only)")
+        }
+
+        // Position check: the header must sit between the two messages
+        // (sibling of .msg, child of #transcript). Filter out the
+        // persistent #load-earlier button and #thinking node so we
+        // assert only the message-and-header sequence.
+        let betweenOrder = try await raw("""
+        (function() {
+          const ids = Array.from(document.querySelectorAll('#transcript > *'))
+            .filter(n => n.classList.contains('msg') || n.classList.contains('day-header'))
+            .map(n => n.dataset.id || ('HDR(' + n.dataset.date + ')'));
+          return JSON.stringify(ids);
+        })()
+        """) as? String ?? "[]"
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        let todayKey = df.string(from: today)
+        let expectedOrder = "[\"d1m1\",\"HDR(\(todayKey))\",\"d1m2\"]"
+        XCTAssertEqual(betweenOrder, expectedOrder,
+                       "header must sit between d1m1 and d1m2 in #transcript, got: \(betweenOrder)")
+
+        // Sanity: messages on the same day get NO header.
+        let sameDay = message(id: "d1m3", role: "user",
+                              content: "same day as m2",
+                              timestamp: today.addingTimeInterval(60 * 60 * 13))
+        let stSame = state([m1, m2, sameDay], topicId: "topic-headers")
+        await executePlan(plan(applied: st, next: stSame), "setTopic → same day")
+        let headersAfterSame = try await raw("document.querySelectorAll('.day-header').length") as? Int ?? -1
+        XCTAssertEqual(headersAfterSame, 1,
+                       "messages on the same day must NOT add a header, got \(headersAfterSame)")
+    }
+
+    // MARK: - WP-2I day-headers: upsertMessages across boundary
+    //
+    // REGRESSION GUARD for the day-header insertion on upsertMessages.
+    // When upsertMessages appends a message whose date differs from the
+    // last existing message, a header must be inserted before the new
+    // message. When upserting to the same date, no header.
+    func testDayHeaderInsertedOnUpsertMessagesAcrossBoundary() async throws {
+        let cal = Calendar(identifier: .gregorian)
+        let today = cal.startOfDay(for: Date())
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+
+        // Initial topic: a single message on yesterday.
+        let m1 = message(id: "u1m1", role: "user",
+                         content: "yesterday",
+                         timestamp: yesterday.addingTimeInterval(60 * 60 * 12))
+        let initial = state([m1], topicId: "topic-upsert")
+        await executePlan(plan(applied: nil, next: initial), "setTopic → yesterday")
+
+        // Now upsert a message on today. Expect a header before it.
+        let m2 = message(id: "u1m2", role: "assistant",
+                         content: "today",
+                         timestamp: today.addingTimeInterval(60 * 60 * 12))
+        let after = state([m1, m2], topicId: "topic-upsert")
+        await executePlan(plan(applied: initial, next: after), "upsert → today")
+
+        // Exactly one header, between m1 and m2.
+        let headersJSON = try await raw("""
+        JSON.stringify(
+          Array.from(document.querySelectorAll('.day-header')).map(h => ({
+            date: h.dataset.date, text: h.textContent
+          }))
+        )
+        """) as? String ?? "[]"
+        let headers = (try? JSONSerialization.jsonObject(with: Data(headersJSON.utf8)) as? [[String: String]]) ?? []
+        XCTAssertEqual(headers.count, 1,
+                       "upsert across day boundary must insert exactly one header, got: \(headers)")
+
+        // Now upsert another message on today. Expect NO additional header.
+        let m3 = message(id: "u1m3", role: "user",
+                         content: "today again",
+                         timestamp: today.addingTimeInterval(60 * 60 * 13))
+        let after3 = state([m1, m2, m3], topicId: "topic-upsert")
+        await executePlan(plan(applied: after, next: after3), "upsert → same day")
+        let headersAfterSame = try await raw("document.querySelectorAll('.day-header').length") as? Int ?? -1
+        XCTAssertEqual(headersAfterSame, 1,
+                       "upsert on same day must NOT add another header, got \(headersAfterSame)")
+    }
+
+    // MARK: - WP-2I day-headers: prependEarlier across boundary
+    //
+    // REGRESSION GUARD for the day-header insertion when load-earlier
+    // prepends older messages across a date boundary. This is the test
+    // Kieran called out as a must-have: without it, this is exactly the
+    // kind of 'obvious JS' that breaks the E10 backstop vacuously.
+    //
+    // Construct: setTopic with [msg on today], then prependEarlier with
+    // [msg on 2-days-ago, msg on yesterday]. Expect:
+    //   - One header before the first prepended message (date 2-days-ago)
+    //   - One header between the two prepended messages (date yesterday)
+    //   - One header between the last prepended (yesterday) and the
+    //     first existing (today) — labelled with today's date.
+    //   - Total: 3 headers, in correct positions.
+    func testDayHeaderCorrectnessWhenPrependEarlierSpansBoundary() async throws {
+        let cal = Calendar(identifier: .gregorian)
+        let today = cal.startOfDay(for: Date())
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+        let twoDaysAgo = cal.date(byAdding: .day, value: -2, to: today)!
+
+        // Step 1: setTopic with a single message on today.
+        let m_today = message(id: "p1_today", role: "user",
+                              content: "today msg",
+                              timestamp: today.addingTimeInterval(60 * 60 * 12))
+        let applied = state([m_today], topicId: "topic-prepend-headers", canLoadEarlier: true)
+        await executePlan(plan(applied: nil, next: applied), "setTopic → today")
+
+        // Step 2: prependEarlier with 2 messages: one on 2-days-ago, one on yesterday.
+        // Construct the next state so the builder emits prependEarlier.
+        let m_2days = message(id: "p1_2days", role: "assistant",
+                              content: "2 days ago",
+                              timestamp: twoDaysAgo.addingTimeInterval(60 * 60 * 12))
+        let m_yest = message(id: "p1_yest", role: "user",
+                             content: "yesterday",
+                             timestamp: yesterday.addingTimeInterval(60 * 60 * 12))
+        let next = state([m_2days, m_yest, m_today], topicId: "topic-prepend-headers", canLoadEarlier: false)
+        let p = plan(applied: applied, next: next)
+        XCTAssertTrue(p.statements.contains(where: { $0.contains("prependEarlier") }),
+                      "precondition: head extension must emit prependEarlier")
+        await executePlan(p, "prependEarlier → spans 2 days + yesterday")
+
+        // Read the DOM order, filtering out the persistent #load-earlier button
+        // and #thinking node so the assertion is about message-and-header
+        // sequence only.
+        let orderJSON = try await raw("""
+        (function() {
+          return JSON.stringify(
+            Array.from(document.querySelectorAll('#transcript > *'))
+              .filter(n => n.classList.contains('msg') || n.classList.contains('day-header'))
+              .map(n => {
+                if (n.classList.contains('day-header')) return 'HDR(' + n.dataset.date + ')=' + n.textContent;
+                return n.dataset.id;
+              })
+          );
+        })()
+        """) as? String ?? "[]"
+
+        // Build expected headers from the local-timezone keys.
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        let k2 = df.string(from: twoDaysAgo)
+        let ky = df.string(from: yesterday)
+        let kt = df.string(from: today)
+        let labelFor2 = dayHeaderLabel(for: twoDaysAgo)
+        let labelForY = dayHeaderLabel(for: yesterday)
+        let labelForT = dayHeaderLabel(for: today)
+        let expected = "[\"HDR(\(k2))=\(labelFor2)\",\"p1_2days\",\"HDR(\(ky))=\(labelForY)\",\"p1_yest\",\"HDR(\(kt))=\(labelForT)\",\"p1_today\"]"
+
+        XCTAssertEqual(orderJSON, expected,
+                       "prepend-earlier across 2 date boundaries must insert 3 headers in correct positions.\nexpected: \(expected)\nactual:   \(orderJSON)")
+
+        // Count check.
+        let headerCount = try await raw("document.querySelectorAll('.day-header').length") as? Int ?? -1
+        XCTAssertEqual(headerCount, 3,
+                       "exactly 3 day-headers after prepend across 2 boundaries, got \(headerCount)")
+
+        // The T3 scroll-anchor invariant must still hold (the headers
+        // contribute to scrollHeight, so the host's T3 math still works).
+        // We don't assert specific scrollHeight here — just that no JS
+        // exception was thrown during the prepend (caught by executePlan).
+    }
+
+    /// Compute the day-header label for a given date, matching the template's
+    /// dayHeaderLabel() logic so the test can assert expected text. Kept in
+    /// lockstep with TranscriptTemplate.html:dateKey/dayHeaderLabel.
+    private func dayHeaderLabel(for date: Date) -> String {
+        let cal = Calendar(identifier: .gregorian)
+        let today = cal.startOfDay(for: Date())
+        let target = cal.startOfDay(for: date)
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        let targetKey = df.string(from: target)
+        let todayKey = df.string(from: today)
+        if targetKey == todayKey { return "Today" }
+        let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+        if targetKey == df.string(from: yesterday) { return "Yesterday" }
+        let diffDays = cal.dateComponents([.day], from: target, to: today).day ?? 0
+        if diffDays < 7 && diffDays >= 0 {
+            let wf = DateFormatter()
+            wf.dateFormat = "EEEE"
+            wf.locale = Locale(identifier: "en_US_POSIX")
+            return wf.string(from: target)
+        }
+        let sameYear = cal.component(.year, from: target) == cal.component(.year, from: today)
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        if sameYear {
+            fmt.dateFormat = "EEE d MMM"
+        } else {
+            fmt.dateFormat = "EEE d MMM yyyy"
+        }
+        return fmt.string(from: target)
     }
 }
