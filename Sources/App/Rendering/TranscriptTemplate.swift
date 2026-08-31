@@ -501,6 +501,82 @@ enum TranscriptTemplate {
   .msg .bc-copy-msg:hover { border-color: var(--bc-tbl-bd); }
   .bc-copy-msg.copied { color: var(--bc-accent); }
 
+  /* === Working… disclosure (fold for intermediate assistant narration) =========
+   * When a model run produces multiple assistant text blocks (intermediate
+   * narration + final), the grouper folds all-but-the-last into a single
+   * collapsed disclosure rendered as <details>. The summary shows the count;
+   * the body shows the pre-rendered, sanitized HTML of each folded block,
+   * joined by a thin separator so the user can read the full transcript if
+   * they choose to expand it.
+   *
+   * Native parity: MessageBubble does NOT show intermediate narration
+   * explicitly — it was a transcript-only readability issue (route plan §0).
+   * The fold restores the "thought-final" reading: the user sees the
+   * collapsed narration (Working… (2)) and the final answer expanded.
+   *
+   * - Selection MUST continue to work inside the fold body (FR-MULTICOPY A1)
+   *   so a user can drag-select across the expanded narration.
+   * - The disclosure is purely display grouping — the original Message
+   *   values are preserved on the Swift side (persistence untouched).
+   * - No streaming: the live streaming node is a separate DOM element, so
+   *   this only applies to settled/history rendering. */
+  .msg-fold .bubble {
+    /* Same surface as a normal assistant bubble so visually it's a "smaller
+     * companion" to the final message in the run, not a new chrome. */
+    background: var(--bc-asst-bg);
+    padding: 0;  /* the details carries its own padding */
+  }
+  .msg-fold .bc-fold {
+    /* <details> native disclosure. No marker — we use a custom chevron in
+     * the summary for visual consistency with the per-message copy button. */
+    border-radius: var(--bc-radius-bubble);
+  }
+  .msg-fold .bc-fold > summary {
+    /* Custom summary — looks like a small dim pill the user clicks. */
+    list-style: none;
+    cursor: pointer;
+    padding: 8px 12px;
+    color: var(--bc-text-dim);
+    font-size: 0.85em;
+    -webkit-user-select: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: var(--bc-radius-bubble);
+  }
+  .msg-fold .bc-fold > summary::-webkit-details-marker { display: none; }
+  .msg-fold .bc-fold > summary::before {
+    /* Chevron — rotates when open. */
+    content: "▸";
+    font-size: 0.85em;
+    transition: transform 0.15s ease;
+    display: inline-block;
+  }
+  .msg-fold .bc-fold[open] > summary::before {
+    transform: rotate(90deg);
+  }
+  .msg-fold .bc-fold > summary:hover { color: var(--bc-text); }
+  .msg-fold .bc-fold > .bc-fold-body {
+    /* Body — padded, with a thin top divider so expanded content reads as
+     * separate from the summary pill. */
+    padding: 0 var(--bc-pad-h-bubble) var(--bc-pad-v-bubble);
+    border-top: 1px solid var(--bc-tbl-bd);
+    margin-top: 0;
+  }
+  .msg-fold .bc-fold-body .bc-fold-block {
+    /* Each folded message is rendered as its own block inside the body,
+     * separated by a thin rule so the user can read each narration step. */
+    padding: var(--bc-pad-v-bubble) 0;
+    color: var(--bc-text);
+  }
+  .msg-fold .bc-fold-body .bc-fold-block + .bc-fold-block {
+    border-top: 1px dashed var(--bc-tbl-bd);
+  }
+  .msg-fold .bc-fold-body .bc-fold-block:first-child {
+    padding-top: var(--bc-pad-v-bubble);
+  }
+
   /* Reduced-motion compliance — same posture as MessageTemplate.html */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -745,7 +821,64 @@ function fallbackCopy(text) {
  * Message construction — `html` MUST already be sanitized natively
  * (HTMLSanitizer.sanitize); this document is the rendering surface only.
  * ========================================================================= */
-function buildMessage({ id, role, senderName, badge, timeLabel, html, timestamp }) {
+function buildMessage({ id, role, senderName, badge, timeLabel, html, timestamp, fold }) {
+  // Fold payload: a single synthetic message that represents N intermediate
+  // assistant blocks collapsed into a <details> disclosure. The grouper
+  // (TranscriptRunGrouper.swift) produces these; the JS template renders
+  // them as a folded row with summary "Working…" and the merged sanitized
+  // HTML inside. Original ids are preserved in `fold.ids` for telemetry /
+  // deep-link targets (not rendered).
+  if (fold) {
+    const article = document.createElement('article');
+    article.className = 'msg msg-fold assistant';
+    article.dataset.id = id || '';
+    article.dataset.role = 'assistant';
+    article.dataset.foldCount = String(fold.count || 0);
+    // Comma-separated list of the fold's owning message ids — read by the
+    // fold-transition reconcile pass (see upsertMessages) to detect when
+    // the fold has been replaced by standalone rendering for any of its
+    // owning ids. Empty array ⇒ no ids (defensive — should not happen).
+    article.dataset.foldIds = Array.isArray(fold.ids) ? fold.ids.join(',') : '';
+    // Preserve the first folded id so findMsgById still resolves the fold
+    // when the same fold payload is re-applied (upsert in-place).
+    article.dataset.date = dateKey(timestamp != null ? timestamp : Date.now());
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    const details = document.createElement('details');
+    details.className = 'bc-fold';
+    const summary = document.createElement('summary');
+    const label = document.createElement('span');
+    label.textContent = fold.label || 'Working…';
+    if (fold.count && fold.count > 1) {
+      const count = document.createElement('span');
+      count.className = 'bc-fold-count';
+      count.textContent = ' (' + fold.count + ')';
+      label.appendChild(count);
+    }
+    summary.appendChild(label);
+    details.appendChild(summary);
+    const body = document.createElement('div');
+    body.className = 'bc-fold-body';
+    // Each folded block is rendered into its own .bc-fold-block so the user
+    // can read each narration step independently when expanded. `blocks[i]`
+    // is sanitized upstream (TranscriptPayloadBuilder.foldPayload) — safe to
+    // assign via innerHTML.
+    const blocks = Array.isArray(fold.blocks) ? fold.blocks : [];
+    for (const blockHtml of blocks) {
+      const block = document.createElement('div');
+      block.className = 'bc-fold-block';
+      block.innerHTML = blockHtml || '';
+      body.appendChild(block);
+    }
+    details.appendChild(body);
+    bubble.appendChild(details);
+    article.appendChild(bubble);
+    // FR-MULTICOPY A2: copy button on every pre/code block inside the fold body.
+    body.querySelectorAll('pre').forEach(attachCopyButton);
+    return article;
+  }
+
+  // Normal (non-fold) message rendering — unchanged from prior behaviour.
   const article = document.createElement('article');
   article.className = 'msg';
   article.dataset.id = id || '';
@@ -945,26 +1078,115 @@ window.bc = {
     state.lastAction = 'upsert';
     if (canLoadEarlier) $loadEarlier.hidden = false;
     else $loadEarlier.hidden = true;
+    // FOLD-TRANSITION RECONCILE — folds transition between standalone and
+    // folded states across calls. When a 1-block run grows to 2 blocks, the
+    // standalone bubble must be removed (the fold replaces it). When a fold
+    // disappears (its first block was deleted from history), the orphan fold
+    // must be removed. Without this pass the old bubble stays in the DOM and
+    // its content appears TWICE — once standalone, once inside the fold.
+    //
+    // Scope: ONLY fold transitions, keyed on POSITIVE evidence in the
+    // payload. We deliberately do NOT prune by absence (i.e. "fold id
+    // missing from payload → remove") because `upsertMessages` accepts
+    // both full-state and incremental payloads — absence is not proof
+    // of orphan under the incremental contract. Instead we key on:
+    //
+    //   Rule A (standalone → folded): a standalone .msg whose id is now
+    //     in a fold payload's `ids` array. Positive evidence: the fold
+    //     payload explicitly claims this id. Remove the standalone.
+    //
+    //   Rule B (folded → standalone or fold dropped): a .msg-fold whose
+    //     OWNING ids are now claimed by a STANDALONE payload entry
+    //     (positive evidence: an id from fold.ids appears as a top-level
+    //     payload entry, not inside another fold). Remove the fold; the
+    //     upsert loop re-inserts the standalone in-place.
+    //
+    // Rule B is positive-evidence — absence of the fold from the payload
+    // does NOT trigger removal, so incremental payloads that happen not
+    // to mention the fold (e.g. test fixtures, future caller paths)
+    // leave the fold untouched. Rule A is similarly positive.
+    //
+    // LOAD-BEARING INVARIANT (rule B): Rule B's removal of a fold
+    // requires that the payload's *assistant* portion is complete. The
+    // reconcile treats any top-level assistant entry as proof that its
+    // id is no longer folded. If a future caller narrows the settle
+    // filter in TranscriptJSBuilder (Fix-1b) from "all assistant
+    // entries" to "the last assistant", a partial upsert could
+    // contain an intermediate as a top-level entry, Rule B would fire,
+    // the fold would be dropped, and other intermediates would vanish
+    // from the DOM — silent content loss. Don't narrow that filter
+    // without re-reading this comment.
+    //
+    // Edge case: if a fold exists in the DOM and ALL of its ids are
+    // removed from the persisted Message stream (e.g. history edit /
+    // session reset), neither rule fires. The fold stays in the DOM
+    // until the next full-state upsert that mentions its ids — this
+    // is the safe direction (no silent content loss).
+    const foldedIds = new Set();   // ids claimed by any fold payload's ids array
+    const standaloneIds = new Set(); // ids present at top level (NOT inside a fold)
+    for (const m of (messages || [])) {
+      if (m.id && !m.fold) standaloneIds.add(m.id);
+      if (m.fold && Array.isArray(m.fold.ids)) {
+        for (const fid of m.fold.ids) foldedIds.add(fid);
+      }
+    }
+    const toRemove = [];
+    for (const child of $transcript.children) {
+      if (!child.classList.contains('msg') || !child.dataset.id) continue;
+      const cid = child.dataset.id;
+      if (child.classList.contains('msg-fold')) {
+        // Rule B: fold disappears if its owning ids are now claimed by a
+        // standalone entry. Read the fold's owning ids from data-fold-ids
+        // (we wrote them when the fold was built). Default to the
+        // synthetic id's trailing portion if not present.
+        const foldIdsAttr = child.dataset.foldIds;
+        const owningIds = foldIdsAttr ? foldIdsAttr.split(',') : [cid.replace(/^__fold_/, '')];
+        const anyStandalone = owningIds.some((id) => standaloneIds.has(id));
+        if (anyStandalone) toRemove.push(child);
+      } else {
+        // Rule A: standalone whose id is now folded.
+        if (foldedIds.has(cid)) toRemove.push(child);
+      }
+    }
+    toRemove.forEach((n) => n.remove());
     let appended = 0;
     for (const m of (messages || [])) {
       const existing = m.id ? findMsgById(m.id) : null;
       if (existing) {
-        // Replace inner HTML in place (settle / edit).
-        const bubble = existing.querySelector('.bubble');
-        if (bubble) {
-          bubble.innerHTML = m.html || '';
-          bubble.querySelectorAll('pre').forEach(attachCopyButton);
-          wireImageHooks(bubble);
+        // Replace inner HTML in place (settle / edit). For fold entries,
+        // the innerHTML includes the details/bc-fold structure — it must
+        // be rebuilt from the new payload, not merely patched. We delegate
+        // to buildMessage() to re-emit the full structure, then swap.
+        if (m.fold) {
+          // In-place replace: build a fresh node, swap, keep position.
+          const parent = existing.parentNode;
+          const next = existing.nextSibling;
+          const fresh = buildMessage(m);
+          if (parent) parent.insertBefore(fresh, next);
+          existing.remove();
+          wireImageHooks(fresh);
+          if (pinned) deferredRepin();
+        } else {
+          // Replace inner HTML in place (settle / edit).
+          const bubble = existing.querySelector('.bubble');
+          if (bubble) {
+            bubble.innerHTML = m.html || '';
+            bubble.querySelectorAll('pre').forEach(attachCopyButton);
+            wireImageHooks(bubble);
+          }
         }
       } else {
         const node = buildMessage(m);
         // WP-2I day-headers: if this new message is on a different calendar
         // date than the previous adjacent .msg (or there is no previous),
         // insert a header before it. The previous .msg is the last .msg
-        // immediately before #thinking; its dataset.date was set by
+        // immediately before #thinking; its.dataset.date was set by
         // buildMessage(). If there is no previous .msg, prevKey is null
         // and we still insert a header (it's the first message of the
         // conversation).
+        // NOTE: .msg-fold ALSO carries the `.msg` class so prevMsg walk
+        // resolves it. A fold opening a new day therefore receives its
+        // own day header above it.
         const prevMsg = (() => {
           let cur = $thinking ? $thinking.previousElementSibling : null;
           while (cur && !cur.classList.contains('msg')) cur = cur.previousElementSibling;

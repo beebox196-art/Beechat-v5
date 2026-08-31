@@ -574,7 +574,338 @@ final class TranscriptTemplateTests: XCTestCase {
         XCTAssertEqual(copyBtnCount, 1, "A3: every .msg must get exactly one copy-full-text button")
     }
 
-    // MARK: - Theme injection — geometry tokens accepted
+    // MARK: - Fold growth: 1→2 assistant blocks must not duplicate the bubble
+    //
+    // Regression guard for the B1 BLOCKING finding from the structured review:
+    // when a 1-block assistant run grows to 2 blocks, the grouper transitions
+    // from `[message(a1)]` to `[fold(__fold_a1), message(a2)]`. Without the
+    // reconcile pass added alongside this test, the old standalone `a1` bubble
+    // would stay in the DOM (findMsgById doesn't match the fold's synthetic id)
+    // and `a1`'s content would appear TWICE — once standalone, once inside the
+    // fold's first block. This test pins the corrected behaviour.
+
+    func testFoldGrowth_1to2BlocksDoesNotDuplicateBubble() async throws {
+        // State N: 1 standalone assistant message (no fold yet — single-block
+        // run is untouched per the spec).
+        let standalone: [[String: Any]] = [[
+            "id": "a1",
+            "role": "assistant",
+            "senderName": "Bee",
+            "html": "<p>first block content</p>",
+        ]]
+        _ = try await eval("window.bc.setTopic({ topicId: 'growth', messages: \(asJSON(standalone)), canLoadEarlier: false });")
+
+        // Assert: exactly 1 .msg with id='a1'.
+        let countA1 = try await eval("document.querySelectorAll('.msg[data-id=\"a1\"]').length") as? Int ?? 0
+        XCTAssertEqual(countA1, 1, "After state N: exactly one .msg with data-id='a1'")
+        let noFolds = try await eval("document.querySelectorAll('.msg-fold').length") as? Int ?? 0
+        XCTAssertEqual(noFolds, 0, "After state N: no folds (single-block run is untouched)")
+
+        // State N+1: a2 arrives; grouper produces [fold(__fold_a1), a2].
+        let foldPayload: [[String: Any]] = [[
+            "id": "__fold_a1",
+            "role": "assistant",
+            "html": "",
+            "fold": [
+                "label": "Working…",
+                "count": 1,
+                "blocks": ["<p>first block content</p>"],
+                "ids": ["a1"],
+            ] as [String: Any],
+        ], [
+            "id": "a2",
+            "role": "assistant",
+            "senderName": "Bee",
+            "html": "<p>second block content</p>",
+        ]]
+        _ = try await eval("window.bc.upsertMessages(\(asJSON(foldPayload)), false);")
+
+        // Assert: the standalone a1 was REMOVED (reconcile pass), the fold
+        // appeared, and a2 appeared standalone. Total = 2 .msg nodes.
+        let totalMsgs = try await eval("document.querySelectorAll('#transcript > .msg').length") as? Int ?? 0
+        XCTAssertEqual(totalMsgs, 2, "After state N+1: exactly 2 .msg nodes (fold + final). Got: \(totalMsgs)")
+
+        // Critically: NO standalone a1 remains. The old DOM node was removed.
+        let standaloneARemaining = try await eval("document.querySelectorAll('.msg[data-id=\"a1\"]:not(.msg-fold)').length") as? Int ?? 0
+        XCTAssertEqual(standaloneARemaining, 0,
+                       "BLOCKING B1 fix: the standalone a1 bubble MUST be removed when a2 arrives (no duplicate a1). Got: \(standaloneARemaining)")
+
+        // The fold is in the DOM with the correct id and count.
+        let foldCount = try await eval("document.querySelectorAll('.msg-fold[data-id=\"__fold_a1\"]').length") as? Int ?? 0
+        XCTAssertEqual(foldCount, 1, "Fold with id='__fold_a1' must exist after upsert")
+        // The summary always shows "Working…". The numeric count is only
+        // appended when count > 1 (no point showing "(1)" beside the
+        // label). Verify the label is present and the count badge logic
+        // fires when expected.
+        let summaryLabel = try await eval("document.querySelector('.msg-fold summary')?.textContent") as? String ?? ""
+        XCTAssertTrue(summaryLabel.contains("Working"),
+                      "Fold summary must include the 'Working…' label. Got: \(summaryLabel)")
+        let foldCountAttr = try await eval("document.querySelector('.msg-fold')?.dataset.foldCount") as? String ?? ""
+        XCTAssertEqual(foldCountAttr, "1", "Fold's data-fold-count attribute must reflect 1 block")
+
+        // The final standalone a2 is present.
+        let a2Count = try await eval("document.querySelectorAll('.msg[data-id=\"a2\"]').length") as? Int ?? 0
+        XCTAssertEqual(a2Count, 1, "Standalone a2 (final block) must be present")
+
+        // Cross-check: total text occurrences of "first block content" must
+        // be exactly 1 (it appears once in the fold body).
+        let occurrences = try await eval("""
+        (function() {
+          const all = document.querySelectorAll('.msg, .msg-fold');
+          let count = 0;
+          for (const el of all) {
+            if ((el.textContent || '').includes('first block content')) count++;
+          }
+          return count;
+        })();
+        """) as? Int ?? 0
+        XCTAssertEqual(occurrences, 1,
+                       "BLOCKING B1 fix: 'first block content' must appear exactly once after the growth transition. Got: \(occurrences)")
+
+        // Order assertion: the fold must come BEFORE the final standalone
+        // message in DOM order. The reconcile pass removes the old standalone
+        // and the upsert loop inserts in payload order (fold first, then a2),
+        // so the fold should appear first in #transcript.
+        let order = try await eval("""
+        (function() {
+          const kids = Array.from(document.getElementById('transcript').children);
+          const foldIdx = kids.findIndex((n) => n.classList.contains('msg-fold'));
+          const a2Idx = kids.findIndex((n) => n.dataset && n.dataset.id === 'a2');
+          return { foldIdx, a2Idx };
+        })();
+        """) as? [String: Any] ?? [:]
+        let foldIdx = order["foldIdx"] as? Int ?? -2
+        let a2Idx = order["a2Idx"] as? Int ?? -2
+        XCTAssertGreaterThanOrEqual(foldIdx, 0, "Fold must exist in DOM")
+        XCTAssertGreaterThanOrEqual(a2Idx, 0, "a2 must exist in DOM")
+        XCTAssertLessThan(foldIdx, a2Idx,
+                          "Fold (idx \(foldIdx)) must come BEFORE final a2 (idx \(a2Idx)) in DOM order")
+    }
+
+    // MARK: - Fold shrinking: fold→standalone must remove the orphan fold
+    //
+    // Companion test to the growth case. When a fold's owning id is
+    // re-emitted as a standalone payload (e.g. the run was un-folded by
+    // a server-side correction), the fold node must be removed and the
+    // standalone version re-inserted by the upsert loop.
+    //
+    // This is the POSITIVE-EVIDENCE case for Rule B. The inverse case —
+    // a fold whose owning ids are deleted from history without being
+    // re-emitted standalone — deliberately does NOT trigger removal
+    // (safe direction; no silent content loss). See the reconcile pass
+    // comment in upsertMessages for the rationale.
+
+    func testFoldShrinking_FoldToStandaloneRemovesOrphanFold() async throws {
+        // State N: 2-block run rendered as [fold(__fold_a1), a2].
+        let foldPayload: [[String: Any]] = [[
+            "id": "__fold_a1",
+            "role": "assistant",
+            "html": "",
+            "fold": [
+                "label": "Working…",
+                "count": 1,
+                "blocks": ["<p>intermediate</p>"],
+                "ids": ["a1"],
+            ] as [String: Any],
+        ], [
+            "id": "a2",
+            "role": "assistant",
+            "senderName": "Bee",
+            "html": "<p>final</p>",
+        ]]
+        _ = try await eval("window.bc.setTopic({ topicId: 'shrink', messages: \(asJSON(foldPayload)), canLoadEarlier: false });")
+
+        // Assert starting state.
+        let startingFolds = try await eval("document.querySelectorAll('.msg-fold').length") as? Int ?? 0
+        XCTAssertEqual(startingFolds, 1, "Starting state: exactly 1 fold")
+
+        // State N+1: a1 re-emitted standalone (e.g. server-side correction).
+        // The fold's owning id is now claimed by a standalone entry → Rule B
+        // removes the fold, and the upsert loop inserts the standalone a1.
+        let payload: [[String: Any]] = [[
+            "id": "a1",
+            "role": "assistant",
+            "senderName": "Bee",
+            "html": "<p>intermediate</p>",
+        ], [
+            "id": "a2",
+            "role": "assistant",
+            "senderName": "Bee",
+            "html": "<p>final</p>",
+        ]]
+        _ = try await eval("window.bc.upsertMessages(\(asJSON(payload)), false);")
+
+        // Assert: the fold is gone, both a1 and a2 are standalone.
+        let orphanFolds = try await eval("document.querySelectorAll('.msg-fold').length") as? Int ?? 0
+        XCTAssertEqual(orphanFolds, 0,
+                       "Fold must be removed when its owning id is re-emitted standalone. Got: \(orphanFolds)")
+        let a1Count = try await eval("document.querySelectorAll('.msg[data-id=\"a1\"]:not(.msg-fold)').length") as? Int ?? 0
+        XCTAssertEqual(a1Count, 1, "a1 must now be standalone")
+        let a2Count = try await eval("document.querySelectorAll('.msg[data-id=\"a2\"]').length") as? Int ?? 0
+        XCTAssertEqual(a2Count, 1, "a2 must remain standalone")
+    }
+
+    // MARK: - Streaming settle with a fold in the settled payload
+    //
+    // Regression guard for the B6 BLOCKING finding from the round-2 review.
+    // Dropping the synthetic `assistant_fold` role means the Fix-1b
+    // atomic-settle filter (`role == "assistant"`) now matches fold
+    // payloads too. The settle path therefore sees fold entries in its
+    // matched set; this test pins the resulting behaviour — the streaming
+    // node is removed, the fold + final settle cleanly, no orphan nodes.
+
+    func testStreamingSettleWithFoldInPayload() async throws {
+        // Start with a base + one streaming node.
+        _ = try await eval("""
+        window.bc.setTopic({
+          topicId: 'settle-fold',
+          messages: [{
+            id: 'u1', role: 'user',
+            html: '<p>hi</p>'
+          }],
+          canLoadEarlier: false
+        });
+        """)
+        _ = try await eval("window.bc.setStreaming({ html: '<p>streaming…</p>' });")
+
+        // Settle: null streaming, then upsert the fold + final payload.
+        let settlePayload: [[String: Any]] = [[
+            "id": "__fold_a1",
+            "role": "assistant",
+            "html": "",
+            "fold": [
+                "label": "Working…",
+                "count": 1,
+                "blocks": ["<p>narration</p>"],
+                "ids": ["a1"],
+            ] as [String: Any],
+        ], [
+            "id": "a2",
+            "role": "assistant",
+            "senderName": "Bee",
+            "html": "<p>final</p>",
+        ]]
+        _ = try await eval("""
+        window.bc.setStreaming(null);
+        window.bc.upsertMessages(\(asJSON(settlePayload)), false);
+        """)
+
+        try await waitForTwoRAFs()
+
+        // Assert: streaming-msg is gone, fold + a2 are in the DOM.
+        let streamingCount = try await eval("document.querySelectorAll('#streaming-msg').length") as? Int ?? 0
+        XCTAssertEqual(streamingCount, 0, "Streaming node must be removed on settle")
+        let foldCount = try await eval("document.querySelectorAll('.msg-fold[data-id=\"__fold_a1\"]').length") as? Int ?? 0
+        XCTAssertEqual(foldCount, 1, "Fold must be present after settle")
+        let a2Count = try await eval("document.querySelectorAll('.msg[data-id=\"a2\"]').length") as? Int ?? 0
+        XCTAssertEqual(a2Count, 1, "Final a2 must be present after settle")
+    }
+
+
+
+    func testFoldSurvivesIncrementalUpsertThatDoesNotMentionIt() async throws {
+        // Seed: [fold(__fold_a1), a2]. Fold owns id "a1".
+        let foldPayload: [[String: Any]] = [[
+            "id": "__fold_a1",
+            "role": "assistant",
+            "html": "",
+            "fold": [
+                "label": "Working…",
+                "count": 1,
+                "blocks": ["<p>intermediate</p>"],
+                "ids": ["a1"],
+            ] as [String: Any],
+        ], [
+            "id": "a2",
+            "role": "assistant",
+            "senderName": "Bee",
+            "html": "<p>final</p>",
+        ]]
+        _ = try await eval("window.bc.setTopic({ topicId: 'incremental', messages: \(asJSON(foldPayload)), canLoadEarlier: false });")
+
+        // Sanity: 1 fold present.
+        let beforeFolds = try await eval("document.querySelectorAll('.msg-fold').length") as? Int ?? 0
+        XCTAssertEqual(beforeFolds, 1, "Sanity: starting state has 1 fold")
+
+        // Incremental upsert: payload mentions NEITHER the fold id nor any
+        // of its owning ids. This simulates a caller adding an unrelated
+        // message in isolation (e.g. a streaming-update path, a test
+        // fixture). The fold MUST survive — B4 fix.
+        let incremental: [[String: Any]] = [[
+            "id": "user-followup",
+            "role": "user",
+            "html": "<p>thanks</p>",
+        ]]
+        _ = try await eval("window.bc.upsertMessages(\(asJSON(incremental)), false);")
+
+        // Assert: fold untouched (no silent loss), user-followup added.
+        let afterFolds = try await eval("document.querySelectorAll('.msg-fold').length") as? Int ?? 0
+        XCTAssertEqual(afterFolds, 1,
+                       "B4 fix: fold MUST survive an incremental upsert that doesn't mention its ids. Got: \(afterFolds)")
+        let followup = try await eval("document.querySelectorAll('.msg[data-id=\"user-followup\"]').length") as? Int ?? 0
+        XCTAssertEqual(followup, 1, "user-followup must be inserted")
+    }
+
+    // MARK: - Fold at a day boundary still gets its header
+    //
+    // Regression guard for the B3 finding from the structured review:
+    // a fold must count as a `.msg` for prevMsg resolution so the day
+    // header logic still inserts a header above it. The fold element
+    // has `class="msg msg-fold assistant"` — this test pins that
+    // invariant by checking the day-header appears immediately above
+    // the fold when the fold opens a new calendar date.
+
+    func testFoldAtDayBoundaryStillGetsHeader() async throws {
+        // Two messages far apart in time so they're on different dates.
+        // The fold's timestamp (the EARLIEST folded block) lands on date D1;
+        // a2 lands on date D2. We expect a day header to appear between
+        // them — specifically, the header for D2 should appear immediately
+        // before a2.
+        // Use a date in 2024 (not "today" so the test is deterministic).
+        let d1 = Date(timeIntervalSince1970: 1_725_000_000)   // 2024-09-22 ~12:00 UTC
+        let d2 = Date(timeIntervalSince1970: 1_728_000_000)   // 2024-09-26 ~00:00 UTC (different day)
+        let payload: [[String: Any]] = [[
+            "id": "__fold_a1",
+            "role": "assistant",
+            "timestamp": d1.timeIntervalSince1970 * 1000,
+            "html": "",
+            "fold": [
+                "label": "Working…",
+                "count": 1,
+                "blocks": ["<p>intermediate</p>"],
+                "ids": ["a1"],
+            ] as [String: Any],
+        ], [
+            "id": "a2",
+            "role": "assistant",
+            "senderName": "Bee",
+            "timestamp": d2.timeIntervalSince1970 * 1000,
+            "html": "<p>final</p>",
+        ]]
+        _ = try await eval("window.bc.setTopic({ topicId: 'day-fold', messages: \(asJSON(payload)), canLoadEarlier: false });")
+
+        // Find the day-header immediately above a2 (if any).
+        let headerAboveA2 = try await eval("""
+        (function() {
+          const a2 = document.querySelector('.msg[data-id=\"a2\"]');
+          if (!a2) return null;
+          const prev = a2.previousElementSibling;
+          return prev && prev.classList.contains('day-header') ? prev.dataset.date : 'no-header';
+        })();
+        """) as? String ?? "no-header"
+
+        // The day-header key for d2 in local time. We use a relaxed check —
+        // we just want to confirm the header was inserted, not its exact text.
+        XCTAssertNotEqual(headerAboveA2, "no-header",
+                          "B3 regression guard: a day header must appear immediately above a2 when the fold opens the new day")
+
+        // Also: the fold's data-date attribute must be present (used by
+        // the prevMsg walk to recognise it as a .msg sibling).
+        let foldDateAttr = try await eval("document.querySelector('.msg-fold')?.dataset.date") as? String ?? ""
+        XCTAssertFalse(foldDateAttr.isEmpty, "Fold element must carry a data-date attribute (prevMsg walk)")
+    }
+
+
 
     func testThemeGeometryTokensAreAccepted() async throws {
         // Mirror what ThemeManager.computeCSSTokens produces (with the geometry group).

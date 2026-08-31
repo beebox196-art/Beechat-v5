@@ -207,16 +207,25 @@ private struct TranscriptHost: NSViewRepresentable {
         // MARK: - Diffing helpers
 
         /// Convert a `[Message]` into the payload the template's `setTopic` /
-        /// `upsertMessages` consumes: `{id, role, senderName?, badge?, timeLabel, html}`.
-        /// `html` is pre-rendered (caller responsibility upstream of the host).
-        /// `timeLabel` already locale-formatted. For the WP-2I minimal slice we
-        /// pass through the Message fields the template needs and let the template
-        /// handle rendering — pre-sanitization is the caller's contract.
-        // Payload building is delegated to the internal `TranscriptPayloadBuilder`
-        // so the WP-2I contract is unit-testable (regression guard: payload `html`
-        // must be markdown→sanitized, never raw).
+        /// `upsertMessages` consumes: `{id, role, senderName?, badge?, timeLabel, html}`
+        /// — plus, for fold entries, the synthetic `fold` field carrying the
+        /// collapsed disclosure data (label, count, blocks).
+        ///
+        /// Behaviour (fold intermediate narration):
+        ///   1. Group consecutive assistant messages into runs (via
+        ///      `TranscriptRunGrouper`).
+        ///   2. For multi-block runs, emit a single fold payload covering all
+        ///      but the last block, then a standalone payload for the final
+        ///      block. Single-block runs and non-assistant messages emit
+        ///      unchanged standalone payloads.
+        ///
+        /// This is display grouping only — the source `Message` values are
+        /// never mutated, merged, or reordered. The persistence layer is
+        /// untouched. Dedup-by-messageId logic in the JS bridge remains
+        /// keyed on the synthetic fold id (`__fold_<firstId>`), which is
+        /// stable across re-applies.
         func messagesToPayload(_ messages: [Message]) -> [[String: Any]] {
-            messages.map { TranscriptPayloadBuilder.messagePayload($0) }
+            TranscriptPayloadBuilder.groupedPayloads(messages)
         }
 
         private static func jsonString(_ value: Any) -> String {
@@ -815,5 +824,68 @@ internal enum TranscriptPayloadBuilder {
     /// Same pipeline as `messagePayload` (streaming content is raw markdown).
     static func sanitizedStreamingHTML(_ raw: String) -> String {
         HTMLSanitizer.sanitize(MarkdownToHTML.convert(raw))
+    }
+
+    /// Build the fold payload the JS template renders as a collapsed
+    /// "Working…" disclosure. The fold covers the intermediate assistant
+    /// blocks of a multi-block run; the FINAL block is emitted separately
+    /// via `messagePayload` so the user sees it expanded exactly as today.
+    ///
+    /// Contract with `TranscriptTemplate.html#buildMessage`:
+    ///   - `role` is `"assistant"` (the presence of the `fold` field is the
+    ///     sole discriminator; we deliberately do NOT introduce a new role
+    ///     value because every `role == "assistant"` consumer — atomic
+    ///     settle, CSS selectors, copy/export, accessibility labelling —
+    ///     would have to be taught about it).
+    ///   - `id` is a stable synthetic id derived from the FIRST folded
+    ///     message — this lets `findMsgById` resolve the fold entry on
+    ///     upsert (in-place replace) and lets the day-header logic skip
+    ///     duplicates when the same payload is replayed.
+    ///   - `fold.label` is the disclosure summary text ("Working…").
+    ///   - `fold.count` is the number of folded messages.
+    ///   - `fold.blocks` is the per-message sanitized HTML array — each
+    ///     element becomes its own `.bc-fold-block` inside the disclosure.
+    ///   - `fold.ids` is the array of original message ids (telemetry /
+    ///     deep-link target — not rendered).
+    static func foldPayload(_ group: TranscriptRunGrouper.FoldedAssistantGroup) -> [String: Any] {
+        let firstId = group.messages.first?.id ?? UUID().uuidString
+        let blocks: [String] = group.messages.map { msg in
+            HTMLSanitizer.sanitize(MarkdownToHTML.convert(msg.content ?? ""))
+        }
+        let ids: [String] = group.messages.map { $0.id }
+        // Use the earliest timestamp for the day-header date key — the fold
+        // "belongs" to the day it started, not the day it ended.
+        let earliest = group.messages.min(by: { $0.timestamp < $1.timestamp })?.timestamp ?? Date()
+        return [
+            "id": "__fold_\(firstId)",
+            "role": "assistant",
+            "timestamp": earliest.timeIntervalSince1970 * 1000,
+            "fold": [
+                "label": "Working…",
+                "count": group.count,
+                "blocks": blocks,
+                "ids": ids,
+            ] as [String: Any]
+        ]
+    }
+
+    /// Group `messages` into runs and emit a payload array where
+    /// consecutive assistant blocks are collapsed into fold entries.
+    ///
+    /// Returns one payload per `TranscriptRunGrouper.Item`. The ordering
+    /// matches the source array at the boundary level (fold then final,
+    /// then next message in source order). The total payload count is
+    /// ≤ the input count (no assistant is dropped — folds REPLACE the
+    /// intermediate standalone rendering, they don't delete messages).
+    static func groupedPayloads(_ messages: [Message]) -> [[String: Any]] {
+        let items = TranscriptRunGrouper.group(messages)
+        return items.map { item in
+            switch item {
+            case .message(let msg):
+                return messagePayload(msg)
+            case .folded(let group):
+                return foldPayload(group)
+            }
+        }
     }
 }
