@@ -4,10 +4,11 @@
 active
 
 **Phase:** Working App - Feature Growth — **Option B single-WebView transcript programme in progress**
-**Last Updated:** 2026-08-05
-**Latest Commit:** `c84a50f` — v0.9.5g (fix(scroll): self-healing clamp v3, Kieran v2 review fixes)
-**Version:** v0.9.5g (VERSION file) — tag `v0.9.5g` == main HEAD `c84a50f`
-**Installed builds:** `BeeChatApp.app` = v0.9.5f (old, rollback) · `BeeChatApp-g.app` = v0.9.5g (new, side-by-side, added 2026-08-05)
+**Last Updated:** 2026-09-01
+**Latest Commit:** `249c04b` — feat(ui): fold intermediate assistant blocks into collapsed Working disclosure (on `feat/transcript-integration`, the test branch)
+**Version:** v0.9.5l (VERSION file) — **last current full release** (build 2026.08.07)
+**Installed builds (Applications, as of 2026-09-01):** `BeeChatApp.app` = **v0.9.5l** (2026.08.07, last current full release, RUNNING) · `BeeChat (New Version).app` = v0.9.5m (2026.08.31-fold, test build under diagnosis) · `BeeChatApp.app.bak-v095g-20260901` = v0.9.5g (2026.08.04, backed-up stale copy)
+**Version correction (2026-09-01):** earlier STATUS said v0.9.5g was current — that was STALE. The last current full version is **v0.9.5l** (2026.08.07), which lives in the project folder and is now installed to /Applications. v0.9.5g (2026.08.04) is an older build, backed up not deleted.
 **Protocol:** v4 (confirmed in `GatewayClient.swift`)
 
 ---
