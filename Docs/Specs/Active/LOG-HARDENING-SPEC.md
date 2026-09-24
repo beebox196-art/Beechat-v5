@@ -395,18 +395,25 @@ against the live config. **Result (decisive):**
   | `…-20260920-093004.log` | 1 | `0644` |
   | `…-20260923-190450.log` | 21 | `0644` |
   | `…-20260924-101109.log` | 2 | `0600` |
-  - **4 of 5 are `0644` (group/other-readable).**
+  - **4 of 5 are mode `0644`** — but see the exposure note below: the
+    **directory chain is `0700` at every level**, so these are **same-user readable,
+    not world/group-readable.** `0644` is still the wrong mode for a credential copy;
+    it just isn't the exposure some of my earlier notes implied.
 - The **deviceToken** is also logged in full — **1 distinct value**, and it **matches
   a paired entry in `~/.openclaw/devices/paired.json`** (hash `5bd0abd759fd`, verified
   on raw bytes). So it is a **live** device credential, not stale. → **re-pair/revoke.**
 - **Vector split:** 38/44 via the **URL (line 279)**, 6/44 via the **field (579)**.
   (grok's corrected count: 38 token-bearing connect lines across the same 5 files;
   the extra 6 are the handshake-field occurrences. Same files, same span.)
-- *Note vs grok's numbers:* grok reported "42 archives / 153". My raw-byte scan
-  finds **5 archives / 44 occurrences** (151 archives total). The counts differ by
-  method — grok's appears broader (prefix/pattern based). **Both agree the leak is
-  real and the archive dir is the location. The literal-containment scan of the
-  exact current token is the authoritative number: 5 files, 44 occurrences.**
+- *Note vs grok's numbers:* the **archive rotates (~30 min)**, so any count is a
+  **snapshot** and will differ run-to-run. Reconciled view (grok, 14:22): **151 files,
+  of which 5 carry a token-bearing connect line, 38 token-bearing connect lines**
+  (8/8/1/20/1). My literal-containment scan counts **44 occurrences of the exact
+  token string** in the same 5 files — the difference is simply **two `url=ws://…`
+  lines per connect**: `performConnect — url=ws://…` (no token) and
+  `transport.connect called — url=ws://…?token=<token>` (token). One connect, two
+  lines; and some lines carry the token in the handshake field too. **All methods
+  agree: 5 files, live token, hash-matched.**
 - **The evidence set CHURNS:** the canary prunes archive entries older than 7 days,
   so the token-bearing files rotate out over time while new ones (from each connect)
   rotate in. **This means the exposure is self-refreshing: as long as the pre-fix app
@@ -427,8 +434,10 @@ against the live config. **Result (decisive):**
 
 **Exposure scope (measured):**
 - Parent dirs are `drwx------` (`~/.openclaw/logs`, `…/beechat-debug-archive`,
-  `~/Desktop`) → **no other local OS user can traverse to them.** Individual files
-  are `0644` but unreachable behind the `0700` parent.
+  `~/.openclaw`) all the way down to `/Users/openclaw` (`drwxr-x---`) → **same-user
+  only; no other local OS user can traverse to them.** Individual files are `0644`
+  but unreachable behind the `0700` parents. *(Corrected: an earlier version of this
+  spec called the `0644` files "world-readable" — that was wrong; grok's correction.)*
 - Desktop is **not** iCloud-synced (`FXICloudDriveDesktop = 0`).
 - **BUT:** the token is in **Time Machine local snapshots** (`…-020008`, `…-040010`)
   and in `~/.openclaw/logs/beechat-debug-archive/`, which is a **persistent,
@@ -467,7 +476,8 @@ present in snapshots, and **self-refreshing** while the app runs.
 - **Purge BOTH locations**: the current Desktop log **and
   `~/.openclaw/logs/beechat-debug-archive/`** — the archive is the second location
   and the one that actually holds the token in bulk (§6.1b). **Delete, do not
-  archive** — the archiver copied a secret into 4 world-readable files.
+  archive** — the archiver copied a secret into 4 files whose **mode (0644) is
+  wrong for a credential**, even though the 0700 parent chain makes them same-user only.
 - **Device token:** **RE-PAIR / REVOKE** — confirmed: the archived value matches a
   live entry in `~/.openclaw/devices/paired.json` (hash `5bd0abd759fd`). The earlier
   "unless the prefix excludes it" conditional is **withdrawn** — it is exposed.
@@ -509,6 +519,8 @@ archived deviceToken both match live credentials (see §6.1b).
 ### 6.2 General log-hygiene requirements
 
 - Logs must not be world-readable. Verify file permissions on creation.
+  *(Note: `Data.write` creates `0644`; the 0700 parent chain mitigates, but the file
+  mode should still be `0600` — AC-21.)*
 - Removing Desktop sinks reduces accidental exposure of app internals in a
   user-visible location.
 
@@ -842,6 +854,6 @@ signal in the exercise.
 | **Leak sink A** | `GatewayClient.swift:279` — logs `url.absoluteString`; line 266 builds `config.url?token=<token>` (HEAD; `main:269`) |
 | **Leak sink B** | `GatewayClient.swift:579` — logs handshake frame (`token`+`deviceToken`) (HEAD; `main:569`) |
 | **Fix still prints** | `GatewayClient.swift:15-17` — `print` before `guard debugLogEnabled` (R3-1) |
-| **Token-bearing archives** | `~/.openclaw/logs/beechat-debug-archive/` — **5 files, 44 occ** of live gateway token, 4× `0644` (raw-byte, hash-verified) |
+| **Token-bearing archives** | `~/.openclaw/logs/beechat-debug-archive/` — live gateway token, **5 files / 38 connect lines** (snapshot; archive rotates ~30 min), 4× `0644` behind a `0700` chain (raw-byte, hash-verified) |
 | **Device token** | 1 archived value, matches `~/.openclaw/devices/paired.json` entry (hash `5bd0abd759fd`) |
 | Canary truncator | `~/.openclaw/logs/canary.log` — auto-truncates Desktop log every ~30 min, archives it |
