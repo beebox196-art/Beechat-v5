@@ -23,7 +23,7 @@ latent time bomb.
 
 | # | Sink | Path | Bounding | On by default | State |
 |---|---|---|---|---|---|
-| 1 | `GatewayClient.debugLog` | ~~`/Users/openclaw/Desktop/BeeChat-debug.log`~~ fixed | **none** | **yes** → now gated | **Code fixed, NOT shipped** — ⚠️ latent token-logging defect (§6.1a) |
+| 1 | `GatewayClient.debugLog` | ~~`/Users/openclaw/Desktop/BeeChat-debug.log`~~ fixed | **none** | **yes** → now gated | **⚠️ CONFIRMED CREDENTIAL LEAK (§6.1b)** — live token on disk, hash-verified |
 | 2 | `BeeChatLogger` (diagnostics) | `~/Desktop/BeeChat-diagnostics.log` | 1 MB → trims to 256 KB | **yes, unconditional** | **Live, leaking** |
 | 3 | `DatabaseManager` seed row | `/Users/openclaw/Desktop/Claude Oversight Reports` | n/a (data) | n/a | **Live, latent failure** |
 
@@ -37,11 +37,10 @@ latent time bomb.
 
 **Confidence: high.** Each sink verified at the revision pin above.
 
-> ⚠️ **Severity note (2026-09-24, corrected):** sink 1 also contains a **latent
-> credential-logging defect** — `GatewayClient.swift:579` logs the handshake frame,
-> whose params carry `token` + `deviceToken` (§6.1a). Direct inspection shows the
-> current log file contains **no** leaked secret (§6.1b). So: fix required,
-> **no token rotation required on current evidence**.
+> ⚠️ **Severity (2026-09-24, final):** sink 1 is a **confirmed credential leak** —
+> the live gateway token was written in full to a log file (hash-verified against
+> `openclaw.json`), found in 4 archived logs spanning 2026-09-16…09-24 and in Time
+> Machine snapshots. **Rotate the token.** See §6.1.
 
 ### Why this matters
 
@@ -326,70 +325,84 @@ zero files** (F11 / AC-12).
 **Verified at HEAD `32afd4e`.** Two separate claims, and they have different
 status — keep them distinct:
 
-**(a) The code path is dangerous — CONFIRMED.**
-- `GatewayClient.swift:579` — `debugLog("Sending handshake: \(text.prefix(500))")`
+**(a) The code path is dangerous — CONFIRMED, and it is in SHIPPED code.**
+- `GatewayClient.swift:579` on `feat/transcript-integration`, and **`main:569`**
+  (the line landed 2026-05-18) — i.e. **the running, shipped binary contains it.**
+  Verified: `strings` on `/Applications/BeeChatApp.app` emits `Sending handshake:`, and
+  the binary does **not** contain `BEE_DEBUG_LOG` (the fix). So the defect is in the
+  **installed** app, not branch-only.
 - `text` is the JSON-encoded `RequestFrame(method: "connect", params:)`
 - The params are built with `auth: .init(token: config.token, deviceToken:
   currentDeviceToken)` (see `ConnectParams` construction, lines ~523/557)
-- **Therefore the code, if that line executes, writes the first 500 chars of the
-  handshake — which include `token` and `deviceToken` — to the log file.** That is
-  a latent credential-logging defect. It must be fixed regardless.
+- **Therefore the code writes the first 500 chars of the handshake — which include
+  `token` and `deviceToken` — to the log file.** Confirmed on disk (§6.1b).
 
-**(b) Whether a secret was ever written to disk is UNVERIFIABLE — the file was truncated.**
+**(b) ⚠️ CONFIRMED: the FULL gateway token IS on disk — hash-verified.**
 
-Initial reading (now corrected): I inspected the live file (~32 KB, 582 lines then)
-and found **zero** `token`/`auth`/`secret`/`bearer`/`handshake`/`connect`/
-`deviceToken`/`password` strings; every line was `handleEvent — event=<name>`.
-I wrongly concluded "no leaked secret." **That conclusion is unsound**, for three
-reasons (all raised by grok's round-2 review):
+After three wrong passes, I stopped inferring and hash-compared raw file bytes
+against the live config. **Result (decisive):**
 
-1. **Path (a):** the file I read (`~/Desktop/BeeChat-debug.log`) **is** the one the
-   running binary opens — verified two ways: the Aug-7 binary's `debugLog`
-   hardcodes `"/Users/openclaw/Desktop/BeeChat-debug.log"` (`git show
-   937e18b:…/GatewayClient.swift:5`), and `strings` on the installed binary emits
-   that exact path. The post-fix `~/Library/Logs/…` path is **absent** (fix not
-   shipped). So paths match — but that does **not** rescue the read (see 2).
-2. **Truncation (b):** the file's **birth is 10:02:24** (app launch) but its
-   **oldest surviving line is 13:49:53**. The file was **truncated in place at
-   ~13:49** — the entire pre-13:49 content (including the connect/handshake events
-   from app launch) is **gone**. `grep` on the current file finds **zero**
-   `connect`/`handshake` lines *because they were truncated away*, not because
-   they never happened. **The clean read clears nothing.** I cannot inspect the
-   pre-truncation bytes.
-   - **Cause of truncation: UNEXPLAINED.** No process holds the file open
-     (`lsof` empty); the Aug-7 binary has **no rotation**; I performed no such
-     action. Best (unverified) candidate: the system canary's repetition detector
-     — the commit says the loop was "caught by the system canary's repetition
-     detector," which may have truncated/rotated the file. **Recorded as an open
-     unknown, not explained away.**
-3. **Handshake firing (c):** line 579 *did* fire — the binary contains the
-   `Sending handshake:` string, and a connect occurs at app launch. Those lines
-   were in the pre-truncation content. **This is why 579 "never appeared" post-fix:
-   it fired once at connect (~10:02), inside the truncated region.**
+- The archived logs contain the **full 48-char gateway token**, and its
+  **SHA-256 matches `openclaw.json → gateway.auth.token` exactly**
+  (`hash[:12] = f4b4f4cda5a2`). Not a coincidence — it is the live token.
+- **8 occurrences across 4 archived files**, from **2026-09-16 to 2026-09-24**:
+  - `BeeChat-debug.log-loop-20260916-140252.log` ×2
+  - `BeeChat-debug.log-loop-20260918-221609.log` ×4
+  - `BeeChat-debug.log-loop-20260923-190450.log` ×1
+  - `BeeChat-debug.log-loop-20260924-101109.log` ×1
+- The **deviceToken** is also logged in full (**1 distinct value** on disk).
 
-**Therefore the token question cannot be closed either way:** the code path can
-write the token (confirmed), and whether it did is **forever unverifiable** on this
-log, because the evidence was truncated.
+**Why my earlier passes were wrong (the actual cause):**
+1. The **canary** truncates the Desktop log every ~30 min as a "loop bug" guard and
+   **archives** it to `~/.openclaw/logs/beechat-debug-archive/` (151 files). My
+   "clean read" of the *current* Desktop file was clean only because **no handshake
+   fired in its window** — the token-bearing lines had been **rotated into the
+   archive**, which I did not check.
+2. The tool-output layer **masks secrets in displayed text** (it rendered the token
+   as `e6773d…d360`). Reading *displayed* output therefore produced a false "masked"
+   reading. **Only raw-byte extraction + hash comparison is sound.**
 
-> ⚠️ **Consequence — reversal of my earlier call:** I previously wrote "no token
-> rotation required on current evidence." **That conclusion does not hold.** The
-> evidence is not merely absent — it was destroyed by truncation. The correct
-> posture is **assume-possibly-exposed → rotate the gateway token** as cheap
-> insurance. **This is the safe call, and it is Adam's to make.** It supersedes the
-> earlier "no rotation" line.
+**Exposure scope (measured):**
+- Parent dirs are `drwx------` (`~/.openclaw/logs`, `…/beechat-debug-archive`,
+  `~/Desktop`) → **no other local OS user can traverse to them.** Individual files
+  are `0644` but unreachable behind the `0700` parent.
+- Desktop is **not** iCloud-synced (`FXICloudDriveDesktop = 0`).
+- **BUT:** the token is in **Time Machine local snapshots** (`…-020008`, `…-040010`)
+  and in `~/.openclaw/logs/beechat-debug-archive/`, which is a **persistent,
+  growing** store (canary prunes only >7d). Any backup/snapshot/sync that carries
+  those directories carries the token.
 
-**Net finding:** this is a **latent** credential-logging defect, **and** disk
-exposure **cannot be ruled out** because the log was truncated (§6.1b). Treat as
-**possibly exposed** — fix line 579 **and** rotate the token (Adam's call).
+**Verdict:** **confirmed credential exposure on disk — local-file class, not
+remote.** Live token, on disk for 8 days, present in snapshots.
 
-> **Correction history (2026-09-24):** revision 1 asserted a "confirmed leak"
-> (unsupported — asserted about a file I hadn't read). Revision 2 asserted "no
-> leak, no rotation" (unsound — read a *truncated* file and generalised). Revision
-> 3 (this one) states the defensible position: **latent defect confirmed; disk
-> exposure unverifiable; rotation prudent.** Three passes, each caught by a
-> different reviewer/check — recorded because it is the exact failure class this
-> project keeps hitting: *a claim about evidence, made without establishing that
-> the evidence is complete.*
+**Required change (now unambiguous):**
+- **Never log the handshake frame** — remove/redact line 579 (`main:569`).
+- **Rotate the gateway token** — **YES.** Live token on disk + in snapshots →
+  cheap insurance. **Adam's call, but recommended.**
+- **Purge the token-bearing archives** (`~/.openclaw/logs/beechat-debug-archive/`)
+  once the fix ships — after confirming no forensic need. (Ask before deleting.)
+- **Guard G4** (§4.5) — mandatory, mutation-tested.
+
+**Confidence: high** — hash match, not inference.
+
+> **Correction history (2026-09-24) — four passes:** r1 "confirmed leak"
+> (unsupported); r2 "no leak, no rotation" (read a truncated file); r3 "exposure
+> unverifiable" (missed the archive); **r4 (this) "confirmed leak, hash-verified, rotate."**
+> Root cause of the flip-flopping: **reading tool-masked display output instead of
+> raw bytes.** Lesson logged: *for secret-presence questions, hash-compare raw
+> bytes; never trust a displayed/masked rendering.*
+
+**Net finding:** **CONFIRMED credential exposure** — the live gateway token (and a
+deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
+2026-09-16, and in Time Machine snapshots. Fix line 579 **and rotate the token.**
+
+> **Correction history (2026-09-24) — FOUR passes on one finding:**
+> r1 "confirmed leak" (unsupported — hadn't read the file); r2 "no leak, no
+> rotation" (read a **truncated** file); r3 "unverifiable" (missed the archive the
+> canary rotates into); **r4 (this) "confirmed, hash-verified, rotate."** Root cause
+> of the flip-flopping: **trusting tool-masked display output instead of raw
+> bytes.** The lesson is now a standing note: *for secret-presence questions,
+> hash-compare raw file bytes; never trust a masked/displayed rendering.*
 
 **Required change (still required):**
 - **Never log the handshake frame.** Remove or redact line 579; if the diagnostic
@@ -424,12 +437,13 @@ exposure **cannot be ruled out** because the log was truncated (§6.1b). Treat a
 **AC-7** Guard G3 fails when a logger is made always-on (mutation test).
 **AC-7b** Guard G4 fails when the handshake frame is restored to the log call
   (mutation test); and shipped code contains **no** path writing `config.token`
-  or `currentDeviceToken` to a file.
+  or `currentDeviceToken` to a file. **Token rotation IS required — confirmed leak
+  (§6.1b).**
 **AC-8** The installed `/Applications/BeeChatApp.app` binary is **dated after the
   fix commit** and, in a live run, produces **no** `~/Desktop/BeeChat-debug.log`
   growth and **no** `~/Desktop/BeeChat-diagnostics.log` writes.
-**AC-8b** The stale Desktop logs are **deleted** as routine cleanup once the fixed
-  build is live (not a leak response — §6.1b).
+**AC-8b** The stale Desktop logs are **deleted** — this **is** a leak response
+  (§6.1b): the archives hold the live token.
 **AC-11 (NEW)** The `GatewayClient` header comment's claim about bounding is
   **literally true** (or removed) — no comment asserts a safety property the code
   lacks (the exact failure that hid sink 1).
@@ -461,10 +475,15 @@ exposure **cannot be ruled out** because the log was truncated (§6.1b). Treat a
   row** (by path literal), guarded so it cannot affect other bookmarks; and no
   caller `try!`s a now-missing folder (verified: the only `fatalError` is for app
   support dir creation, `AppRootView.swift:236` — unrelated).
+**AC-19 (NEW, §6.1b):** token-bearing archives are **purged** from
+  `~/.openclaw/logs/beechat-debug-archive/` after the fix ships (with Adam's
+  approval), and the Desktop log is confirmed to hold **zero** handshake lines.
+**AC-20 (NEW, §6.1b):** the **gateway token is rotated** (confirmed leak) and the
+  old token no longer authenticates.
 
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
 verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11, AC-12, AC-13,
-AC-14, AC-15, AC-16, AC-17, AC-18 independently, **and records a red run for
+AC-14, AC-15, AC-16, AC-17, AC-18, AC-19 independently, **and records a red run for
 every guard with the defect reintroduced.**
 
 ---
@@ -598,6 +617,30 @@ challenge **reversed my earlier "no rotation" conclusion**, and that the review
 
 ---
 
+## 12c. Round 2b — the token, settled by hash (bee, 2026-09-24)
+
+Grok's round-2 challenge (a/b/c) was right to push, and the answer **reversed my
+position a third time — to the confirmed-leak one**:
+
+- I hash-compared **raw file bytes** against `openclaw.json → gateway.auth.token`.
+- **The full 48-char live token is on disk**, 8 occurrences in 4 archived logs
+  (`2026-09-16`…`2026-09-24`), plus a deviceToken.
+- The `…` I saw in earlier reads was the **tool-output layer masking the secret** —
+  the file has it in full. My "clean read" of the *current* Desktop file missed the
+  token because the **canary had rotated those lines into
+  `~/.openclaw/logs/beechat-debug-archive/`**, which I hadn't checked.
+- Grok's claim 3 (**the leak line is on `main:569`, in the shipped binary**) is
+  **confirmed** — `strings` on `/Applications/BeeChatApp.app` emits
+  `Sending handshake:` and lacks `BEE_DEBUG_LOG`.
+- Grok's own "no token anywhere" scan was **incomplete** (searched the current
+  Desktop files only, not the archive) — recorded, not to score points but because
+  the archive is where the token actually lives.
+
+**Consequence:** severity is now **confirmed credential exposure**; rotation is
+**required**, and the token-bearing archives need purging (OQ-6).
+
+---
+
 ## 13. Open questions for validation
 
 - **OQ-1:** D3 — *(RESOLVED round 2)*: stop seeding **and** add a targeted
@@ -608,8 +651,12 @@ challenge **reversed my earlier "no rotation" conclusion**, and that the review
   by the deploy checklist? (Leaning: Swift test — it runs with `swift test` and
   cannot be skipped.)
 - **OQ-4:** Is this a Fable milestone (§8 step 7)? (Leaning: yes — release-path change.)
-- **OQ-5 (NEW, round 2):** **Rotate the gateway token?** (§6.1b) — my call now is
-  **yes, prudent** (evidence truncated, exposure unverifiable). **Adam decides.**
+- **OQ-5 (round 2 → RESOLVED round 2b):** **Rotate the gateway token?**
+  **YES — confirmed leak, hash-verified (§6.1b).** Recommend immediate rotation.
+- **OQ-6 (NEW):** **Purge the token-bearing archives?**
+  `~/.openclaw/logs/beechat-debug-archive/` holds the live token in 4 files
+  (2026-09-16…09-24). Recommend deleting those (or the archive dir) once the fix
+  ships. **Destructive → needs Adam's OK. Ask before acting.**
 
 ---
 
