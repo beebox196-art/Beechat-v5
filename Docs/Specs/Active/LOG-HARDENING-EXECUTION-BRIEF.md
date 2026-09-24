@@ -3,7 +3,9 @@
 **Task:** T-BEECHAT-LOGGING-HARDENING
 **Spec:** `Docs/Specs/Active/LOG-HARDENING-SPEC.md` (repo `/Users/openclaw/projects/BeeChat-v5/`)
 **Tier:** Standard · **Routing:** MODE `graph` (gate integrity `8baf879b…`)
-**Status:** SPEC written + cites verified. **Awaiting Kieran + Q validation** (dispatched via AgentDrop thread `beechat-loghardening-review`, 2026-09-24).
+**Status:** SPEC written, cites verified, **review round 1 reconciled** (claude via AgentDrop `beechat-loghardening-review`; verdict CORRECTIONS REQUIRED → **SOUND WITH FIXES**, §12). Second reviewer (grok) dispatched but its connector is backed up (93 queued) — not blocking.
+
+**Reconciled:** 11 findings accepted & applied (F3–F12), 2 rejected on evidence (F1 latent-not-leak; F2 no runaway loop). Added AC-10…13, guard redesigns, `origin/develop` as hotfix base.
 
 ---
 
