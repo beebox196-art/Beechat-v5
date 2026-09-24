@@ -3,9 +3,9 @@
 **Task:** T-BEECHAT-LOGGING-HARDENING
 **Spec:** `Docs/Specs/Active/LOG-HARDENING-SPEC.md` (repo `/Users/openclaw/projects/BeeChat-v5/`)
 **Tier:** Standard · **Routing:** MODE `graph` (gate integrity `8baf879b…`)
-**Status:** SPEC written, cites verified, **review round 1 reconciled** (claude via AgentDrop `beechat-loghardening-review`; verdict CORRECTIONS REQUIRED → **SOUND WITH FIXES**, §12). Second reviewer (grok) dispatched but its connector is backed up (93 queued) — not blocking.
+**Status:** SPEC written, cites verified, **review rounds 1 & 2 reconciled** (claude + grok via AgentDrop `beechat-loghardening-review`). Rounds 1–2 both returned CORRECTIONS REQUIRED → **SOUND WITH FIXES** (§12, §12b). **Round 3 dispatched** with the spec **actually attached** (rounds 1–2 reviewed only the brief — a scope failure, now fixed).
 
-**Reconciled:** 11 findings accepted & applied (F3–F12), 2 rejected on evidence (F1 latent-not-leak; F2 no runaway loop). Added AC-10…13, guard redesigns, `origin/develop` as hotfix base.
+**Highest-impact outcome:** grok's evidence challenge **REVERSED** my "no token rotation" call — the log file was **truncated at 13:49** (birth 10:02:24), so my clean read cleared nothing. Exposure **unverifiable → rotation RECOMMENDED**. New ACs 14–18 added (operational acceptance, merge guard, guard anti-theatre, sink inventory, targeted migration).
 
 ---
 
@@ -74,10 +74,15 @@ for Adam to paste manually (PROCESS.md standing workflow, step 6).
 
 | # | Decision | Spec default |
 |---|---|---|
-| D-branch | Option A (hotfix off develop) vs Option B (wait for transcript-integration) | **A** |
-| OQ-1 | Sink 3: derive path at runtime, or drop the seed row | **drop the seed** |
+| D-branch | Option A (hotfix off origin/develop) vs Option B (wait for transcript-integration) | **A** |
+| OQ-1 | Sink 3: derive path at runtime, or drop the seed row | **stop seeding + targeted delete migration** |
 | OQ-4 | Is this a Fable milestone | leaning **yes** |
-| — | Token rotation? | **not required** on current evidence |
+| OQ-5 | **Rotate the gateway token?** | **yes, prudent** — exposure unverifiable (§6.1b) |
+
+**New operational step (grok F1 / AC-14) — required regardless of branch choice:**
+quit the old app pid, install the fixed build, remove both Desktop logs, and
+**prove the log size stays flat over a scripted session.** Branch choice does not
+stop the live leak; only replacing the running binary does.
 
 ---
 
