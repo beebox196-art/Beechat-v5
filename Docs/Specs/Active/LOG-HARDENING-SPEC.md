@@ -48,6 +48,10 @@ latent time bomb.
 - **Sink 1** entered a loop-bug state on 2026-09-24 writing every WS frame event
   unbounded (~10 MB/hour, caught by the system canary). Diagnostic job complete;
   logging now off by default.
+  **Clarification (F2, verified):** there is **no runaway loop defect.** The volume
+  came from `debugLog` firing **per WS frame event**; the reconnect path itself is
+  bounded (`GatewayClient.swift:603-607`, `retryCount` + `backoff.delay`). So the
+  fix is "stop logging every frame," not "fix a loop." No separate ticket needed.
 - **Sink 2** is a *second* logger, missed in the first pass, that writes to the
   **Desktop** on **every send/stream/state transition** — dozens of call sites —
   unconditionally. It is bounded (1 MB) but unbounded in *rate* and writes to a
@@ -212,46 +216,65 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
 - **No changes to the ~40 call sites.** Sink-only change.
 
 ### 4.3 `Sources/BeeChatPersistence/Database/DatabaseManager.swift`
-- Remove the hardcoded `/Users/openclaw/Desktop/...` seed literal.
-- Either derive at runtime or drop the seed (decision at review, D3).
-- If the row already exists in DBs, provide a migration to correct/remove it.
+- **F7-resolved:** line 421 sits inside `Migration014_SeedClaudeOversightBookmark`
+  (a **named, already-registered** migration, `DatabaseManager.swift:409-425`,
+  using `INSERT OR IGNORE`).
+- **Decision (D3 final):** **stop seeding** — remove the seed row from the migration
+  body. **Do NOT add a cleanup migration** (it would risk deleting a favourite a
+  user actually has). **Do NOT derive at runtime** (that reintroduces the Desktop
+  dependency).
+- **Accepted consequence:** editing an already-applied migration means fresh installs
+  differ from upgraded ones. This is **stated and accepted** (F7).
+- Existing rows stay as user data — they are not a defect to remove.
 - `swift test` for BeeChatPersistence must pass (existing migration tests).
 
 ### 4.4 Shared policy (new) — the class-closing change
-- Introduce a single source of truth for logging policy (constants + gating),
-  so sinks 1 and 2 cannot drift apart again.
+- Introduce a **single small shared bounded-file-writer** used by both sinks
+  (F10: less code than two separate bounding implementations; **do not build a
+  logging framework**).
 - Document as `Docs/Status/LOGGING-STANDARD.md` (or a section in PROCESS.md):
   - **No hardcoded absolute paths** in code, seeds, or migrations.
   - **No always-on file logging** — every file sink is gated by default-off.
   - **Every file sink is bounded** (size cap + rotation) — non-negotiable.
   - **Prefer `os.log`** (`Logger(subsystem:category:)`) for diagnostics; file
-    sinks are the exception, requiring a justification comment.
-  - **Sensitive data:** no tokens/paths/PII in log lines (see §6).
+    sinks are the exception, requiring a justification comment. **(F12)**
+    **Mirror all logs to os.log unconditionally**; the file write is the only
+    gated part — so diagnostics are never wholly lost.
+  - **Sensitive data (F9, widened):** no tokens/secrets **and no user message
+    content or PII** in log lines. The 42 `BeeChatLogger` call sites in
+    `ComposerViewModel`/`MessageViewModel` must be treated as candidate content
+    leaks and reviewed.
 
-### 4.5 Build-time guard (the durable mitigation)
-- Add a test (Swift test target, since there is no linter in the pipeline) that
-  **fails if the class recurs**. Concretely, at minimum:
-  - **Guard G1:** scan `Sources/**/*.swift` for hardcoded **user-specific absolute
-    paths** and fail if found outside an explicit allowlist. **Critically:** the
-    allowlist must include the ~22 legitimate hits in §3.5 (regex/validation/
-    prefix constants). A naive `/Users/` matcher will false-positive on all of
-    them. **Design the guard against the legitimate forms first** (standing
-    correction: test a validator on the form it cannot see). Suggested precise
-    matcher: flag **quoted string literals** beginning `"/Users/<name>/"` that
-    are **not** inside a regex/prefix-constant context — review the allowlist
-    explicitly (R3).
-  - **Guard G2:** assert the two file loggers' bounding constants are ≤ the policy
-    cap (pins the invariant by *assertion*, not comment).
-  - **Guard G3:** assert file loggers default to **disabled** when the env flag is
-    absent (i.e. `log()` performs no file write) — mutation-checkable.
-  - **Guard G4 (NEW — from §6.1):** assert no diagnostic logger receives the
-    encoded handshake frame, or any value carrying `token`/`deviceToken`. The
-    confirmed credential leak makes this guard **mandatory**, not optional.
+### 4.5 Build guards (the durable mitigation) — all redesigned per F4/F5/F6/F11
+
+Guards live in a **non-app-hosted Swift test target** (F11) and **fail if they scan
+zero files** (F11).
+
+- **Guard G1 (redesigned, F4):** scan `Sources/**/*.swift` for hardcoded
+  **user-specific absolute paths**, allowing the legitimate forms by **exact
+  literal/content**, **never by file** (a per-file allowlist would let new defects
+  into already-allowlisted files). The defect pattern is `/Users/<name>/…` — i.e.
+  flag `"/Users/[^/"]+/`; do **not** flag bare `"/Users/"` (the legitimate
+  regex/validation prefix, §3.5). **Add a second rule for the Desktop half of the
+  class:** flag `Desktop` path components and `.desktopDirectory` in non-UI code
+  (sink 2 used `.desktopDirectory`, which contains no `/Users/` literal at all).
+  **Known limit (documented):** concatenation (`"/Users/" + name`) evades a
+  literal scan — G4/policy cover it by intent, not by scan.
+  - Allowlist is reviewed explicitly (R3) and justified per-entry.
+- **Guard G2 (made behavioural, F5):** **not** a constant comparison (that is
+  vacuous — it passes when the constant is never used on the write path, which is
+  exactly how sink 1's false "bounded" comment arose). Instead: inject a temp
+  directory, write **more than the cap**, and assert the file size and
+  rotated-file count stay within limits.
+- **Guard G3 (F6):** assert file loggers default to **disabled** when the gate is
+  off — with **injectable gate config** (a `static let` read once cannot be tested).
+  The test sets the gate off under a **temp HOME** and asserts **no file** is created.
+- **Guard G4 (from §6.1):** assert no logger receives the encoded handshake frame
+  or any token-bearing value. Mandatory.
 - **Mutation requirement (standing correction):** each guard must be shown to
-  **fail when the defect is reintroduced**. A guard that cannot distinguish
-  "rejected" from "absent" is not a guard. Reviewer must confirm ≥1 test fails
-  when the corresponding defect is temporarily put back. **G4's mutation test is
-  the highest-priority: it must fail when line 579 is restored to logging `text`.**
+  **fail when the defect is reintroduced**, with a **recorded red run**. The
+  reviewer (Kieran), not the builder, produces the red run. **G4's mutation test is
+  highest priority: it must fail when line 579 is restored to logging `text`.**
 
 ---
 
@@ -344,14 +367,19 @@ leak. The distinction matters — see the correction note below.
   growth and **no** `~/Desktop/BeeChat-diagnostics.log` writes.
 **AC-8b** The stale Desktop logs are **deleted** as routine cleanup once the fixed
   build is live (not a leak response — §6.1b).
-**AC-10 (NEW)** No shipped code path writes `config.token` or `currentDeviceToken`
-  to any file; guard G4 fails if the handshake frame is re-added to a log call
-  (mutation test). **No token rotation is required** unless a post-fix log is found
-  to contain a secret.
+**AC-11 (NEW)** The `GatewayClient` header comment's claim about bounding is
+  **literally true** (or removed) — no comment asserts a safety property the code
+  lacks (the exact failure that hid sink 1).
+**AC-12 (NEW)** Guard test **fails if it scans zero source files** (vacuous-pass
+  guard), and lives in a **non-app-hosted** test target.
+**AC-13 (NEW)** With the gate disabled, **no** file is created under a temp HOME
+  (behavioural, injectable config — not `static let`).
 **AC-9** `Docs/Status/STATUS.md` build-history table has a row for the fix build.
 
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
-verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10 independently.
+verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11, AC-12, AC-13
+independently, **and records a red run for every guard with the defect
+reintroduced.**
 
 ---
 
@@ -360,8 +388,8 @@ verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10 independently.
 1. **Bee writes spec** ← this document.
 2. **Kieran + Q validate spec is sound** (round 1 review — dispatched with this spec).
 3. Reconcile findings → SOUND (or SOUND WITH FIXES) → re-review if significant.
-4. **Dispatch to Q to build** on a branch **from `develop`** (see §9 — the fix is
-   currently on `feat/transcript-integration`, which is **not** the correct base).
+4. **Dispatch to Q to build** on a branch **from `origin/develop`** (see §9 — the
+   fix is currently on `feat/transcript-integration`, which is **not** the correct base).
 5. **Kieran checks the work** against ACs (E5).
 6. **Bee validates** before returning to Adam.
 7. **Fable/Claude super-check** — MANUAL, only if this counts as a milestone
@@ -373,20 +401,35 @@ verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10 independently.
 ## 9. Branch / release decision (the thing that determines shipping)
 
 **Current topology (verified):**
-- `main` = `381dec9` (main-only count 0; **does not contain** the logger fix)
+- `main` = `381dec9` (does **not** contain the logger fix)
 - `feat/transcript-integration` = `32afd4e` (54 commits ahead of main; contains
-  the fix **plus** all in-flight Option B transcript work, unmerged and untested
-  for release)
+  the fix **plus** all in-flight Option B transcript work)
+- **`develop`:** there is **no local `develop`** — `remotes/origin/develop` exists;
+  the local integration branch is `develop-v0.9.5d-whitespace`. **F3a — real hole.**
+  Base the hotfix on **`origin/develop`** and **record its exact SHA at cut time.**
 
 **Decision required:** the logger fix is **orphaned** on a 54-commit-deep feature
 branch. Two options:
 
-- **Option A — hotfix branch off `develop`/`main`.** Cherry-pick / re-author the
-  logger fix (+ D2, D3) onto a short-lived `fix/log-hardening` branch from
-  `develop`, build, review, ship. **Ships this week, independent of Option B.**
-  ← **Recommended.**
+- **Option A — hotfix branch off `origin/develop`.** Re-author the logger fix
+  (+ D2, D3) onto a short-lived `fix/log-hardening` branch, build, review, ship.
+  **Ships this week, independent of Option B.** ← **Recommended.**
 - **Option B — carry it with transcript-integration.** Waits for the entire
-  Option B programme to merge. Unacceptable for a live 10 MB/hour-capable leak.
+  Option B programme to merge. Unacceptable for a live multi-MB/day leak.
+
+**F3c — reconciliation rule (adding):** the hotfix is **canonical**. When
+`feat/transcript-integration` eventually lands, it **rebases/merges onto the
+hotfix** in `GatewayClient.swift` — **not the other way round.** The feature
+branch must not re-introduce the un-gated logger.
+
+**F3b — install step (adding):** the fix only takes effect when
+`/Applications/BeeChatApp.app` is **rebuilt and replaced** (PROCESS.md deploy
+checklist). Committing is not shipping.
+
+**F3d — interim mitigation (today):** the Desktop log is still growing on the
+running pre-fix app. Until the fix ships: **truncate the Desktop log(s)** and/or
+quit the running app. (Low urgency — the file is ~32 KB and bounded in practice
+by the app session, not genuinely unbounded; see F2.)
 
 **PROCESS.md rule 1:** "All work goes on a branch from develop." The fix currently
 violates the intent of that rule (it lives on a feature branch). Option A restores
@@ -394,7 +437,46 @@ compliance.
 
 ---
 
-## 10. Open questions for validation
+## 12. Review round 1 — reconciliation (2026-09-24)
+
+**Reviewer:** claude (external, via AgentDrop thread `beechat-loghardening-review`).
+**Verdict:** CORRECTIONS REQUIRED. **Caveat it stated:** it reviewed the *brief*,
+not the full spec, and not the code — which explains finding 1 (below).
+
+Findings reconciled against the repo (verified, not assumed):
+
+### Accepted — spec modified
+
+| # | Finding | Resolution |
+|---|---|---|
+| **F3a** | No `develop` branch established for the hotfix base | **Confirmed real.** No local `develop`; `remotes/origin/develop` exists; local integration branch is `develop-v0.9.5d-whitespace`. **§9 updated: hotfix branches from `origin/develop`; state the exact base SHA at cut time.** |
+| **F3b** | Spec needs an explicit install step | **Accepted.** §9 + execution brief now include the PROCESS.md deploy step (install to `/Applications`). |
+| **F3c** | Reconcile `32afd4e` (feature branch) vs the hotfix — conflict in `GatewayClient.swift` | **Accepted.** §9 now states: **the hotfix is canonical; `feat/transcript-integration` merges/rebases onto it, not the reverse.** |
+| **F3d** | Interim mitigation for today (log still growing) | **Accepted.** §9 adds an immediate interim step. |
+| **F4** | G1 can be bypassed (per-file allowlist) / misses Desktop half | **Accepted — G1 redesigned.** Allowlist by **exact literal** not file; pattern narrowed to `/Users/<name>/` (not bare `/Users/`); add a Desktop-component / `.desktopDirectory` rule for non-UI code; document the concatenation limit. |
+| **F5** | G2 vacuous as specified | **Accepted — G2 made behavioural.** Inject temp dir, write > cap, assert size + rotation count. |
+| **F6** | G3 depends on environment / `static let` not testable | **Accepted.** Require injectable gate config; test sets gate off under a temp HOME and asserts no file. |
+| **F7** | Sink 3 mis-framed: dropping seed only affects fresh DBs; cleanup migration risks deleting real user data | **Accepted — resolved with fact.** `DatabaseManager.swift:409-425` is `Migration014_SeedClaudeOversightBookmark`, a **named, already-registered migration** using `INSERT OR IGNORE`. Decision: **stop seeding (edit the migration body); do NOT add a cleanup migration; do NOT derive at runtime** (deriving reintroduces the Desktop dependency). Existing rows stay as user data. Note: editing an already-applied migration diverges fresh installs from upgraded ones — **acceptable, and now stated.** |
+| **F8** | Several ACs unverifiable / self-signable | **Accepted.** Split guidance from ACs; mutation evidence must be a **recorded red run by Kieran**; add AC that the `GatewayClient` header comment is accurate; shipping verified observably by a non-implementer. |
+| **F9** | "No secrets" too narrow — 42 call sites may log message content | **Accepted.** Policy §4.4 extended to **user content + PII**, not only secrets. |
+| **F11** | Test-target traps (sandbox can't read source; zero-file vacuous pass) | **Accepted.** Guard must live in a **non-app-hosted test target** and **fail if it scans zero files.** |
+| **F12** | Sink-only change risks: readers of the file; default-off leaves no diagnostics | **Accepted.** Verified: **no reader exists in source** (grep clean) — risk cleared. Adopt: **mirror all logs to os.log always**; file write only when gated. |
+| **F10** | One shared bounded file-writer, not a framework | **Accepted.** §4.4: one small shared writer used by both sinks. |
+
+### Rejected — with reason
+
+| # | Finding | Why rejected |
+|---|---|---|
+| **F1** | BLOCKER: "the handshake log **likely leaks** a credential… treat the logs as **possibly** credential-bearing: **rotate the token**" | **Already corrected before this verdict arrived.** The reviewer's own caveat ("brief only, not the spec") explains it — it reviewed my pre-correction addendum. I inspected the live log directly: **zero** token/auth/handshake strings; every line is `handleEvent — event=<name>`. Correct finding: **latent code defect (line 579 CAN log the frame) — confirmed; file contains no secret — verified.** Fix required; **rotation not required on current evidence.** The reviewer's *recommendation to log only method/id/length* is **accepted and already in §6.1.** Note: it did not have the file; its inference from code shape was reasonable, and its "I need lines 540-600" request is the right instinct. |
+| **F2** | MAJOR: "gating hides the loop; is the root loop fixed?" | **Partially rejected — verified.** The "loop" is legitimate reconnection: `GatewayClient.swift:603-607` has a **bounded `retryCount` with `backoff.delay`**. The 10 MB/hour came from `debugLog` firing **per WS frame event** (617 event lines observed), not from a runaway loop. So there is **no separate loop defect to track.** Accepted sub-point: the spec should **say so explicitly** — now §1. |
+
+**Net:** reviewer verdict CORRECTIONS REQUIRED → after reconciliation,
+**SOUND WITH FIXES**, all fixes applied above. F1 dissolved on evidence (not
+overridden); F2 clarified; F3–F12 accepted and applied.
+
+---
+
+## 13. Open questions for validation
 
 - **OQ-1:** D3 — derive path at runtime, or drop the seed row entirely? (Leaning:
   drop; a shipped app should not seed a favourite pointing at the author's Desktop.)
