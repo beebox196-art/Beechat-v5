@@ -23,7 +23,7 @@ latent time bomb.
 
 | # | Sink | Path | Bounding | On by default | State |
 |---|---|---|---|---|---|
-| 1 | `GatewayClient.debugLog` | ~~`/Users/openclaw/Desktop/BeeChat-debug.log`~~ fixed | **none** | **yes** → now gated | **Code fixed, NOT shipped** |
+| 1 | `GatewayClient.debugLog` | ~~`/Users/openclaw/Desktop/BeeChat-debug.log`~~ fixed | **none** | **yes** → now gated | **Code fixed, NOT shipped** — ⚠️ **also leaked auth+device token (§6.1)** |
 | 2 | `BeeChatLogger` (diagnostics) | `~/Desktop/BeeChat-diagnostics.log` | 1 MB → trims to 256 KB | **yes, unconditional** | **Live, leaking** |
 | 3 | `DatabaseManager` seed row | `/Users/openclaw/Desktop/Claude Oversight Reports` | n/a (data) | n/a | **Live, latent failure** |
 
@@ -36,6 +36,11 @@ latent time bomb.
 > exactly the "test the validator on the form it cannot see" trap — see §4.5.
 
 **Confidence: high.** Each sink verified at the revision pin above.
+
+> ⚠️ **Severity update (2026-09-24):** sink 1 is not merely log bloat — it was
+> **writing the gateway auth token and device token in plaintext to a world-readable
+> Desktop file** on every connect. See §6.1. This makes the remediation
+> **security-urgent**, not housekeeping.
 
 ### Why this matters
 
@@ -238,10 +243,14 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
     cap (pins the invariant by *assertion*, not comment).
   - **Guard G3:** assert file loggers default to **disabled** when the env flag is
     absent (i.e. `log()` performs no file write) — mutation-checkable.
+  - **Guard G4 (NEW — from §6.1):** assert no diagnostic logger receives the
+    encoded handshake frame, or any value carrying `token`/`deviceToken`. The
+    confirmed credential leak makes this guard **mandatory**, not optional.
 - **Mutation requirement (standing correction):** each guard must be shown to
   **fail when the defect is reintroduced**. A guard that cannot distinguish
   "rejected" from "absent" is not a guard. Reviewer must confirm ≥1 test fails
-  when the corresponding defect is temporarily put back.
+  when the corresponding defect is temporarily put back. **G4's mutation test is
+  the highest-priority: it must fail when line 579 is restored to logging `text`.**
 
 ---
 
@@ -259,9 +268,37 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
 
 ## 6. Security / privacy
 
-- Confirm no log line writes the gateway **token** or device token. Sink 1 logs
-  `Sending handshake: \(text.prefix(500))` (`GatewayClient.swift:579`) — **verify
-  this cannot include a token.** If it can, redact before shipping.
+### 6.1 ⚠️ CONFIRMED CREDENTIAL LEAK — sink 1 logs the auth token to disk
+
+**Verified at HEAD `32afd4e`.** Elevated from "verify" to **confirmed**:
+
+- `GatewayClient.swift:579` — `debugLog("Sending handshake: \(text.prefix(500))")`
+- `text` is the JSON-encoded `RequestFrame(method: "connect", params:)`
+- The `params` are built with `auth: .init(token: config.token, deviceToken:
+  currentDeviceToken)` — see the `ConnectParams` construction and line 488
+  (`auth: .init(deviceToken: authDeviceToken, role:…, scopes:…)`).
+- Therefore **the first 500 chars of the encoded handshake — carrying the gateway
+  auth token and the device token — were written in plaintext to
+  `/Users/openclaw/Desktop/BeeChat-debug.log` on every connect attempt.**
+
+The file was user-visible and world-readable (`-rw-r--r--`). This is a
+**credential exposure on a shared/visible filesystem**, not a theoretical risk.
+
+**This raises sink 1's severity from "log bloat" to "secret leakage."**
+
+**Required (new, must-have):**
+- **Never log the handshake frame.** Remove or redact line 579; if the diagnostic
+  is still wanted, log only non-secret fields (method, frame id, lengths).
+- **Delete (do not archive) the existing `~/Desktop/BeeChat-debug.log`** after the
+  fix ships — it contains leaked tokens.
+- **Token rotation.** If the gateway token was live during the leak window
+  (2026-09-24), it should be considered exposed. **Flag to Adam — his call.**
+- **Guard G4** (§4.5) added and mutation-tested.
+
+**Confidence: high** — verified from source at the revision pin.
+
+### 6.2 General log-hygiene requirements
+
 - Logs must not be world-readable. Verify file permissions on creation.
 - Removing Desktop sinks reduces accidental exposure of app internals in a
   user-visible location.
@@ -280,13 +317,18 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
   cap (bounded) — demonstrated by writing > cap and observing rotation.
 **AC-6** Guard G1 fails when a `/Users/...` literal is re-added (mutation test).
 **AC-7** Guard G3 fails when a logger is made always-on (mutation test).
+**AC-7b** Guard G4 fails when the handshake frame is restored to the log call
+  (mutation test); and shipped code contains **no** path writing `config.token`
+  or `currentDeviceToken` to a file.
 **AC-8** The installed `/Applications/BeeChatApp.app` binary is **dated after the
   fix commit** and, in a live run, produces **no** `~/Desktop/BeeChat-debug.log`
   growth and **no** `~/Desktop/BeeChat-diagnostics.log` writes.
+**AC-8b** `~/Desktop/BeeChat-debug.log` is **deleted** (not archived — it holds
+  leaked credentials) once the fixed build is confirmed live.
 **AC-9** `Docs/Status/STATUS.md` build-history table has a row for the fix build.
 
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
-verifies AC-3, AC-6, AC-7, AC-8 independently.
+verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b independently.
 
 ---
 
