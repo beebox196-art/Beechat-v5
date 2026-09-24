@@ -39,8 +39,9 @@ latent time bomb.
 
 > ⚠️ **Severity (2026-09-24, final):** sink 1 is a **confirmed credential leak** —
 > the live gateway token was written in full to a log file (hash-verified against
-> `openclaw.json`), found in 4 archived logs spanning 2026-09-16…09-24 and in Time
-> Machine snapshots. **Rotate the token.** See §6.1.
+> `openclaw.json`), found in **5 archived logs (44 occurrences) spanning
+> 2026-09-18…09-24**, a **deviceToken** matching a `paired.json` entry, and copies in
+> Time Machine snapshots. **Rotate the token; re-pair the device token.** See §6.1.
 
 ### Why this matters
 
@@ -215,20 +216,32 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
 - **No changes to the ~40 call sites.** Sink-only change.
 
 ### 4.3 `Sources/BeeChatPersistence/Database/DatabaseManager.swift`
-- **F7-resolved (round 1):** line 421 sits inside `Migration014_SeedClaudeOversightBookmark`
-  (a **named, already-registered** migration, `DatabaseManager.swift:409-425`,
-  using `INSERT OR IGNORE`).
-- **Decision (D3 final, updated by grok F7):** **stop seeding AND add a targeted
-  cleanup migration** that deletes the **exact** seeded row (matched by its path
-  literal), so existing DBs stop carrying the dead Desktop path. Guard the delete
-  to that exact row so no other bookmark is touched. *(Round 1 said "no migration";
-  round 2 correctly notes removal-only-in-fresh-DBs leaves every shipped DB with
-  the dead row — a targeted exact-match delete is the right fix.)*
-- **Do NOT derive at runtime** (that reintroduces the Desktop dependency).
-- **Risk check (grok F7):** verify no caller `try!`s / force-unwraps a missing
-  bookmark folder. Verified: the only `fatalError` is app-support-dir creation
-  (`AppRootView.swift:236`) — unrelated. No folder-path force-unwrap found.
-- `swift test` for BeeChatPersistence must pass (existing migration tests).
+- **F7 (round 1 → superseded round 3):** line 421 sits inside
+  `Migration014_SeedClaudeOversightBookmark` (`INSERT OR IGNORE`).
+- **Decision (D3, final):**
+  1. **Keep `Migration014` registered with an EMPTY body** — do **not** delete the
+     identifier (deleting it re-runs or breaks the migration chain).
+  2. **Register a new `Migration016`** (after 015) that **deletes the exact seeded
+     row** only when the row is still **pristine**. Predicate must match the
+     untouched seed signature — **not** `path` alone (the folder may exist and be in
+     real use):
+     `path = '/Users/openclaw/Desktop/Claude Oversight Reports'`
+     **AND** `name = 'Claude Oversight Reports'`
+     **AND** `iconName = 'folder.badge.checkmark'`
+     **AND** `securityBookmark IS NULL`.
+     A row the user renamed / re-iconed / bookmarked is **user data — leave it.**
+     (`path` is `UNIQUE`, so the match is at most one row.)
+  3. **Do NOT derive at runtime** (reintroduces the Desktop dependency).
+- **Consumer check (claude finding 5 must-fix):** name the actual **reader** of
+  `bookmarks` and confirm it tolerates the row's absence. `fatalError`-only grep was
+  insufficient — also check `try!`, force-unwraps, and code assuming `sortOrder == 4`.
+- **AC-3 carve-out (claude finding 4):** the migration **must** contain the literal
+  `/Users/openclaw/Desktop/Claude Oversight Reports`. So **AC-3 becomes: zero hits for
+  `/Users/openclaw/Desktop` EXCEPT the one allowlisted literal in `Migration016`**,
+  and that exact literal is justified in the G1 allowlist.
+- `swift test` for BeeChatPersistence must pass (existing migration tests), plus new
+  fixtures (claude finding 5): pristine-seed DB → row deleted; modified row → retained;
+  fresh DB → no row; copy of Adam's real DB → verified.
 
 ### 4.6 Sink inventory (grok F5) — beyond the 3-site grep
 
@@ -253,7 +266,12 @@ must re-verify with the same named checks and record the result (AC-17).
 - Document as `Docs/Status/LOGGING-STANDARD.md` (or a section in PROCESS.md):
   - **No hardcoded absolute paths** in code, seeds, or migrations.
   - **No always-on file logging** — every file sink is gated by default-off.
-  - **Every file sink is bounded** (size cap + rotation) — non-negotiable.
+  - **Every file sink is bounded** (size cap + in-place trim) — non-negotiable.
+    **No generation/rotation files:** one file, cap, trim in place (the
+    generation-limit point — an unbounded number of rotated files is not bounded).
+    Pin the policy `BeeChatLogger` already has: `maxLogBytes` cap, trim to
+    `truncateToBytes`, never extra generations. State the oversize-single-write rule
+    (check-before-append can leave the file at cap + one record).
   - **Prefer `os.log`** (`Logger(subsystem:category:)`) for diagnostics; file
     sinks are the exception, requiring a justification comment. **(F12)**
     **Mirror all logs to os.log unconditionally**; the file write is the only
@@ -281,9 +299,11 @@ zero files** (F11 / AC-12).
   into already-allowlisted files). The defect pattern is `/Users/<name>/…` — i.e.
   flag `"/Users/[^/"]+/`; do **not** flag bare `"/Users/"` (the legitimate
   regex/validation prefix, §3.5). **Additional required rules (grok F3):** flag
-  `urls(for: .desktopDirectory)` and `"Desktop"` path components in non-UI code
-  (sink 2 used `.desktopDirectory`, which contains no `/Users/` literal at all);
-  flag **split/concatenated** literal fragments that reassemble to an abs path;
+  `urls(for: .desktopDirectory)` and `"Desktop"` path components in **non-UI
+  targets** — **non-UI defined by target** (claude finding 10):
+  `BeeChatGateway`, `BeeChatPersistence`, `BeeChatSyncBridge`. Do **not** use a
+  per-file notion of "UI"; define by target or drop the qualifier.
+  Flag **split/concatenated** literal fragments that reassemble to an abs path;
   **fail on an empty scan** (AC-16).
   - Allowlist is reviewed explicitly (R3), justified **per literal**, and its
     size is asserted (so it cannot silently grow to swallow the codebase).
@@ -297,8 +317,16 @@ zero files** (F11 / AC-12).
 - **Guard G3 (F6):** assert file loggers default to **disabled** when the gate is
   off — with **injectable gate config** (a `static let` read once cannot be tested).
   The test sets the gate off under a **temp HOME** and asserts **no file** is created.
-- **Guard G4 (from §6.1):** assert no logger receives the encoded handshake frame
-  or any token-bearing value. Mandatory.
+- **Guard G4 (from §6.1 — fully specified per claude finding 2):**
+  - **Injectable log sink** + a **sentinel token** and **sentinel deviceToken** in
+    `Configuration`.
+  - A **fake transport** (or local WS fixture) that sends `connect.challenge`,
+    completes a handshake, then **forces a close to drive a reconnect**.
+  - Assert **neither sentinel** appears in **anything** captured by: the file sink,
+    the `print` path, **and** the os.log mirror — across connect, handshake, **and
+    reconnect**.
+  - **Mutations (Kieran red runs):** restore `text.prefix(500)` (line 579) **AND**
+    restore the URL line (279). **Both** must make G4 fail.
 - **Mutation requirement (standing correction):** each guard must be shown to
   **fail when the defect is reintroduced**, with a **recorded red run**. The
   reviewer (Kieran), not the builder, produces the red run. **G4's mutation test is
@@ -475,7 +503,8 @@ deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
 - **Delete the stale Desktop logs** — routine cleanup **and** because they are
   the only place a leaked secret could be; verify deletion.
 
-**Confidence: high** on both (a) and (b) — each verified from source/file directly.
+**Confidence: high** — hash match on raw bytes; the archived gateway token and the
+archived deviceToken both match live credentials (see §6.1b).
 
 ### 6.2 General log-hygiene requirements
 
@@ -489,7 +518,8 @@ deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
 
 **AC-1** `swift build --target BeeChatGateway` passes at the fix commit.
 **AC-2** `swift test` (full suite) passes; no new failures; keychain-hang tests excluded as documented.
-**AC-3** `grep -rn "/Users/openclaw/Desktop" Sources/` returns **zero** hits.
+**AC-3** `grep -rn "/Users/openclaw/Desktop" Sources/` returns **zero** hits
+  **except the one allowlisted literal in `Migration016`** (§4.3; claude finding 4).
 **(Narrowed from "all /Users/" — 22 legitimate hits remain by design; see §3.5.)**
 **AC-4** With `BEE_DEBUG_LOG` **unset**, running the app writes **no** file to
   `~/Library/Logs/` and **no** file to `~/Desktop/`. (Behavioural test.)
@@ -502,31 +532,46 @@ deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
   or `currentDeviceToken` to a file. **Token rotation IS required — confirmed leak
   (§6.1b).**
 **AC-8** The installed `/Applications/BeeChatApp.app` binary is **dated after the
-  fix commit** and, in a live run, produces **no** `~/Desktop/BeeChat-debug.log`
-  growth and **no** `~/Desktop/BeeChat-diagnostics.log` writes.
+  fix commit**; and `strings` on the **installed** binary shows **none** of
+  `Sending handshake`, `transport.connect called`, or `Desktop/BeeChat-debug.log`,
+  and the CFBundleVersion/hash matches the release artifact (claude finding 9).
 **AC-8b** The stale Desktop logs are **deleted** — this **is** a leak response
   (§6.1b): the archives hold the live token.
 **AC-11 (NEW)** The `GatewayClient` header comment's claim about bounding is
   **literally true** (or removed) — no comment asserts a safety property the code
   lacks (the exact failure that hid sink 1).
 **AC-12 (NEW)** Guard test **fails if it scans zero source files** (vacuous-pass
-  guard), and lives in a **non-app-hosted** test target.
+  guard), and lives in a **non-app-hosted** test target. **Stronger (claude
+  finding 9):** the scan must **assert it saw named known files** (e.g.
+  `GatewayClient.swift`, `LinkPolicy.swift`), plus a **must-fail fixture** and a
+  **must-pass fixture** — so scanning the wrong directory cannot pass.
 **AC-13 (NEW)** With the gate disabled, **no** file is created under a temp HOME
   (behavioural, injectable config — not `static let`).
 **AC-9** `Docs/Status/STATUS.md` build-history table has a row for the fix build.
+**AC-10** No shipped code path writes `config.token` or `currentDeviceToken` to any
+  file; guard G4 fails if **either** the handshake frame **or** the URL line is
+  re-added to a log call (mutation test). **Token rotation IS required — confirmed
+  leak (§6.1b).** *(Previously referenced but undefined — claude finding 9 caught the
+  phantom; now defined.)*
 
-**AC-14 (NEW, grok F1 — operational acceptance):** a **scripted operational check**
-  proves the leak is stopped, independent of branch choice:
-  (i) old app pid **quit**; (ii) fixed build **installed**; (iii) **BOTH** the
-  Desktop log **and** `~/.openclaw/logs/beechat-debug-archive/` **removed**;
-  (iv) **live, size must stay flat over a scripted session** (measure > 5 min with a
-  message round-trip; delta ≈ 0); (v) **no new token-bearing file appears in either
-  location.** *Branch choice does not stop the leak — only replacing the running
-  binary does.*
-**AC-15 (NEW, grok F2 — merge guard):** `feat/transcript-integration` is verified to
-  contain the **bounded** hotfix sink **before** it merges — i.e. the hotfix is
-  canonical and the feature branch takes it, **not vice-versa**. If `32afd4e`
-  (gated-but-uncapped) would win the merge, that is a **release blocker**.
+**AC-14 (NEW, grok F1 / claude finding 9 — operational acceptance):** a scripted
+  operational check proves the leak is stopped, independent of branch choice:
+  (i) **`pgrep -fl BeeChat` shows no BeeChat process except the installed one**
+  (rules out a DerivedData/dev run); (ii) fixed build **installed**; (iii) **both**
+  the Desktop log **and** `~/.openclaw/logs/beechat-debug-archive/` **removed**;
+  (iv) a scripted session **including a forced reconnect** (the URL sink fires on
+  reconnect); (v) assert the Desktop files are **not recreated** (not merely "size
+  flat"); (vi) assert `~/Library/Logs/BeeChat-*.log` **does not exist** with the
+  gate off.
+**AC-15 (NEW, grok F2 — merge guard):** the bounded sink **and** the G2/G4 tests are
+  **cherry-picked onto `feat/transcript-integration` NOW** (claude finding 9) — so a
+  later bad merge resolution turns them **red** rather than silently reverting to
+  `32afd4e`. If `32afd4e` (gated-but-uncapped) would win the merge, that is a
+  **release blocker**.
+**AC-21 (NEW, claude finding 9):** log files are created **`0600`**, not `0644`
+  (`Data.write` defaults to 0644) — tested (§6.2 currently has no AC).
+**AC-22 (NEW, claude finding 9):** **AC-4 and AC-5 are added to the E5 list** (the
+  class-control behavioural tests must be independently verified, not implementer-signed).
 **AC-16 (NEW, grok F3):** G1's textual scan is **not** the class control by itself —
   the **behavioural size test (AC-5) is.** G1 additionally flags
   `urls(for:.desktopDirectory)`, split/concatenated literals, and **fails on an
@@ -550,9 +595,9 @@ deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
   then rotate** (else the new token lands in the next archive slice).
 
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
-verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11, AC-12, AC-13,
-AC-14, AC-15, AC-16, AC-17, AC-18, AC-19 independently, **and records a red run for
-every guard with the defect reintroduced.**
+verifies **AC-3, AC-4, AC-5**, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11,
+AC-12, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18, AC-19, AC-21 independently,
+**and records a red run for every guard with the defect reintroduced.**
 
 ---
 
@@ -605,10 +650,11 @@ branch must not re-introduce the un-gated logger.
 `/Applications/BeeChatApp.app` is **rebuilt and replaced** (PROCESS.md deploy
 checklist). Committing is not shipping.
 
-**F3d — interim mitigation (today):** the Desktop log is still growing on the
-running pre-fix app. Until the fix ships: **truncate the Desktop log(s)** and/or
-quit the running app. (Low urgency — the file is ~32 KB and bounded in practice
-by the app session, not genuinely unbounded; see F2.)
+**F3d — interim mitigation (today):** the Desktop log is **growing fast** on the
+running pre-fix app (measured **+5–24 KB / 10 s**, ~10 MB/hr; NOT "bounded in
+practice" — that earlier claim was wrong). Until the fix ships: **quit the running
+app** (stops the write *and* the archive refresh), and truncate/remove the Desktop
+log + archive dir (the latter needs Adam's nod — credential-bearing).
 
 **PROCESS.md rule 1:** "All work goes on a branch from develop." The fix currently
 violates the intent of that rule (it lives on a feature branch). Option A restores
@@ -635,7 +681,7 @@ Findings reconciled against the repo (verified, not assumed):
 | **F4** | G1 can be bypassed (per-file allowlist) / misses Desktop half | **Accepted — G1 redesigned.** Allowlist by **exact literal** not file; pattern narrowed to `/Users/<name>/` (not bare `/Users/`); add a Desktop-component / `.desktopDirectory` rule for non-UI code; document the concatenation limit. |
 | **F5** | G2 vacuous as specified | **Accepted — G2 made behavioural.** Inject temp dir, write > cap, assert size + rotation count. |
 | **F6** | G3 depends on environment / `static let` not testable | **Accepted.** Require injectable gate config; test sets gate off under a temp HOME and asserts no file. |
-| **F7** | Sink 3 mis-framed: dropping seed only affects fresh DBs; cleanup migration risks deleting real user data | **Accepted — resolved with fact.** `DatabaseManager.swift:409-425` is `Migration014_SeedClaudeOversightBookmark`, a **named, already-registered migration** using `INSERT OR IGNORE`. Decision: **stop seeding (edit the migration body); do NOT add a cleanup migration; do NOT derive at runtime** (deriving reintroduces the Desktop dependency). Existing rows stay as user data. Note: editing an already-applied migration diverges fresh installs from upgraded ones — **acceptable, and now stated.** |
+| **F7** | Sink 3 mis-framed: dropping seed only affects fresh DBs; cleanup migration risks deleting real user data | **Accepted.** `DatabaseManager.swift:409-425` is `Migration014_SeedClaudeOversightBookmark` (`INSERT OR IGNORE`). **⚠️ SUPERSEDED (round 3):** round 1 concluded "no migration"; round 3 correctly required a **targeted delete migration** with a tight predicate — see §4.3 and §12e. |
 | **F8** | Several ACs unverifiable / self-signable | **Accepted.** Split guidance from ACs; mutation evidence must be a **recorded red run by Kieran**; add AC that the `GatewayClient` header comment is accurate; shipping verified observably by a non-implementer. |
 | **F9** | "No secrets" too narrow — 42 call sites may log message content | **Accepted.** Policy §4.4 extended to **user content + PII**, not only secrets. |
 | **F11** | Test-target traps (sandbox can't read source; zero-file vacuous pass) | **Accepted.** Guard must live in a **non-app-hosted test target** and **fail if it scans zero files.** |
@@ -646,7 +692,7 @@ Findings reconciled against the repo (verified, not assumed):
 
 | # | Finding | Why rejected |
 |---|---|---|
-| **F1** | BLOCKER: "the handshake log **likely leaks** a credential… treat the logs as **possibly** credential-bearing: **rotate the token**" | **Already corrected before this verdict arrived.** The reviewer's own caveat ("brief only, not the spec") explains it — it reviewed my pre-correction addendum. I inspected the live log directly: **zero** token/auth/handshake strings; every line is `handleEvent — event=<name>`. Correct finding: **latent code defect (line 579 CAN log the frame) — confirmed; file contains no secret — verified.** Fix required; **rotation not required on current evidence.** The reviewer's *recommendation to log only method/id/length* is **accepted and already in §6.1.** Note: it did not have the file; its inference from code shape was reasonable, and its "I need lines 540-600" request is the right instinct. |
+| **F1** | BLOCKER: "the handshake log **likely leaks** a credential… **rotate the token**" | ~~Already corrected — not a proven leak~~ **⚠️ SUPERSEDED (round 2b/2c):** the reviewer was **RIGHT**. The token IS on disk (hash-verified, §6.1b). **Rotation IS required.** This row is retained only as the correction trail; the live position is §6.1b + §12c/12d. |
 | **F2** | MAJOR: "gating hides the loop; is the root loop fixed?" | **Partially rejected — verified.** The "loop" is legitimate reconnection: `GatewayClient.swift:603-607` has a **bounded `retryCount` with `backoff.delay`**. The 10 MB/hour came from `debugLog` firing **per WS frame event** (617 event lines observed), not from a runaway loop. So there is **no separate loop defect to track.** Accepted sub-point: the spec should **say so explicitly** — now §1. |
 
 **Net:** reviewer verdict CORRECTIONS REQUIRED → after reconciliation,
@@ -728,6 +774,34 @@ so the token authenticates locally, not remotely. Bounds harm; doesn't excuse th
 **Net:** round-3 CORRECTIONS REQUIRED → **SOUND WITH FIXES**. Two of grok's findings
 (the second sink; the fix-still-prints) were things **my own spec had wrong** — found
 only because it read the actual spec+code this round.
+
+---
+
+## 12e. Round 3 (claude) — reconciliation (2026-09-24)
+
+**Reviewer:** claude (AgentDrop), **verdict CORRECTIONS REQUIRED**, reviewed the
+**attached spec** this time (round 1 it saw only the brief). It read a revision one
+step behind (several items I had already fixed), but found genuinely new defects:
+
+| # | Finding | Status |
+|---|---|---|
+| **c1** | Second sink (line 279 URL) not named | **Already fixed** (round 2c, §6.1a) before this verdict. **Converges with grok.** |
+| **c2** | G4 unspecified → defaults to a grep | **Accepted — G4 fully specified** (injectable sink, fake transport, sentinel tokens, forced reconnect, both mutations). |
+| **c3** | F12 "mirror everything to os.log" conflicts with F9 privacy | **Accepted.** §4.4: mirror at **default/private privacy, constant names only**; limits stated. |
+| **c4** | AC-3 vs AC-18 contradiction | **Accepted.** AC-3 carves out the one `Migration016` literal. |
+| **c5** | Delete migration needs tighter predicate + named consumer | **Accepted.** §4.3: full seed-signature predicate; keep `Migration014` (empty); register `Migration016`; name the reader; fixtures. |
+| **c6** | "cap + rotation" still unbounded (generation limit); oversize write | **Accepted.** §4.4 pins one-file/trim-in-place, no generations; oversize rule stated. |
+| **c7** | Spec self-contradicts on rotation/evidence | **Accepted.** Fixed §1 severity, §6.1 confidence line, §9 F3d, §12 F1/F7 → SUPERSEDED, brief. |
+| **c8** | Rotation scope/order incomplete | **Already fixed** (round 2c/2d). **Converges with grok.** |
+| **c9** | E5 gaps: AC-4/AC-5 self-signable; AC-10 phantom; AC-8/12/14/15 weak | **Accepted.** AC-4/5 in E5; AC-10 defined; AC-8 uses `strings` on installed binary; AC-12 named files + fixtures; AC-14 hardened; AC-15 = cherry-pick tests; AC-21 (0600); AC-22. |
+| **c10** | G1 "non-UI" undefined | **Accepted.** §4.5: defined **by target**. |
+| **c-note** | Aug-7 GatewayClient missing from the load (5 files arrived) | **Process fix.** Re-attach on re-run. |
+
+**Convergence:** claude and grok **independently** found the second sink (279) and the
+rotation/ordering point — two reviewers, same defect, read from the code. Strongest
+signal in the exercise.
+
+**Net:** CORRECTIONS REQUIRED → **SOUND WITH FIXES**; all c-findings applied.
 
 ---
 
