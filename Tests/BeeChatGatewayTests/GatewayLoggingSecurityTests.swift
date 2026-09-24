@@ -18,6 +18,8 @@ final class GatewayLoggingSecurityTests: XCTestCase {
             configuration: .init(isEnabled: true, homeDirectory: home),
             defaultFilename: "gateway-security.log"
         )
+        // Create the fixture file before reconnecting receive loops can emit diagnostics.
+        try fileLog.write(Data())
         let sinks = GatewayDiagnosticSinks(
             file: { data in
                 capture.append(String(decoding: data, as: UTF8.self))
@@ -31,7 +33,7 @@ final class GatewayLoggingSecurityTests: XCTestCase {
                 url: "ws://127.0.0.1:18789",
                 token: token,
                 deviceToken: deviceToken,
-                requestTimeout: 1,
+                requestTimeout: 5,
                 maxRetries: 2,
                 baseRetryDelay: 0,
                 maxRetryDelay: 0
@@ -42,15 +44,26 @@ final class GatewayLoggingSecurityTests: XCTestCase {
         )
 
         try await client.connect()
-        for _ in 0..<200 where transport.sentMessages.count < 2 {
-            try await Task.sleep(nanoseconds: 5_000_000)
+        for _ in 0..<500 where transport.sentMessages.count < 2 {
+            try await Task.sleep(nanoseconds: 10_000_000)
         }
         await client.disconnect()
 
         XCTAssertGreaterThanOrEqual(transport.connectionCount, 2, "fixture did not force reconnect")
         XCTAssertGreaterThanOrEqual(transport.sentMessages.count, 2, "fixture did not handshake after reconnect")
-        XCTAssertTrue(transport.sentMessages.contains { $0.contains(token) && $0.contains(deviceToken) },
-                      "fixture never exercised a credential-bearing handshake")
+        let credentialFrames = transport.sentMessages.filter {
+            $0.contains(token) && $0.contains(deviceToken)
+        }
+        XCTAssertGreaterThanOrEqual(credentialFrames.count, 2,
+                                    "fixture did not exercise credential-bearing handshakes around reconnect")
+        let prefixesExerciseLeakWindow = credentialFrames.allSatisfy { frame in
+            let loggedPrefix = String(frame.prefix(500))
+            return loggedPrefix.contains(token) && loggedPrefix.contains(deviceToken)
+        }
+        guard prefixesExerciseLeakWindow else {
+            XCTFail("fixture credentials must be inside the exact prefix(500) handshake leak window")
+            return
+        }
 
         let fileCapture = capture.values.joined()
         let diskCapture = (try? String(contentsOf: fileLog.url, encoding: .utf8)) ?? ""

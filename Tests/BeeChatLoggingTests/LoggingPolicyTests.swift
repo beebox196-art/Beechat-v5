@@ -23,24 +23,22 @@ final class LoggingPolicyTests: XCTestCase {
         var violations: [String] = []
         for file in sources {
             let source = try String(contentsOf: file, encoding: .utf8)
-            for literal in Self.userSpecificAbsoluteLiterals(in: source) {
+            let relativePath = relative(file, to: root)
+            let findings = Self.sourceFindings(in: source, relativePath: relativePath)
+            for literal in findings.userSpecificAbsoluteLiterals {
                 if allowedAbsoluteLiterals[literal] != nil {
                     observedAllowlist[literal, default: 0] += 1
                 } else {
-                    violations.append("\(relative(file, to: root)): \(literal)")
+                    violations.append("\(findings.relativePath): \(literal)")
                 }
             }
 
-            let relativePath = relative(file, to: root)
-            if Self.isNonUITarget(relativePath) {
-                let normalized = Self.joinAdjacentStringFragments(in: source)
-                if normalized.contains(".desktopDirectory") {
-                    violations.append("\(relativePath): .desktopDirectory")
-                }
-                for literal in Self.desktopLiterals(in: normalized)
-                where literal != "/Users/openclaw/Desktop/Claude Oversight Reports" {
-                    violations.append("\(relativePath): Desktop component in \(literal)")
-                }
+            if findings.usesDesktopDirectory {
+                violations.append("\(findings.relativePath): .desktopDirectory")
+            }
+            for literal in findings.desktopLiterals
+            where literal != "/Users/openclaw/Desktop/Claude Oversight Reports" {
+                violations.append("\(findings.relativePath): Desktop component in \(literal)")
             }
         }
 
@@ -48,15 +46,33 @@ final class LoggingPolicyTests: XCTestCase {
         XCTAssertTrue(violations.isEmpty, violations.joined(separator: "\n"))
     }
 
-    func testG1FixturesRejectDefectAndAcceptValidator() {
-        let defect = "let path = \"/Users/\" + \"alice/Desktop/secret.log\""
-        let normalizedDefect = Self.joinAdjacentStringFragments(in: defect)
-        XCTAssertFalse(Self.userSpecificAbsoluteLiterals(in: normalizedDefect).isEmpty)
-        XCTAssertFalse(Self.desktopLiterals(in: normalizedDefect).isEmpty)
+    func testG1FixturesRejectSplitAbsolutePathAndAppDesktopDefects() {
+        let splitAbsolutePathDefect = "let path = \"/Users/\" + \"alice/Desktop/secret.log\""
+        let splitFindings = Self.sourceFindings(
+            in: splitAbsolutePathDefect,
+            relativePath: "Sources/BeeChatGateway/Mutation.swift"
+        )
+        XCTAssertFalse(splitFindings.userSpecificAbsoluteLiterals.isEmpty)
+        XCTAssertFalse(splitFindings.desktopLiterals.isEmpty)
+
+        let appDesktopDefect =
+            "let urls = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)"
+        let appFindings = Self.sourceFindings(
+            in: appDesktopDefect,
+            relativePath: "Sources/App/Utils/BeeChatLogger.swift"
+        )
+        XCTAssertEqual(appFindings.relativePath, "Sources/App/Utils/BeeChatLogger.swift")
+        XCTAssertTrue(appFindings.usesDesktopDirectory,
+                      "App-target Desktop writes must be rejected just like non-UI-target writes")
 
         let validator = "guard path.hasPrefix(\"/Users/\") else { return }"
-        XCTAssertTrue(Self.userSpecificAbsoluteLiterals(in: validator).isEmpty)
-        XCTAssertTrue(Self.desktopLiterals(in: validator).isEmpty)
+        let validatorFindings = Self.sourceFindings(
+            in: validator,
+            relativePath: "Sources/BeeChatGateway/Validator.swift"
+        )
+        XCTAssertTrue(validatorFindings.userSpecificAbsoluteLiterals.isEmpty)
+        XCTAssertTrue(validatorFindings.desktopLiterals.isEmpty)
+        XCTAssertFalse(validatorFindings.usesDesktopDirectory)
     }
 
     func testG2WriterBoundsOneFileAndUsesPrivatePermissions() throws {
@@ -116,9 +132,21 @@ final class LoggingPolicyTests: XCTestCase {
         String(file.path.dropFirst(root.path.count + 1))
     }
 
-    private static func isNonUITarget(_ path: String) -> Bool {
-        ["Sources/BeeChatGateway/", "Sources/BeeChatPersistence/", "Sources/BeeChatSyncBridge/"]
-            .contains { path.hasPrefix($0) }
+    private struct SourceFindings {
+        let relativePath: String
+        let userSpecificAbsoluteLiterals: [String]
+        let desktopLiterals: [String]
+        let usesDesktopDirectory: Bool
+    }
+
+    private static func sourceFindings(in source: String, relativePath: String) -> SourceFindings {
+        let normalized = joinAdjacentStringFragments(in: source)
+        return SourceFindings(
+            relativePath: relativePath,
+            userSpecificAbsoluteLiterals: userSpecificAbsoluteLiterals(in: normalized),
+            desktopLiterals: desktopLiterals(in: normalized),
+            usesDesktopDirectory: normalized.contains(".desktopDirectory")
+        )
     }
 
     private static func joinAdjacentStringFragments(in source: String) -> String {

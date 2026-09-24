@@ -210,7 +210,9 @@ public actor GatewayClient {
                     })
                     
                     do {
-                        let data = try JSONEncoder().encode(frame)
+                        let encoder = JSONEncoder()
+                        encoder.outputFormatting = [.sortedKeys]
+                        let data = try encoder.encode(frame)
                         guard let text = String(data: data, encoding: .utf8) else {
                             let error = NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode request frame as UTF-8"])
                             let alreadyHandled = await self.pendingRequests.remove(id: id, reason: error.localizedDescription)
@@ -576,7 +578,9 @@ public actor GatewayClient {
         
         do {
             let frame = RequestFrame(id: "handshake", method: "connect", params: try encodeParams(params))
-            let data = try JSONEncoder().encode(frame)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(frame)
             guard let text = String(data: data, encoding: .utf8) else {
                 throw NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode handshake frame as UTF-8"])
             }
