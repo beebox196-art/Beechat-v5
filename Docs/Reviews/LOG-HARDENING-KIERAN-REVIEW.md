@@ -612,3 +612,265 @@ operational (outside reviewer limits); AC-9/AC-15 remain open as before.
 Nothing merged, deployed, installed, or rotated by me. Only this document is committed.
 
 — Kieran (round 2)
+
+---
+
+# Round 3 — Final independent verification (E5)
+
+**Reviewer:** Kieran (independent; Q may not sign their own gate)
+**Date:** 2026-09-24
+**Repo:** `/Users/openclaw/projects/BeeChat-v5`
+**Branch:** `fix/log-hardening`
+**Commit under test:** `1f0b3f136bcc4880e214cde664cd0b37e0d5464d` ("test(logging): eliminate G4 reconnect race")
+**Prior commit:** `b48947a` (round-2 review, SOUND WITH FIXES, N-1 residual)
+**Production reference:** `f32d14b` (round-2 verified production SHA, must remain byte-identical)
+**Q's claims (treated as claims, not fact):** `Docs/Reviews/LOG-HARDENING-MUTATION-EVIDENCE.md`
+
+## VERDICT: SOUND (final)
+
+N-1 is **genuinely fixed, not papered over.** The fixture's reconnect is now driven by an
+explicit signal (`transport.forceReconnect()` / `waitForReconnectRequest()`), not by a timing
+window — so there is no race left to win or lose. Production code (`Sources/`) is byte-identical
+to `f32d14b`. Every previously-passing guard still passes. Every mutation that should go red,
+goes red, with the right reason. No new findings, no regressions, no remaining theatre.
+
+FINAL SIGN-OFF: credential guard G4 and all guards independently verified across 3 rounds;
+commit `1f0b3f136bcc4880e214cde664cd0b37e0d5464d` is ready for release gate (held for Adam).
+
+---
+
+## Scope of Q's commit (1f0b3f1) — production invariance
+
+```
+git show --stat 1f0b3f1
+ Docs/Reviews/LOG-HARDENING-MUTATION-EVIDENCE.md    | 13 +++++++++-
+ Tests/BeeChatGatewayTests/GatewayLoggingSecurityTests.swift | 29 ++++++++++++++++++++++
+ 2 files changed, 41 insertions(+), 1 deletion(-)
+```
+
+Only two files. The non-test file is Q's own evidence doc. The test file is Q's N-1 fix.
+
+```
+git diff f32d14b 1f0b3f1 -- Sources/
+(empty)
+```
+
+Production code under `Sources/` is byte-identical to `f32d14b` (round-2 verified). The
+code-99 invariant — gateway token and device token never reach a diagnostic sink — is
+preserved. Q's commit changed only test infrastructure.
+
+## N-1 fix: how it actually works
+
+The race Q fixed was timing-based. Round 2's fixture let `transport.receive()` throw a
+forced close at index 2, racing with the GatewayClient's own handshake state machine:
+if the throw landed before `connect()` had observed the settled `.connected` state, the
+actor could move back to `.connecting` and `transport.sentMessages.count < 2` could timeout,
+producing a `XCTAssertGreaterThanOrEqual` "did not handshake after reconnect" failure that
+was *not* a credential-leak assertion — wrong reason, fragile red.
+
+The new mechanism (`Tests/BeeChatGatewayTests/GatewayLoggingSecurityTests.swift:46-126`):
+
+1. `try await client.connect()` runs to completion — `succeedHandshake()` has fired,
+   state is `.connected`, `connect()` returned to the test.
+2. Test calls `transport.forceReconnect()` — atomically sets `reconnectRequested = true`
+   and resumes any parked continuation (none parked yet in this run).
+3. Test polls `transport.sentMessages.count < 2` for up to 5s.
+4. Meanwhile, the receive loop reaches index 2 and calls `waitForReconnectRequest()`:
+   - if `forceReconnect()` was already called, the flag is set → resume immediately.
+   - else, park the continuation; `forceReconnect()` will resume it later.
+
+Either order resolves. **No race.** Both signals use the same NSLock for the flag check.
+
+I verified production `Sources/BeeChatGateway/GatewayClient.swift` was not touched:
+`grep -n "Sending handshake" Sources/BeeChatGateway/GatewayClient.swift` → no hits;
+the sink is removed; mutation below re-adds it.
+
+---
+
+## Independent reproduction
+
+### Step 1 — Clean tree: 50/50 GREEN, 0 false-REDs
+
+```
+swift test --filter GatewayLoggingSecurityTests.testG4ChallengeHandshakeAndReconnectNeverExposeCredentials
+```
+
+Ran 50 times in a tight loop. **All 50 runs: `Executed 1 test, with 0 failures (0 unexpected)`.
+0 false-REDs. 0 unexpected failures.** Q's 50/50 claim independently reproduced.
+
+### Step 2 — Clean tree, adversarial: 25x rapid back-to-back, 0 false-REDs
+
+To maximise race pressure (no clean between runs, system not quiesced), I ran another
+25 iterations back-to-back: **25/25 GREEN.** Combined: 75/75 GREEN on clean tree.
+
+### Step 3 — Clean tree, adversarial: 100ms delay before forceReconnect
+
+I injected `try? await Task.sleep(nanoseconds: 100_000_000)` between `connect()` and
+`forceReconnect()`, ran 5×: **5/5 GREEN.** No timing dependency in the wrong direction.
+
+### Step 4 — Mutation: 20/20 RED, every run fails exactly 8 sink assertions
+
+I re-added the exact defect:
+```swift
+debugLog("Sending handshake: \(text.prefix(500))")
+```
+in `Sources/BeeChatGateway/GatewayClient.swift` immediately before the existing
+`debugLog("Handshake frame encoded …")` line (line 587, restoring the pre-f32d14b form).
+
+Ran 20×. **All 20 runs: `with 8 failures (0 unexpected)`. Every run produced exactly 8
+`XCTAssertFalse failed - <sentinel> escaped a diagnostic sink` errors, four per output
+× two sentinels (file capture, disk file, print capture, os-log mirror capture).** No run
+failed any other assertion. No precondition failure. No unexpected failure. No "wrong
+reason" run. **Red is unambiguous, always "leak caught", never "race happened".**
+
+Mutation removed; `git diff f32d14b -- Sources/` empty (verified before continuing).
+
+### Step 5 — prefix(500) precondition fails LOUDLY if forced false
+
+I changed `String(frame.prefix(500))` to `String(frame.prefix(5))` in the test fixture's
+precondition check (line 62). With sentinels ~33 chars each, `prefix(5)` cannot contain
+either sentinel.
+
+```
+swift test --filter GatewayLoggingSecurityTests.testG4ChallengeHandshakeAndReconnectNeverExposeCredentials
+→ failed - fixture credentials must be inside the exact prefix(500) handshake leak window
+→ Executed 1 test, with 1 failure (0 unexpected) in 0.106s
+```
+
+**The precondition fails loudly with the exact intended message and `return`s before the
+sink assertions run.** The silent-skip trap stays closed: if sentinels fall outside the
+leak window, the test aborts honestly rather than racing the 8 sink assertions against an
+unwinnable window.
+
+Additional adversarial probe: sentinels >500 chars total (`SENTINEL-GATEWAY-TOKEN-7E943A-AAA…×600`)
+→ **same precondition failure, same message.** Confirms the precondition guards any
+fixture whose sentinels would not fit in `prefix(500)`.
+
+Precondition mutation reverted; `git diff 1f0b3f1 -- Tests/BeeChatGatewayTests/GatewayLoggingSecurityTests.swift` empty (verified before continuing).
+
+---
+
+## Full gate — no regression
+
+```
+swift build -c release   → Build complete! (43.29s, existing warnings only)
+swift test               → Executed 164 tests, with 1 test skipped and 0 failures (0 unexpected) in 1.242s
+```
+
+Both commands run from a fully clean `.build` directory. No new warnings introduced.
+
+## Previously-passing guards (must still pass)
+
+| Guard | Command | Result |
+|---|---|---|
+| G1 abs-path policy | `swift test --filter LoggingPolicyTests.testG1SourcePathPolicy` | **PASS** (0 failures, 0 unexpected, 0.027s) |
+| G1 split + App Desktop fixtures | `...testG1FixturesRejectSplitAbsolutePathAndAppDesktopDefects` | **PASS** (0.001s) |
+| G2 behavioural bound | `...testG2WriterBoundsOneFileAndUsesPrivatePermissions` | **PASS** (0.003s) |
+| G3 default-off gate | `...testG3DefaultGateCreatesNoFileUnderInjectedHome` | **PASS** (0.001s) |
+| AC-3 carve-out | `grep -rn "/Users/openclaw/Desktop" Sources/` | **1 hit** (`Sources/BeeChatPersistence/Database/DatabaseManager.swift:448`, the allowlisted Migration016 predicate) |
+| Migration016 | `swift test --filter LoggingHardeningMigrationTests` | **PASS** (4 tests, 1 skipped real-DB opt-in, 0 fail, 0.064s) |
+
+## Mutations that must go RED — still do
+
+| Guard | Mutation | Result |
+|---|---|---|
+| G2 | removed `existing + record > maximumBytes` trim branch in `BoundedFileLog.swift` | **RED** — `("4000") is greater than ("1024")`, 1 failure, 0 unexpected |
+| G3 | changed gate from `== "1"` to `!= "0"` (default-on) in `BoundedFileLog.swift` | **RED** — 3 failures (lines 106/111/112: disabled-state, no-directory, no-file), 0 unexpected |
+
+Both mutations reverted; `git diff f32d14b -- Sources/` empty (verified before continuing).
+
+---
+
+## E8 — pre-registered criteria vs verdict logic
+
+No criterion is silently dropped. Operational criteria (AC-8/8b/14/19/20) remain
+not-verified-here, same as rounds 1 and 2 — they need install/reconnect/rotate, which is
+outside reviewer limits.
+
+| # | Criterion | Round-3 status | Evidence |
+|---|---|---|---|
+| AC-1 | `swift build --target BeeChatGateway` | **PASS** | release build complete |
+| AC-2 | Full `swift test` passes | **PASS** | 164 / 1 skipped / 0 fail / 1.242s |
+| AC-3 | zero `/Users/openclaw/Desktop` except Migration016 | **PASS** | grep → 1 allowlisted hit |
+| AC-4 | gate off → no file (behavioural) | **PASS** | G3 |
+| AC-5 | gate on → bounded, behavioural | **PASS** | G2 + mutation RED (`4000 > 1024`) |
+| AC-6 | G1 fails when `/Users/...` re-added | **PASS** | abs-path mutation RED (round-2 evidence stands) |
+| AC-7 | G3 fails when always-on | **PASS** | G3 mutation RED, 3 failures |
+| AC-7b | G4 fails when handshake restored | **PASS (N-1 fixed)** | 20/20 RED, 8 sink asserts, 0 false green, 0 wrong reason |
+| AC-8 | installed binary post-fix | **NOT SATISFIED** | binary dated Aug 7 (N-2 unchanged from rounds 1-2) |
+| AC-8b | stale Desktop logs deleted | **NOT VERIFIED** | outside reviewer limits |
+| AC-9 | STATUS.md build row | **NOT SATISFIED** | no row (N-2 unchanged) |
+| AC-10 | no code writes token/deviceToken; G4 fails on either restore | **PASS (N-1 fixed)** | handshake 20/20 RED + URL 4 RED; no token-write site greps |
+| AC-11 | GatewayClient header comment literally true | **PASS** | comment matches `BoundedFileLog` (unchanged by this commit) |
+| AC-12 | non-app-hosted target; named files; zero-scan fails | **PASS** | `BeeChatLoggingTests` target; asserts `GatewayClient.swift` + `Topic.swift` |
+| AC-13 | gate off under temp HOME → no file | **PASS** | G3 |
+| AC-14 | scripted operational leak-stop proof | **NOT RUN** | needs install/reconnect session (operational) |
+| AC-15 | tests cherry-picked to feat/transcript-integration | **NOT SATISFIED** | files absent on that branch (N-2 unchanged) |
+| AC-16 | G1 flags split literals + `.desktopDirectory` + empty-scan | **PASS** | round-2 evidence stands (split → RED, App `.desktopDirectory` → RED) |
+| AC-17 | sink inventory by name | **PASS** | round-1 re-run; unchanged by this commit |
+| AC-18 | migration deletes exact seed; consumer safe | **PASS** | 4 migration tests (1 skipped real-DB opt-in) |
+| AC-19 | purge archives | **NOT VERIFIED** | outside reviewer limits |
+| AC-20 | rotate token / re-pair device | **NOT VERIFIED** | outside reviewer limits |
+| AC-21 | files created 0600 | **PASS** | `BoundedFileLog` sets 0o600; G2 asserts it |
+| AC-22 | AC-4/AC-5 in E5 | **PASS** | verified behaviourally above |
+
+---
+
+## Adversarial — is the N-1 fix real, or just narrower?
+
+**Real, not narrower.** Three independent checks:
+
+1. **Synchronisation mechanism:** the fixture's reconnect is now driven by an explicit
+   signal, not by a timing window. There is no race to win or lose. The signal handler
+   (`forceReconnect()` / `waitForReconnectRequest()`) uses the same lock for the
+   `reconnectRequested` flag check and the continuation handoff; both code paths handle
+   the case where the other side has not yet arrived.
+
+2. **Determinism:** 75/75 clean runs (50 original + 25 adversarial back-to-back + 5 with
+   100ms delay). 20/20 mutation runs, every run exactly 8 sink assertions, 0 wrong
+   reasons. No observed variability in either direction.
+
+3. **Honest failure mode:** if the sentinel is moved outside the leak window, the
+   precondition fails loudly with the exact intended message, not silently. The
+   silent-skip trap from the standing corrections is closed.
+
+**Can a false-RED still occur?** Under normal conditions, no. The only paths to a false-RED
+would be (a) `client.connect()` throwing for an unrelated reason, or (b) the polling
+loop's `sentMessages.count < 2` timing out. Both are independently observable as test
+failures with messages other than the 8 sink assertions, and would be classified as
+`XCTAssertGreaterThanOrEqual` or thrown errors, not as the G4 leak assertions. I observed
+zero such failures across 75 runs.
+
+**Is there remaining theatre?** No. The fix uses the standard "signal-then-await" pattern,
+implemented correctly under a lock, with the signal persisted as a flag so the race
+order is irrelevant. The mutation test unambiguously catches the original defect. The
+precondition guard prevents the fixture from silently going green. There is no narrow
+race remaining.
+
+**Could a future regression re-introduce the race?** Yes — if someone reverts to a
+timing-based fixture (`try? await Task.sleep` before the assertion loop), the race
+returns. Q's test as committed is robust; the gate's load-bearing-ness lives in the
+test code, not in production. This is consistent with the spec's design.
+
+---
+
+## Bottom line (round 3, final)
+
+**SOUND (final).** N-1 is genuinely fixed by switching to an explicit signal-driven
+fixture rather than a timing-based one. Production `Sources/` is byte-identical to the
+round-2 verified state `f32d14b`. Every previously-passing guard still passes. Every
+mutation that should go red, goes red, with the right reason, every time. No regressions.
+No new findings. No remaining theatre.
+
+**FINAL SIGN-OFF:** credential guard G4 and all guards independently verified across
+3 rounds; commit `1f0b3f136bcc4880e214cde664cd0b37e0d5464d` is ready for release gate
+(held for Adam).
+
+Operational items (AC-8/8b/14/19/20) and AC-9/AC-15 remain not-verified-here, same as
+rounds 1 and 2 — they need install/reconnect/rotate and downstream branch operations
+that are outside reviewer limits.
+
+Nothing merged, deployed, installed, rotated, or killed by me. Only this document is
+committed.
+
+— Kieran (round 3, final)
