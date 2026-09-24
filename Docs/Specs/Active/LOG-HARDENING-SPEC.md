@@ -325,17 +325,30 @@ zero files** (F11 / AC-12).
 **Verified at HEAD `32afd4e`.** Two separate claims, and they have different
 status — keep them distinct:
 
-**(a) The code path is dangerous — CONFIRMED, and it is in SHIPPED code.**
-- `GatewayClient.swift:579` on `feat/transcript-integration`, and **`main:569`**
-  (the line landed 2026-05-18) — i.e. **the running, shipped binary contains it.**
-  Verified: `strings` on `/Applications/BeeChatApp.app` emits `Sending handshake:`, and
-  the binary does **not** contain `BEE_DEBUG_LOG` (the fix). So the defect is in the
-  **installed** app, not branch-only.
-- `text` is the JSON-encoded `RequestFrame(method: "connect", params:)`
-- The params are built with `auth: .init(token: config.token, deviceToken:
-  currentDeviceToken)` (see `ConnectParams` construction, lines ~523/557)
-- **Therefore the code writes the first 500 chars of the handshake — which include
-  `token` and `deviceToken` — to the log file.** Confirmed on disk (§6.1b).
+**(a) The code path is dangerous — CONFIRMED, TWO sinks, both in SHIPPED code.**
+
+**Sink A — line 279 (dominant; grok round-3):**
+- `GatewayClient.swift:279` — `debugLog("transport.connect called — url=\(url.absoluteString) origin=\(origin)")`
+- `url` is built at line 266: `URL(string: "\(config.url)?token=\(config.token)")`
+  — verified **on raw source bytes** (`config.token` present literally; line sha256
+  `4bd6b5faac7c`, 81 chars).
+- So **every connect AND every retry logs the gateway token in the URL query string**
+  — far broader than the handshake sink. Present on **`main:269`** and HEAD.
+- Raw-byte scan: this is the **dominant** vector — 38 of 44 occurrences.
+
+**Sink B — line 579 (handshake frame):**
+- `debugLog("Sending handshake: \(text.prefix(500))")` — `text` is the encoded
+  connect frame, whose params carry `auth.token` + `auth.deviceToken`.
+- Present on **`main:569`**. Fires only when a handshake runs (rarer).
+
+**Both are in the shipped binary.** Verified: `strings` on
+`/Applications/BeeChatApp.app` emits `Sending handshake:` and lacks `BEE_DEBUG_LOG`.
+
+**R3-1 (grok) — the FIX ITSELF still leaks.** At HEAD, `debugLog` does
+`print("[GW] \(message)")` **before** `guard debugLogEnabled else { return }`
+(`GatewayClient.swift:15-17`). So even with file writes gated off, **the URL (with
+token) is printed to stdout/Console unconditionally.** The fix must redact
+**before** the `print`, not just gate the file write.
 
 **(b) ⚠️ CONFIRMED: the FULL gateway token IS on disk — hash-verified.**
 
@@ -345,12 +358,29 @@ against the live config. **Result (decisive):**
 - The archived logs contain the **full 48-char gateway token**, and its
   **SHA-256 matches `openclaw.json → gateway.auth.token` exactly**
   (`hash[:12] = f4b4f4cda5a2`). Not a coincidence — it is the live token.
-- **8 occurrences across 4 archived files**, from **2026-09-16 to 2026-09-24**:
-  - `BeeChat-debug.log-loop-20260916-140252.log` ×2
-  - `BeeChat-debug.log-loop-20260918-221609.log` ×4
-  - `BeeChat-debug.log-loop-20260923-190450.log` ×1
-  - `BeeChat-debug.log-loop-20260924-101109.log` ×1
+- **Raw-byte scan of all 151 archives: 5 archives, 44 occurrences** of the current
+  token, spanning **2026-09-18 … 2026-09-24**:
+  | Archive | occurrences | mode |
+  |---|---|---|
+  | `…-20260918-221609.log` | 12 | `0644` |
+  | `…-20260919-225315.log` | 8 | `0644` |
+  | `…-20260920-093004.log` | 1 | `0644` |
+  | `…-20260923-190450.log` | 21 | `0644` |
+  | `…-20260924-101109.log` | 2 | `0600` |
+  - **4 of 5 are `0644` (group/other-readable).**
 - The **deviceToken** is also logged in full (**1 distinct value** on disk).
+- **Vector split:** 38/44 via the **URL (line 279)**, 6/44 via the **field (579)**.
+- *Note vs grok's numbers:* grok reported "42 archives / 153". My raw-byte scan
+  finds **5 archives / 44 occurrences** (151 archives total). The counts differ by
+  method — grok's appears broader (prefix/pattern based). **Both agree the leak is
+  real and the archive dir is the location. The literal-containment scan of the
+  exact current token is the authoritative number: 5 files, 44 occurrences.**
+- **The evidence set CHURNS:** the canary prunes archive entries older than 7 days,
+  so the token-bearing files rotate out over time while new ones (from each connect)
+  rotate in. An earlier scan of mine found an extra 2026-09-16 file that a later
+  scan did not — because it aged past the retention window mid-session. **This means
+  the exposure is self-refreshing: as long as the pre-fix app runs, fresh
+  token-bearing archives are created faster than old ones are pruned.**
 
 **Why my earlier passes were wrong (the actual cause):**
 1. The **canary** truncates the Desktop log every ~30 min as a "loop bug" guard and
@@ -376,11 +406,22 @@ against the live config. **Result (decisive):**
 remote.** Live token, on disk for 8 days, present in snapshots.
 
 **Required change (now unambiguous):**
-- **Never log the handshake frame** — remove/redact line 579 (`main:569`).
-- **Rotate the gateway token** — **YES.** Live token on disk + in snapshots →
-  cheap insurance. **Adam's call, but recommended.**
-- **Purge the token-bearing archives** (`~/.openclaw/logs/beechat-debug-archive/`)
-  once the fix ships — after confirming no forensic need. (Ask before deleting.)
+- **Redact BEFORE printing.** `debugLog` prints unconditionally before the gate
+  (§6.1a, R3-1) — so **the fix itself still leaks the URL/token to stdout.** Move
+  redaction ahead of the `print`, not just the file write.
+- **Never log the connect URL with its token** — remove/redact line 279 (the
+  dominant vector). Log the host/port only, never the query string.
+- **Never log the handshake frame** — remove/redact line 579.
+- **Rotate the gateway token** — **YES.** Live token on disk (5 files, 44
+  occurrences, self-refreshing) + in snapshots → cheap insurance. **Adam's call,
+  recommended.** Order (grok): rotate **after** the Aug binary is dead and the
+  replacement neither logs nor prints URL/token.
+- **Purge BOTH locations**: the current Desktop log **and
+  `~/.openclaw/logs/beechat-debug-archive/`** — the archive is the second location
+  and the one that actually holds the token in bulk (§6.1b). **Delete, do not
+  archive** — the archiver copied a secret into 4 world-readable files.
+- **Device token:** **re-pair** unless the handshake prefix is shown to exclude it
+  (it is logged in full today — 1 distinct value on disk).
 - **Guard G4** (§4.5) — mandatory, mutation-tested.
 
 **Confidence: high** — hash match, not inference.
@@ -455,10 +496,12 @@ deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
 
 **AC-14 (NEW, grok F1 — operational acceptance):** a **scripted operational check**
   proves the leak is stopped, independent of branch choice:
-  (i) old app pid **quit**; (ii) fixed build **installed**; (iii) both Desktop logs
-  **removed/truncated**; (iv) **live, size must stay flat over a scripted session**
-  (measure > 5 min with a message round-trip; delta ≈ 0). *Branch choice does not
-  stop the leak — only replacing the running binary does.*
+  (i) old app pid **quit**; (ii) fixed build **installed**; (iii) **BOTH** the
+  Desktop log **and** `~/.openclaw/logs/beechat-debug-archive/` **removed**;
+  (iv) **live, size must stay flat over a scripted session** (measure > 5 min with a
+  message round-trip; delta ≈ 0); (v) **no new token-bearing file appears in either
+  location.** *Branch choice does not stop the leak — only replacing the running
+  binary does.*
 **AC-15 (NEW, grok F2 — merge guard):** `feat/transcript-integration` is verified to
   contain the **bounded** hotfix sink **before** it merges — i.e. the hotfix is
   canonical and the feature branch takes it, **not vice-versa**. If `32afd4e`
@@ -477,9 +520,12 @@ deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
   support dir creation, `AppRootView.swift:236` — unrelated).
 **AC-19 (NEW, §6.1b):** token-bearing archives are **purged** from
   `~/.openclaw/logs/beechat-debug-archive/` after the fix ships (with Adam's
-  approval), and the Desktop log is confirmed to hold **zero** handshake lines.
+  approval), **and** the Desktop log is confirmed to hold **zero** token/handshake
+  lines. A post-fix live scan finds **no** occurrence of the token (or the device
+  token) in **either** location.
 **AC-20 (NEW, §6.1b):** the **gateway token is rotated** (confirmed leak) and the
-  old token no longer authenticates.
+  old token no longer authenticates; the **device token is re-paired** unless the
+  handshake prefix is proven to exclude it.
 
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
 verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11, AC-12, AC-13,
@@ -638,6 +684,28 @@ position a third time — to the confirmed-leak one**:
 
 **Consequence:** severity is now **confirmed credential exposure**; rotation is
 **required**, and the token-bearing archives need purging (OQ-6).
+
+---
+
+## 12d. Round 2c — second sink + fix-still-leaks (grok round-3, 2026-09-24)
+
+Grok's round-3 review found a **second, larger sink** and a hole in the fix itself.
+Both **verified on raw bytes**:
+
+| # | Finding | Resolution |
+|---|---|---|
+| **R3-2** | **Line 279** logs `url.absoluteString`, and line 266 builds the URL with `?token=\(config.token)`. Every connect **and retry** logs the token. Dominant vector (38/44 occurrences). | **Accepted — verified.** §6.1a now names **two sinks** (A: 279 URL; B: 579 handshake). Fix must redact 279 too. |
+| **R3-1** | **The fix still leaks:** `debugLog` does `print("[GW] \(message)")` **before** the gate (`GatewayClient.swift:15-17`) → URL/token printed unconditionally. | **Accepted — verified.** §6.1a + required-changes: **redact before `print`**, not just gate the file write. |
+| **R3-3** | **AC-14 checks only the Desktop file** — the archive dir is a second location holding the token. | **Accepted.** AC-14 now requires purging **both** and proving **no new token-bearing file** in either. |
+| **R3-4** | Rotation order: rotate **after** the Aug binary is dead and the replacement neither logs nor prints. Device token: re-pair. | **Accepted.** §6.1b ordering + AC-20. |
+| **count** | grok: "42 archives / 153". Bee raw-byte scan: **5 files / 44 occurrences** (151 archives). | **Both real; method differs.** Authoritative = literal containment: **5 files, 44 occurrences.** Evidence set **churns** (canary prunes >7d) — self-refreshing while the app runs. |
+
+**Blast radius (grok, agreed):** URL is `127.0.0.1:18789` — the **local** gateway,
+so the token authenticates locally, not remotely. Bounds harm; doesn't excuse the write.
+
+**Net:** round-3 CORRECTIONS REQUIRED → **SOUND WITH FIXES**. Two of grok's findings
+(the second sink; the fix-still-prints) were things **my own spec had wrong** — found
+only because it read the actual spec+code this round.
 
 ---
 
