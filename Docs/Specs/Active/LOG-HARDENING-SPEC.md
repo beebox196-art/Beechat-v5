@@ -216,17 +216,36 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
 - **No changes to the ~40 call sites.** Sink-only change.
 
 ### 4.3 `Sources/BeeChatPersistence/Database/DatabaseManager.swift`
-- **F7-resolved:** line 421 sits inside `Migration014_SeedClaudeOversightBookmark`
+- **F7-resolved (round 1):** line 421 sits inside `Migration014_SeedClaudeOversightBookmark`
   (a **named, already-registered** migration, `DatabaseManager.swift:409-425`,
   using `INSERT OR IGNORE`).
-- **Decision (D3 final):** **stop seeding** — remove the seed row from the migration
-  body. **Do NOT add a cleanup migration** (it would risk deleting a favourite a
-  user actually has). **Do NOT derive at runtime** (that reintroduces the Desktop
-  dependency).
-- **Accepted consequence:** editing an already-applied migration means fresh installs
-  differ from upgraded ones. This is **stated and accepted** (F7).
-- Existing rows stay as user data — they are not a defect to remove.
+- **Decision (D3 final, updated by grok F7):** **stop seeding AND add a targeted
+  cleanup migration** that deletes the **exact** seeded row (matched by its path
+  literal), so existing DBs stop carrying the dead Desktop path. Guard the delete
+  to that exact row so no other bookmark is touched. *(Round 1 said "no migration";
+  round 2 correctly notes removal-only-in-fresh-DBs leaves every shipped DB with
+  the dead row — a targeted exact-match delete is the right fix.)*
+- **Do NOT derive at runtime** (that reintroduces the Desktop dependency).
+- **Risk check (grok F7):** verify no caller `try!`s / force-unwraps a missing
+  bookmark folder. Verified: the only `fatalError` is app-support-dir creation
+  (`AppRootView.swift:236`) — unrelated. No folder-path force-unwrap found.
 - `swift test` for BeeChatPersistence must pass (existing migration tests).
+
+### 4.6 Sink inventory (grok F5) — beyond the 3-site grep
+
+The spec must **name and check** the sinks a naive `grep "/Users/"` misses.
+Verified present/absent at HEAD `32afd4e`:
+
+| Potential sink | Status (verified) |
+|---|---|
+| `URLSession` `EventMonitor` / `cURLDescription` | **ABSENT** — `WebSocketTransport` uses a plain `URLSession` with a WS delegate, no monitor (F5) |
+| GRDB `.trace` | **ABSENT** — no `trace` config found |
+| `os_log` `%{public}` on sensitive args | **NONE FOUND** — 9 `Logger(subsystem:)` sites, no `%{public}`/`os_log` with sensitive args |
+| Crash reporters (Sentry/Crashlytics/signal handlers) | **ABSENT** — none found |
+| Transcript / summary writers | **PRESENT** — `TopicSummaryWriter.swift:393`, `ProjectScaffolder.swift:113` write files (not logs; review for path/content safety) |
+
+**Note:** "ABSENT" here means "not found by the searches run" — the implementer
+must re-verify with the same named checks and record the result (AC-17).
 
 ### 4.4 Shared policy (new) — the class-closing change
 - Introduce a **single small shared bounded-file-writer** used by both sinks
@@ -245,27 +264,37 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
     `ComposerViewModel`/`MessageViewModel` must be treated as candidate content
     leaks and reviewed.
 
-### 4.5 Build guards (the durable mitigation) — all redesigned per F4/F5/F6/F11
+### 4.5 Build guards (the durable mitigation) — redesigned per F4/F5/F6/F11/R2
+
+> **Round-2 caution (grok F3/F4, accepted):** textual greps are **supporting**, not
+> the class control. The **behavioural size/rotation test (AC-5) is the control** —
+> a grep can be defeated by `urls(for:.desktopDirectory)`, split literals, or an
+> allowlist that swallows a whole file, and a constant-assertion (G2-as-originally)
+> and a grep (G3-as-originally) can both be signed **without the write path
+> changing**. Each guard below therefore includes its **failure-mode test**.
 
 Guards live in a **non-app-hosted Swift test target** (F11) and **fail if they scan
-zero files** (F11).
+zero files** (F11 / AC-12).
 
 - **Guard G1 (redesigned, F4):** scan `Sources/**/*.swift` for hardcoded
   **user-specific absolute paths**, allowing the legitimate forms by **exact
   literal/content**, **never by file** (a per-file allowlist would let new defects
   into already-allowlisted files). The defect pattern is `/Users/<name>/…` — i.e.
   flag `"/Users/[^/"]+/`; do **not** flag bare `"/Users/"` (the legitimate
-  regex/validation prefix, §3.5). **Add a second rule for the Desktop half of the
-  class:** flag `Desktop` path components and `.desktopDirectory` in non-UI code
-  (sink 2 used `.desktopDirectory`, which contains no `/Users/` literal at all).
-  **Known limit (documented):** concatenation (`"/Users/" + name`) evades a
-  literal scan — G4/policy cover it by intent, not by scan.
-  - Allowlist is reviewed explicitly (R3) and justified per-entry.
-- **Guard G2 (made behavioural, F5):** **not** a constant comparison (that is
-  vacuous — it passes when the constant is never used on the write path, which is
-  exactly how sink 1's false "bounded" comment arose). Instead: inject a temp
-  directory, write **more than the cap**, and assert the file size and
-  rotated-file count stay within limits.
+  regex/validation prefix, §3.5). **Additional required rules (grok F3):** flag
+  `urls(for: .desktopDirectory)` and `"Desktop"` path components in non-UI code
+  (sink 2 used `.desktopDirectory`, which contains no `/Users/` literal at all);
+  flag **split/concatenated** literal fragments that reassemble to an abs path;
+  **fail on an empty scan** (AC-16).
+  - Allowlist is reviewed explicitly (R3), justified **per literal**, and its
+    size is asserted (so it cannot silently grow to swallow the codebase).
+  - **Known limit (documented):** arbitrary runtime concatenation evades a literal
+    scan — G4/policy cover that by intent; the behavioural test is the backstop.
+- **Guard G2 (made behavioural, F5/F4):** **not** a constant comparison (vacuous —
+  it passes when the constant is never used on the write path, which is exactly how
+  sink 1's false "bounded" comment arose). Instead: inject a temp directory, write
+  **more than the cap**, and assert the file size and rotated-file count stay within
+  limits. **This behavioural test is the class control (AC-5/AC-16).**
 - **Guard G3 (F6):** assert file loggers default to **disabled** when the gate is
   off — with **injectable gate config** (a `static let` read once cannot be tested).
   The test sets the gate off under a **temp HOME** and asserts **no file** is created.
@@ -306,36 +335,70 @@ status — keep them distinct:
   handshake — which include `token` and `deviceToken` — to the log file.** That is
   a latent credential-logging defect. It must be fixed regardless.
 
-**(b) The log file currently contains no leaked secret — VERIFIED.**
-- I inspected the live file (32 KB, 582 lines). **Zero** occurrences of `token`,
-  `auth`, `secret`, `bearer`, `handshake`, `connect`, `deviceToken`, `password`.
-- Every line is of the form `handleEvent — event=<name>` (agent/task/chat/…).
-- **Interpretation:** the file has been rotated (the 1 MB→256 KB trimming in
-  sink 2's policy *does not* apply to sink 1 — sink 1 has no rotation — so the
-  likely explanation is the file was cleared/recreated, or the handshake line is
-  not currently being hit). **Either way, the on-disk evidence does not show a
-  leaked token.**
+**(b) Whether a secret was ever written to disk is UNVERIFIABLE — the file was truncated.**
 
-**Net finding:** this is a **latent** credential-logging defect, **not** a proven
-leak. The distinction matters — see the correction note below.
+Initial reading (now corrected): I inspected the live file (~32 KB, 582 lines then)
+and found **zero** `token`/`auth`/`secret`/`bearer`/`handshake`/`connect`/
+`deviceToken`/`password` strings; every line was `handleEvent — event=<name>`.
+I wrongly concluded "no leaked secret." **That conclusion is unsound**, for three
+reasons (all raised by grok's round-2 review):
 
-> **Correction (2026-09-24, within this same spec):** an earlier revision of this
-> section asserted the file "contains leaked tokens." **That assertion was not
-> supported by evidence** — I reasoned from the code and stated a fact about the
-> file without reading it. Direct inspection disproves it. Recorded because it is
-> the exact failure class this project keeps hitting: *a claim about evidence,
-> made without reading the evidence.* The line 579 defect is real; the "leaked"
-> framing was not. **Action: fix line 579; no token rotation required on current
-> evidence.**
+1. **Path (a):** the file I read (`~/Desktop/BeeChat-debug.log`) **is** the one the
+   running binary opens — verified two ways: the Aug-7 binary's `debugLog`
+   hardcodes `"/Users/openclaw/Desktop/BeeChat-debug.log"` (`git show
+   937e18b:…/GatewayClient.swift:5`), and `strings` on the installed binary emits
+   that exact path. The post-fix `~/Library/Logs/…` path is **absent** (fix not
+   shipped). So paths match — but that does **not** rescue the read (see 2).
+2. **Truncation (b):** the file's **birth is 10:02:24** (app launch) but its
+   **oldest surviving line is 13:49:53**. The file was **truncated in place at
+   ~13:49** — the entire pre-13:49 content (including the connect/handshake events
+   from app launch) is **gone**. `grep` on the current file finds **zero**
+   `connect`/`handshake` lines *because they were truncated away*, not because
+   they never happened. **The clean read clears nothing.** I cannot inspect the
+   pre-truncation bytes.
+   - **Cause of truncation: UNEXPLAINED.** No process holds the file open
+     (`lsof` empty); the Aug-7 binary has **no rotation**; I performed no such
+     action. Best (unverified) candidate: the system canary's repetition detector
+     — the commit says the loop was "caught by the system canary's repetition
+     detector," which may have truncated/rotated the file. **Recorded as an open
+     unknown, not explained away.**
+3. **Handshake firing (c):** line 579 *did* fire — the binary contains the
+   `Sending handshake:` string, and a connect occurs at app launch. Those lines
+   were in the pre-truncation content. **This is why 579 "never appeared" post-fix:
+   it fired once at connect (~10:02), inside the truncated region.**
+
+**Therefore the token question cannot be closed either way:** the code path can
+write the token (confirmed), and whether it did is **forever unverifiable** on this
+log, because the evidence was truncated.
+
+> ⚠️ **Consequence — reversal of my earlier call:** I previously wrote "no token
+> rotation required on current evidence." **That conclusion does not hold.** The
+> evidence is not merely absent — it was destroyed by truncation. The correct
+> posture is **assume-possibly-exposed → rotate the gateway token** as cheap
+> insurance. **This is the safe call, and it is Adam's to make.** It supersedes the
+> earlier "no rotation" line.
+
+**Net finding:** this is a **latent** credential-logging defect, **and** disk
+exposure **cannot be ruled out** because the log was truncated (§6.1b). Treat as
+**possibly exposed** — fix line 579 **and** rotate the token (Adam's call).
+
+> **Correction history (2026-09-24):** revision 1 asserted a "confirmed leak"
+> (unsupported — asserted about a file I hadn't read). Revision 2 asserted "no
+> leak, no rotation" (unsound — read a *truncated* file and generalised). Revision
+> 3 (this one) states the defensible position: **latent defect confirmed; disk
+> exposure unverifiable; rotation prudent.** Three passes, each caught by a
+> different reviewer/check — recorded because it is the exact failure class this
+> project keeps hitting: *a claim about evidence, made without establishing that
+> the evidence is complete.*
 
 **Required change (still required):**
 - **Never log the handshake frame.** Remove or redact line 579; if the diagnostic
   is still wanted, log only non-secret fields (method, frame id, lengths).
 - **Guard G4** (§4.5) — added and mutation-tested. Prevents the class.
-- **Token rotation:** **NOT required on current evidence** (no secret found in the
-  log). Revisit only if a future log is found to contain one.
-- **Delete the stale Desktop log** anyway (it is clutter from a sink we are
-  removing) — but as routine cleanup, not as a leak response.
+- **Token rotation:** **recommended** (assume-possibly-exposed — §6.1b, evidence
+  truncated). **Adam's call.** Supersedes the earlier "not required" line.
+- **Delete the stale Desktop logs** — routine cleanup **and** because they are
+  the only place a leaked secret could be; verify deletion.
 
 **Confidence: high** on both (a) and (b) — each verified from source/file directly.
 
@@ -376,25 +439,54 @@ leak. The distinction matters — see the correction note below.
   (behavioural, injectable config — not `static let`).
 **AC-9** `Docs/Status/STATUS.md` build-history table has a row for the fix build.
 
+**AC-14 (NEW, grok F1 — operational acceptance):** a **scripted operational check**
+  proves the leak is stopped, independent of branch choice:
+  (i) old app pid **quit**; (ii) fixed build **installed**; (iii) both Desktop logs
+  **removed/truncated**; (iv) **live, size must stay flat over a scripted session**
+  (measure > 5 min with a message round-trip; delta ≈ 0). *Branch choice does not
+  stop the leak — only replacing the running binary does.*
+**AC-15 (NEW, grok F2 — merge guard):** `feat/transcript-integration` is verified to
+  contain the **bounded** hotfix sink **before** it merges — i.e. the hotfix is
+  canonical and the feature branch takes it, **not vice-versa**. If `32afd4e`
+  (gated-but-uncapped) would win the merge, that is a **release blocker**.
+**AC-16 (NEW, grok F3):** G1's textual scan is **not** the class control by itself —
+  the **behavioural size test (AC-5) is.** G1 additionally flags
+  `urls(for:.desktopDirectory)`, split/concatenated literals, and **fails on an
+  empty scan.** Empty-scan and allowlist-swallowing are tested explicitly.
+**AC-17 (NEW, grok F5):** the sink inventory explicitly covers the 3-site grep's
+  blind spots — `URLSession` `EventMonitor`/`cURLDescription`, GRDB `trace`,
+  `os_log %{public}` on sensitive args, crash reporters, and the transcript
+  writers — **confirmed present or confirmed absent**, each by name.
+**AC-18 (NEW, grok F7):** sink 3 — a **targeted migration deletes the exact seeded
+  row** (by path literal), guarded so it cannot affect other bookmarks; and no
+  caller `try!`s a now-missing folder (verified: the only `fatalError` is for app
+  support dir creation, `AppRootView.swift:236` — unrelated).
+
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
-verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11, AC-12, AC-13
-independently, **and records a red run for every guard with the defect
-reintroduced.**
+verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11, AC-12, AC-13,
+AC-14, AC-15, AC-16, AC-17, AC-18 independently, **and records a red run for
+every guard with the defect reintroduced.**
 
 ---
 
 ## 8. Delivery plan (PROCESS.md standing workflow)
 
 1. **Bee writes spec** ← this document.
-2. **Kieran + Q validate spec is sound** (round 1 review — dispatched with this spec).
+2. **Kieran + Q validate spec is sound** (round 1 — reconciled §12; round 2 — reconciled §12b).
 3. Reconcile findings → SOUND (or SOUND WITH FIXES) → re-review if significant.
+   **Round 3 required:** grok reviewed the *brief*, not the spec — re-run with the
+   spec **attached** (`Projects/AgentDrop/briefs/loghardening/SPEC.md`).
 4. **Dispatch to Q to build** on a branch **from `origin/develop`** (see §9 — the
    fix is currently on `feat/transcript-integration`, which is **not** the correct base).
 5. **Kieran checks the work** against ACs (E5).
 6. **Bee validates** before returning to Adam.
-7. **Fable/Claude super-check** — MANUAL, only if this counts as a milestone
+7. **Operational acceptance (grok F1, AC-14):** quit old pid → install fixed build →
+   remove both Desktop logs → **prove flat size over a scripted session.** This runs
+   **regardless of branch choice** — it is what actually stops the live leak.
+8. **Fable/Claude super-check** — MANUAL, only if this counts as a milestone
    (Adam decides; likely yes given it touches the release path).
-8. Merge → `develop` → `main` per PROCESS.md; deploy checklist; smoke test.
+9. Merge → `origin/develop` → `main` per PROCESS.md; deploy checklist; smoke test.
+   **Merge guard (AC-15):** the feature branch takes the bounded hotfix sink.
 
 ---
 
@@ -476,16 +568,48 @@ overridden); F2 clarified; F3–F12 accepted and applied.
 
 ---
 
+## 12b. Review round 2 — reconciliation (grok, 2026-09-24)
+
+**Reviewer:** grok (external, AgentDrop thread `beechat-loghardening-review`).
+**Verdict:** CORRECTIONS REQUIRED, 9 findings.
+**⚠️ Scope failure (recorded):** grok **never saw the spec** — it lives at
+`projects/BeeChat-v5/…`, **outside the reviewer's `read_root`
+(`Projects/AgentDrop`)**, and the brief said "no local file access." So grok
+reviewed the *brief's account*. **Fixed:** spec + code excerpts now staged under
+`Projects/AgentDrop/briefs/loghardening/` and attached. **"Naming isn't granting."**
+Findings 1–4 to be re-checked against the actual spec text in round 3.
+
+| # | Finding | Resolution |
+|---|---|---|
+| **F1** BLOCKER | Branch choice doesn't stop the leak; the **running** app (2026-08-07) still writes. Need an operational acceptance check. | **Accepted.** New **AC-14**: quit old pid, install fixed build, remove both Desktop logs, **prove flat size over a scripted session.** Verified the leak is live (log grew ~5 KB / 10 s during this session). |
+| **F2** MAJOR | Merge hole: `32afd4e` is gated-**but-uncapped**; it can win the merge and delete the hotfix trim. | **Accepted.** New **AC-15**: feature branch must take the bounded hotfix sink; `32afd4e`-wins = release blocker. §9 rule reinforced. |
+| **F3** | G1 abs-path grep is theatre (`.desktopDirectory`, split literals, allowlist swallowing, vacuous empty scans); behavioural size test is the class control. | **Accepted.** §4.5 rewritten: behavioural test = control; G1 adds `.desktopDirectory`/split-literal rules + empty-scan failure; allowlist size asserted (AC-16). |
+| **F4** | G2-as-constant + G3-as-grep are **signable without the write path changing**. | **Accepted.** Both made behavioural/injectable (§4.5). |
+| **F5** | 3-site search misses sinks: `URLSession` EventMonitor/`cURLDescription`, GRDB `trace`, `os_log %{public}`, crash reporters, transcript writers. | **Accepted — verified each.** New **§4.6** inventory + **AC-17**. (All named sinks verified present/absent at HEAD.) |
+| **F7** | Sink-3 removal stops **new** seeds only; needs a **targeted migration** deleting the exact row; risk if a caller `try!`s a missing folder. | **Accepted.** §4.3 updated: targeted exact-match delete migration; **verified** no folder-path force-unwrap (only `AppRootView.swift:236`, unrelated). New **AC-18**. |
+| **F9** | PII/content scope (round-1 F9 carried). | Already covered (§4.4). |
+| **F8** | AC verifiability. | Already covered (AC-11…13). |
+| **token** | grok **agrees** with the latent-not-leak framing, but demands 3 gaps closed: (a) path read vs path opened; (b) reconcile 2.27 MB / 10 MB-hr / 32 KB; (c) why 579 never appeared on the Aug build. | **Accepted — all three closed, and they REVERSE my "no rotation" call.** (a) paths match (Aug binary hardcodes the Desktop path; `~/Library/Logs` absent). (b) the file was **truncated at ~13:49** (birth 10:02:24, oldest line 13:49:53) — so my clean read **clears nothing**; cause of truncation **unexplained** (best candidate: the canary). (c) 579 **did** fire — at connect (~10:02) — inside the truncated region. **Net: exposure unverifiable → rotation RECOMMENDED** (§6.1b), reversing round-1. |
+
+**Net:** CORRECTIONS REQUIRED → **SOUND WITH FIXES** after this reconciliation.
+The most important outcome is **not** the guards — it is that grok's evidence
+challenge **reversed my earlier "no rotation" conclusion**, and that the review
+**never actually read the spec** (now fixed). Both recorded rather than smoothed over.
+
+---
+
 ## 13. Open questions for validation
 
-- **OQ-1:** D3 — derive path at runtime, or drop the seed row entirely? (Leaning:
-  drop; a shipped app should not seed a favourite pointing at the author's Desktop.)
+- **OQ-1:** D3 — *(RESOLVED round 2)*: stop seeding **and** add a targeted
+  exact-match delete migration.
 - **OQ-2:** Should `BeeChatLogger`'s console `print` be retained when the file sink
   is off, or fully silenced? (Leaning: retain behind the flag; silence the default.)
 - **OQ-3:** Does the guard live as a Swift test, or as a script in `scripts/` run
   by the deploy checklist? (Leaning: Swift test — it runs with `swift test` and
   cannot be skipped.)
 - **OQ-4:** Is this a Fable milestone (§8 step 7)? (Leaning: yes — release-path change.)
+- **OQ-5 (NEW, round 2):** **Rotate the gateway token?** (§6.1b) — my call now is
+  **yes, prudent** (evidence truncated, exposure unverifiable). **Adam decides.**
 
 ---
 
