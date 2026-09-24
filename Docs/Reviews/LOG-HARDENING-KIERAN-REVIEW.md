@@ -292,3 +292,323 @@ None of F-1…F-7 is irreversible; all are code/doc changes on `fix/log-hardenin
 one that matters most — it is the difference between a guard and a gesture.
 
 — Kieran
+
+---
+---
+
+# ROUND 2 — Independent Re-verification (E5)
+
+**Reviewer:** Kieran (independent; Q may not sign their own fix)
+**Date:** 2026-09-24
+**Branch:** `fix/log-hardening`
+**New commit under test:** `f32d14be2b2efefd08959b0668b492d6a8fe6618` ("fix(logging): make hardening guards deterministic")
+**Prior verified baseline:** `2a64c0a` (round-1 review)
+**Diff reviewed:** `git diff 2a64c0a..f32d14b` = 4 files, +87/−34
+**Q's claims:** `Docs/Reviews/LOG-HARDENING-MUTATION-EVIDENCE.md` — treated as **claims**, not fact.
+
+## VERDICT: SOUND WITH FIXES
+
+All three round-1 corrections are **independently verified as genuinely fixed**:
+
+- **F-1 (was BLOCKER)** — G4 is now deterministically load-bearing. 20/20 RED on the handshake
+  mutation, **zero false greens**, and — critically — the RED is for the *right reason* (the 8
+  credential-leak sink assertions), not the precondition or a flake. `.sortedKeys` genuinely
+  pins the sentinel offset (measured 109/70 across runs; round 1 saw 146–727).
+- **F-2 (was MAJOR)** — the split-literal defence is now wired into the abs-path scan; the
+  split form goes RED in the *production* scan, and the fixture is proven load-bearing against
+  the *split* form (not the joined one).
+- **F-3 (was MAJOR)** — the Desktop-component rule now covers `Sources/App`; sink 2's own defect
+  form goes RED naming `Sources/App/Utils/BeeChatLogger.swift`.
+
+No previously-passing guard regressed (G1/G2/G3, AC-3 carve-out, Migration016 all still green;
+G2/G3 mutations still RED). Full suite: **164 tests, 1 skipped, 0 failures.**
+
+**One residual (minor) finding remains** (N-1): the transport fixture still **flakes ~4% on the
+clean tree** — a false-**RED** via `GatewayClient.swift:158` (`code -99`), which **contradicts
+Q's explicit "0 unexpected failures" claim**. This is a test-reliability defect, not a guard
+defeat or a security hole: I found **no false-green** in any sample. Sign-with-fix, not block.
+
+---
+
+## Round-2 findings
+
+### N-1 — MINOR: the transport fixture still flakes (~4% false-RED on clean code), contradicting Q's "0 unexpected failures"
+
+**What I did.** Ran the G4 test on the **clean** tree (no mutation) repeatedly:
+
+- 30 runs → **28 PASS, 2 FAIL** (`1 failure (1 unexpected)` each)
+- 40 runs → **39 PASS, 1 FAIL** (`1 failure (1 unexpected)`)
+- Combined clean-tree sample: **3 false-REDs in 70 runs (~4.3%)**
+
+**Failure detail (clean run 33):**
+
+```
+Sources/BeeChatGateway/GatewayClient.swift:158: error: ... failed: caught error:
+  "Error Domain=GatewayClient Code=-99 \"Handshake completed but state is connecting, not connected\""
+Executed 1 test, with 1 failure (1 unexpected) in 0.028 seconds
+```
+
+**Root cause.** This is the same concurrency flake flagged in round-1 F-1's "also observed" note:
+`connect()` (line 158) checks `state != .connected` immediately after the continuation resumes,
+but `succeedHandshake()` resumes the continuation from the receive-loop `Task`, so `state` can
+still read `.connecting` for a scheduling tick. It is a race between the state transition and the
+caller's post-resume check — independent of the log-hardening fix, and present with **no mutation applied**.
+
+**Why it matters for E5.** Q's evidence file states the 20-run G4 experiment produced "**0
+unexpected failures**". Over a larger sample that is not reproducible: the fixture emits
+`1 unexpected` at roughly 1-in-20 to 1-in-30 on both clean and mutated trees. A red result is not
+self-interpreting if it can also be produced by a race — a reviewer reading "RED" cannot tell
+"leak caught" from "race thrown" without the sink-failure count. That is the same
+"rejected vs absent" indistinguishability the standing corrections warn about, one level up.
+
+**Severity: minor.** It is a **false-RED**, so it never lets a real leak pass (I found zero
+false-greens). But it is the class of flakiness round 1 flagged, Q declared eliminated, and it is
+not. Fix: assert on the sink captures *before* the `state` check, or make `connect()` await the
+settled state (e.g. resume the continuation only after `state = .connected` is published), or
+have the fixture ignore the `-99` throw as fixture plumbing.
+
+### N-2 — NIT: round-1 F-5/F-6/F-7 (AC-8/AC-9/AC-15) remain outstanding and untouched by this commit
+
+`f32d14b` touches only the four hardening files; the operational/doc ACs are unchanged:
+
+- **AC-8** — installed `/Applications/BeeChatApp.app/Contents/MacOS/BeeChatApp` still dated **Aug 7
+  13:59**, still contains `Sending handshake` (1 `strings` hit). Not shipped.
+- **AC-9** — `Docs/Status/STATUS.md` still has no logging/build-history row.
+- **AC-15** — `feat/transcript-integration` still lacks `BoundedFileLog.swift` / the two guard test
+  files (merge guard not in place).
+
+These were correctly out of scope for a code-fix commit; recording them as still-open so the
+verdict is not read as "everything green".
+
+---
+
+## F-1 verification detail (BLOCKER → FIXED)
+
+**Method.** Re-applied the exact defect — inserted after the frame-encode log line at
+`GatewayClient.swift:588`:
+
+```swift
+debugLog("Sending handshake: \(text.prefix(500))")
+```
+
+**1. Handshake mutation, 20 runs (fresh, definitive):**
+
+```
+RED: 20/20   GREEN: 0/20
+runs with unexpected>0: 0/20
+runs with exactly 8 sink-assertion failures: 20/20
+```
+
+Every run failed the **8 credential-leak assertions** (4 sinks × {token, deviceToken}), e.g.:
+
+```
+GatewayLoggingSecurityTests.swift:71: XCTAssertFalse failed - gateway token escaped a diagnostic sink
+GatewayLoggingSecurityTests.swift:72: XCTAssertFalse failed - device token escaped a diagnostic sink
+```
+
+Zero `must be inside the exact prefix` failures and zero `fixture did not` failures in the 20 —
+i.e. the precondition passed and the guard caught the real defect. **The 20/20 is real, not a
+precondition artefact.** (Larger sanity sample: 30 mutated runs → 30/30 RED; 29/30 failed the 8
+sink assertions, 1/30 was the N-1 race RED-with-wrong-reason. Still **zero false-greens**.)
+
+**2. Determinism proof (`.sortedKeys` pins the offset).** I temporarily instrumented the fixture to
+print sentinel offsets. Round 1 measured offsets swinging **146…727** (token landed outside
+`prefix(500)` on 25% of runs → false-green). Round 2, with `.sortedKeys`:
+
+```
+G4DIAG frame=0 len=779 tokOffset=109 devOffset=70
+G4DIAG frame=1 len=779 tokOffset=109 devOffset=70
+```
+
+Identical across every run. **The offsets are now pinned at 109/70 — both inside the 500-char
+window, deterministically.** This is the substantive fix; the precondition alone would not have
+been enough.
+
+**3. Load-bearing precondition (the round-1 trap — must fail LOUDLY, not silently skip).** I forced
+the precondition false by shrinking the asserted window (`prefix(10)` instead of `prefix(500)`):
+
+```
+GatewayLoggingSecurityTests.swift:69: error: ... failed -
+  fixture credentials must be inside the exact prefix(500) handshake leak window
+Executed 1 test, with 1 failure (0 unexpected)
+```
+
+It **fails loudly** as a test failure (`XCTFail` + early `return`), **not** a skip and **not** a
+silent pass. If the fixture ever stops exercising the leak window, G4 goes red rather than green.
+Trap closed.
+
+**4. URL mutation (separate sink).** Restored round-1's second defect form after `transport.connect`:
+
+```swift
+debugLog("transport.connect called — url=\(url.absoluteString) origin=\(origin)")
+```
+
+→ **RED, 4 failures** (gateway token in all four sinks). Reverted → green.
+
+**5. Byte-identical revert.** After each mutation/test cycle I ran `git checkout --` and confirmed:
+
+```
+git diff f32d14be2b2efefd08959b0668b492d6a8fe6618   → EMPTY (exit 0)
+```
+
+The tracked tree is byte-identical to `f32d14b`. (`git status` shows only the three pre-existing
+untracked docs, unrelated.)
+
+---
+
+## F-2 verification detail (MAJOR → FIXED)
+
+The fix routes **both** the production scan and the fixtures through one helper,
+`sourceFindings(in:relativePath:)`, which joins adjacent string fragments **before** the abs-path
+and Desktop rules run.
+
+**1. Production scan catches the split form.** Injected round-1's exact split literal into a real
+non-UI source file (`Sources/BeeChatGateway/GatewayDiagnostics.swift`):
+
+```swift
+static let __mutPath = "/Users/" + "alice/Desktop/secret.log"
+```
+
+→ **RED** via the production scan (`swift test --filter LoggingPolicyTests.testG1SourcePathPolicy`):
+
+```
+LoggingPolicyTests.swift:46: XCTAssertTrue failed -
+  Sources/BeeChatGateway/GatewayDiagnostics.swift: /Users/alice/Desktop/secret.log
+Sources/BeeChatGateway/GatewayDiagnostics.swift: Desktop component in /Users/alice/Desktop/secret.log
+```
+
+In round 1 this exact input was **GREEN**. Now it is RED, named with the reassembled literal.
+
+**2. The fixture tests the SPLIT form, not the joined form (mutation-tested).** The round-1 defect
+was that the fixture validated the checker on a *joined* string while the scan fed it the *raw*
+string. To prove that is no longer true, I removed the join from `sourceFindings` and re-ran the
+fixture test:
+
+```
+LoggingPolicyTests.swift:55: XCTAssertFalse failed   → RED
+```
+
+Line 55 is exactly `XCTAssertFalse(splitFindings.userSpecificAbsoluteLiterals.isEmpty)` — the
+**split**-form assertion. So the fixture fails when the join is gone and passes when it is present:
+it is **load-bearing on the split form**. Restored; tree clean.
+
+---
+
+## F-3 verification detail (MAJOR → FIXED)
+
+The `isNonUITarget` allow-list is gone; `usesDesktopDirectory` is computed for **every** scanned
+source file, so the Desktop rule is global (App target included).
+
+Restored sink 2's own defect form in the App target:
+
+```swift
+private static let __probeURLs = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)
+```
+
+`Sources/App/Utils/BeeChatLogger.swift` → **RED**, naming that file:
+
+```
+LoggingPolicyTests.swift:46: XCTAssertTrue failed -
+  Sources/App/Utils/BeeChatLogger.swift: .desktopDirectory
+```
+
+In round 1 the same form in the same file was **GREEN**. Reverted; tree clean.
+
+---
+
+## Regression sweep (previously-passing guards must not break)
+
+| Guard / control | Command | Result |
+|---|---|---|
+| G1 abs-path policy (production) | `swift test --filter LoggingPolicyTests.testG1SourcePathPolicy` | **PASS** |
+| G1 fixtures (split + App Desktop + bare validator) | `...testG1FixturesRejectSplitAbsolutePathAndAppDesktopDefects` | **PASS** |
+| G2 behavioural bound | `...testG2WriterBoundsOneFileAndUsesPrivatePermissions` | **PASS** |
+| G3 default-off gate | `...testG3DefaultGateCreatesNoFileUnderInjectedHome` | **PASS** |
+| AC-3 carve-out | `grep -rn "/Users/openclaw/Desktop" Sources/` | **1 hit** (DatabaseManager.swift:448, the allowlisted Migration016 predicate) |
+| Migration016 | `swift test --filter LoggingHardeningMigrationTests` | **3 pass, 1 skipped** (real-DB opt-in), 0 fail |
+
+Mutation load-bearing re-checks (defect restored → must go RED):
+
+| Guard | Mutation | Result |
+|---|---|---|
+| G2 | disabled `existing + data.count > maximumBytes` trim branch | **RED** — `("4000") is greater than ("1024")` |
+| G3 | gate `!= "0"` (always-on unless explicit 0) | **RED** — 3 assertion failures (lines 106/111/112) |
+
+Full suite + release build at `f32d14b` (clean tree):
+
+```
+swift build -c release   → Build complete!
+swift test               → Executed 164 tests, with 1 test skipped and 0 failures
+```
+
+---
+
+## E8 — pre-registered criteria vs verdict logic (no silent skips)
+
+Every AC printed in spec §7 is accounted for below; nothing is silently dropped. Criteria marked
+**operational** are outside a reviewer's limits (they need install/kill/rotate) — they are listed
+explicitly as **not-verified-here**, not omitted.
+
+| # | Criterion (pre-registered) | Round-2 status | Evidence |
+|---|---|---|---|
+| AC-1 | `swift build --target BeeChatGateway` | **PASS** | release build complete |
+| AC-2 | Full `swift test` passes | **PASS** | 164 / 1 skipped / 0 fail |
+| AC-3 | zero `/Users/openclaw/Desktop` except Migration016 | **PASS** | grep → 1 allowlisted hit |
+| AC-4 | gate off → no file (behavioural) | **PASS** | G3 (injected env + temp HOME) |
+| AC-5 | gate on → bounded, behavioural | **PASS** | G2 drives >cap write |
+| AC-6 | G1 fails when `/Users/...` re-added | **PASS** | abs-path mutation RED |
+| AC-7 | G3 fails when always-on | **PASS** | G3 mutation RED (3 failures) |
+| AC-7b | G4 fails when handshake restored | **PASS (F-1 fixed)** | 20/20 RED, 8 sink asserts, 0 false green |
+| AC-8 | installed binary post-fix | **NOT SATISFIED** | binary dated Aug 7; still `Sending handshake` (N-2) |
+| AC-8b | stale Desktop logs deleted | **NOT VERIFIED** | outside reviewer limits |
+| AC-9 | STATUS.md build row | **NOT SATISFIED** | no row (N-2) |
+| AC-10 | no code writes token/deviceToken; G4 fails on either restore | **PASS (F-1 fixed)** | handshake 20/20 RED + URL 4 RED; no token-write site greps |
+| AC-11 | GatewayClient header comment literally true | **PASS** | comment matches BoundedFileLog (1 MB cap, 256 KB trim, 0600, default-off) |
+| AC-12 | non-app-hosted target; named files; zero-scan fails | **PASS** | asserts `GatewayClient.swift` + `Topic.swift`; `XCTAssertFalse(sources.isEmpty)` |
+| AC-13 | gate off under temp HOME → no file | **PASS** | G3 |
+| AC-14 | scripted operational leak-stop proof | **NOT RUN** | needs install/reconnect session (operational) |
+| AC-15 | tests cherry-picked to feat/transcript-integration | **NOT SATISFIED** | files absent on that branch (N-2) |
+| AC-16 | G1 flags split literals + `.desktopDirectory` + empty-scan | **PASS (F-2/F-3 fixed)** | split → RED (F-2); App `.desktopDirectory` → RED (F-3); empty-scan assert present |
+| AC-17 | sink inventory by name | **PASS** | round-1 re-run; unchanged by this commit |
+| AC-18 | migration deletes exact seed; consumer safe | **PASS** | 3 migration tests green (real-DB opt-in skipped) |
+| AC-19 | purge archives | **NOT VERIFIED** | outside reviewer limits |
+| AC-20 | rotate token / re-pair device | **NOT VERIFIED** | outside reviewer limits |
+| AC-21 | files created 0600 | **PASS** | G2 asserts `0o600`; `BoundedFileLog` sets it |
+| AC-22 | AC-4/AC-5 in E5 | **PASS** | verified behaviourally above |
+
+**E8 result: honest.** No pre-registered criterion is missing from the verdict logic; the
+operational ones are named as not-verified rather than quietly dropped.
+
+---
+
+## Adversarial angle — is the fix still theatre?
+
+- **Is 20/20 real, or an artefact of a weak precondition?** Real. I checked red-for-the-right-reason
+  (8 sink assertions, precondition *passed*) and, separately, that the precondition itself fails
+  loudly when forced false. `.sortedKeys` was independently measured to pin the offset (109/70) —
+  the determinism is in the encoder, not just the assertion.
+- **Does `.sortedKeys` truly pin the offset?** Yes — verified by instrumentation across runs
+  (round 1: 146–727; round 2: constant 109/70).
+- **Can the guard still be defeated?** I probed non-500 prefix lengths as a proxy for "a different
+  leak window the guard wasn't calibrated for": `prefix(110)` and `prefix(100)` → RED (4 sink
+  asserts, correct — both sentinels inside); `prefix(75)` → **GREEN**, and that is **correct**:
+  token sits at offset 109, so `prefix(75)` genuinely captures no credential. The guard is honest
+  across window sizes — it reddens iff a credential actually escapes. No false-green found in any
+  sample.
+- **Remaining theatre surface:** N-1's race means a "RED" could occasionally be the race rather
+  than the leak. Mitigation: the sink-failure count distinguishes them (leak = 8 asserts, race = 1
+  unexpected). Recommend fixing the race so red is unambiguous.
+
+---
+
+## Bottom line (round 2)
+
+**SOUND WITH FIXES.** The blocker and both majors are genuinely resolved and independently
+reproduced; the previously-passing guards did not regress; the full suite is green. The only
+outstanding code-level item is **N-1** (fixture race → ~4% false-RED, and Q's "0 unexpected"
+claim is not reproducible) — a reliability fix, not a security hole. AC-8/8b/14/19/20 remain
+operational (outside reviewer limits); AC-9/AC-15 remain open as before.
+
+Nothing merged, deployed, installed, or rotated by me. Only this document is committed.
+
+— Kieran (round 2)
