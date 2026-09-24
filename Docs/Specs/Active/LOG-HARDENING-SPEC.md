@@ -368,8 +368,12 @@ against the live config. **Result (decisive):**
   | `…-20260923-190450.log` | 21 | `0644` |
   | `…-20260924-101109.log` | 2 | `0600` |
   - **4 of 5 are `0644` (group/other-readable).**
-- The **deviceToken** is also logged in full (**1 distinct value** on disk).
+- The **deviceToken** is also logged in full — **1 distinct value**, and it **matches
+  a paired entry in `~/.openclaw/devices/paired.json`** (hash `5bd0abd759fd`, verified
+  on raw bytes). So it is a **live** device credential, not stale. → **re-pair/revoke.**
 - **Vector split:** 38/44 via the **URL (line 279)**, 6/44 via the **field (579)**.
+  (grok's corrected count: 38 token-bearing connect lines across the same 5 files;
+  the extra 6 are the handshake-field occurrences. Same files, same span.)
 - *Note vs grok's numbers:* grok reported "42 archives / 153". My raw-byte scan
   finds **5 archives / 44 occurrences** (151 archives total). The counts differ by
   method — grok's appears broader (prefix/pattern based). **Both agree the leak is
@@ -377,10 +381,11 @@ against the live config. **Result (decisive):**
   exact current token is the authoritative number: 5 files, 44 occurrences.**
 - **The evidence set CHURNS:** the canary prunes archive entries older than 7 days,
   so the token-bearing files rotate out over time while new ones (from each connect)
-  rotate in. An earlier scan of mine found an extra 2026-09-16 file that a later
-  scan did not — because it aged past the retention window mid-session. **This means
-  the exposure is self-refreshing: as long as the pre-fix app runs, fresh
-  token-bearing archives are created faster than old ones are pruned.**
+  rotate in. **This means the exposure is self-refreshing: as long as the pre-fix app
+  runs, fresh token-bearing archives are created faster than old ones are pruned.**
+- **⚠️ Rotation order matters:** rotating **before** killing the app writes the **new**
+  token into the next archive slice (canary archives ~every 30 min). **Kill the app
+  FIRST, then rotate.**
 
 **Why my earlier passes were wrong (the actual cause):**
 1. The **canary** truncates the Desktop log every ~30 min as a "loop bug" guard and
@@ -403,7 +408,22 @@ against the live config. **Result (decisive):**
   those directories carries the token.
 
 **Verdict:** **confirmed credential exposure on disk — local-file class, not
-remote.** Live token, on disk for 8 days, present in snapshots.
+remote.** TWO live credentials (gateway token + device token), on disk for 6+ days,
+present in snapshots, and **self-refreshing** while the app runs.
+
+### Remediation order (grok, verified) — order matters
+
+1. **Kill the running app** (`/Applications/BeeChatApp.app`, PID 4790); confirm no
+   BeeChat process remains. *Stops new token-bearing archives.*
+2. **Ship/run a replacement** that logs **neither the URL, the frame, nor either
+   token — including `print`** (R3-1: HEAD prints pre-gate).
+3. **Rotate the gateway token + re-pair the device token** — **after** step 1 (else
+   the new token lands in the next archive slice).
+4. **Delete** the Desktop logs **and** `~/.openclaw/logs/beechat-debug-archive/`.
+   Note: Time Machine / APFS snapshots still hold copies (Desktop is not iCloud-synced
+   — accepted fact of this machine).
+
+**All four steps are credential/operational actions → require Adam's explicit nod.**
 
 **Required change (now unambiguous):**
 - **Redact BEFORE printing.** `debugLog` prints unconditionally before the gate
@@ -420,8 +440,9 @@ remote.** Live token, on disk for 8 days, present in snapshots.
   `~/.openclaw/logs/beechat-debug-archive/`** — the archive is the second location
   and the one that actually holds the token in bulk (§6.1b). **Delete, do not
   archive** — the archiver copied a secret into 4 world-readable files.
-- **Device token:** **re-pair** unless the handshake prefix is shown to exclude it
-  (it is logged in full today — 1 distinct value on disk).
+- **Device token:** **RE-PAIR / REVOKE** — confirmed: the archived value matches a
+  live entry in `~/.openclaw/devices/paired.json` (hash `5bd0abd759fd`). The earlier
+  "unless the prefix excludes it" conditional is **withdrawn** — it is exposed.
 - **Guard G4** (§4.5) — mandatory, mutation-tested.
 
 **Confidence: high** — hash match, not inference.
@@ -524,8 +545,9 @@ deviceToken) are on disk in archived logs (hash-verified, §6.1b), present since
   lines. A post-fix live scan finds **no** occurrence of the token (or the device
   token) in **either** location.
 **AC-20 (NEW, §6.1b):** the **gateway token is rotated** (confirmed leak) and the
-  old token no longer authenticates; the **device token is re-paired** unless the
-  handshake prefix is proven to exclude it.
+  old token no longer authenticates; the **device token is re-paired/revoked** —
+  confirmed exposed (matches a `paired.json` entry). **Order: kill the app first,
+  then rotate** (else the new token lands in the next archive slice).
 
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
 verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10, AC-11, AC-12, AC-13,
@@ -740,6 +762,12 @@ only because it read the actual spec+code this round.
 | Correct sinks | `grep -rn 'Logger(subsystem:' Sources/` → 9 hits (os.log) |
 | `/Users/` surface | `grep -rn "/Users/" Sources/` → **25 hits, 10 files** (3 defects, 22 legitimate) |
 | Governing process | `Docs/Status/PROCESS.md` |
-| Live symptom | `~/Desktop/BeeChat-debug.log` 2.27 MB mtime 2026-09-24 13:10 |
-| Live symptom | `~/Desktop/BeeChat-diagnostics.log` 64 KB mtime 2026-09-24 13:48 |
-| Running binary | `/Applications/BeeChatApp.app` binary dated 2026-08-07 (pre-fix) |
+| Live symptom | `~/Desktop/BeeChat-debug.log` — grows ~5–24 KB/10 s while app runs (measured) |
+| Live symptom | `~/Desktop/BeeChat-diagnostics.log` — 69 KB, mtime 2026-09-24 14:05 |
+| Running binary | `/Applications/BeeChatApp.app` binary dated 2026-08-07 (pre-fix); contains `Sending handshake:`, lacks `BEE_DEBUG_LOG` |
+| **Leak sink A** | `GatewayClient.swift:279` — logs `url.absoluteString`; line 266 builds `config.url?token=<token>` (HEAD; `main:269`) |
+| **Leak sink B** | `GatewayClient.swift:579` — logs handshake frame (`token`+`deviceToken`) (HEAD; `main:569`) |
+| **Fix still prints** | `GatewayClient.swift:15-17` — `print` before `guard debugLogEnabled` (R3-1) |
+| **Token-bearing archives** | `~/.openclaw/logs/beechat-debug-archive/` — **5 files, 44 occ** of live gateway token, 4× `0644` (raw-byte, hash-verified) |
+| **Device token** | 1 archived value, matches `~/.openclaw/devices/paired.json` entry (hash `5bd0abd759fd`) |
+| Canary truncator | `~/.openclaw/logs/canary.log` — auto-truncates Desktop log every ~30 min, archives it |
