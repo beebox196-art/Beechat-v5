@@ -5,7 +5,9 @@
 **Tier:** Standard · **Routing:** MODE `graph` (gate integrity `8baf879b…`)
 **Status:** SPEC written, cites verified, **review rounds 1 & 2 reconciled** (claude + grok via AgentDrop `beechat-loghardening-review`). Rounds 1–2 both returned CORRECTIONS REQUIRED → **SOUND WITH FIXES** (§12, §12b). **Round 3 dispatched** with the spec **actually attached** (rounds 1–2 reviewed only the brief — a scope failure, now fixed).
 
-**Highest-impact outcome:** grok's evidence challenge **REVERSED** my "no token rotation" call — the log file was **truncated at 13:49** (birth 10:02:24), so my clean read cleared nothing. Exposure **unverifiable → rotation RECOMMENDED**. New ACs 14–18 added (operational acceptance, merge guard, guard anti-theatre, sink inventory, targeted migration).
+**Highest-impact outcome:** grok's evidence challenge **REVERSED** my "no token rotation" call. Settled by **hash-comparing raw bytes**: the live 48-char gateway token is on disk (**5 archived files, 44 occurrences**, 2026-09-18…09-24, `~/.openclaw/logs/beechat-debug-archive/`) — and grok's round-3 found a **second sink** (line 279 logs the connect URL's `?token=***, the dominant vector) plus that **the fix itself still `print`s the token**. Rotation **REQUIRED**.
+
+**New ACs 14–20** (operational acceptance incl. the **archive dir**; merge guard; guard anti-theatre; sink inventory; targeted migration; archive purge; token rotation + device re-pair).
 
 ---
 
@@ -77,12 +79,20 @@ for Adam to paste manually (PROCESS.md standing workflow, step 6).
 | D-branch | Option A (hotfix off origin/develop) vs Option B (wait for transcript-integration) | **A** |
 | OQ-1 | Sink 3: derive path at runtime, or drop the seed row | **stop seeding + targeted delete migration** |
 | OQ-4 | Is this a Fable milestone | leaning **yes** |
-| OQ-5 | **Rotate the gateway token?** | **yes, prudent** — exposure unverifiable (§6.1b) |
+| OQ-5 | **Rotate the gateway token?** | **YES — confirmed leak** (5 files, 44 occ, hash-verified) |
+| OQ-6 | **Purge token-bearing archives?** | **YES** — `~/.openclaw/logs/beechat-debug-archive/` (destructive → needs your OK) |
+| OQ-7 | **Re-pair the device token?** | leaning **yes** unless the handshake prefix excludes it |
+
+**Rotation order (grok R3-4):** rotate the gateway token **after** the Aug binary is
+  dead and the replacement neither logs nor prints the URL/token. **R3-1:** the
+  current fix **still `print`s the token** before the gate — the fix must redact
+  *before* the print.
 
 **New operational step (grok F1 / AC-14) — required regardless of branch choice:**
-quit the old app pid, install the fixed build, remove both Desktop logs, and
-**prove the log size stays flat over a scripted session.** Branch choice does not
-stop the live leak; only replacing the running binary does.
+quit the old app pid, install the fixed build, remove **both** the Desktop log **and**
+`~/.openclaw/logs/beechat-debug-archive/`, and **prove the log size stays flat over a
+scripted session** with **no new token-bearing file** in either location. Branch choice
+does not stop the live leak; only replacing the running binary does.
 
 ---
 
