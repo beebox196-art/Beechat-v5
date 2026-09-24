@@ -23,7 +23,7 @@ latent time bomb.
 
 | # | Sink | Path | Bounding | On by default | State |
 |---|---|---|---|---|---|
-| 1 | `GatewayClient.debugLog` | ~~`/Users/openclaw/Desktop/BeeChat-debug.log`~~ fixed | **none** | **yes** → now gated | **Code fixed, NOT shipped** — ⚠️ **also leaked auth+device token (§6.1)** |
+| 1 | `GatewayClient.debugLog` | ~~`/Users/openclaw/Desktop/BeeChat-debug.log`~~ fixed | **none** | **yes** → now gated | **Code fixed, NOT shipped** — ⚠️ latent token-logging defect (§6.1a) |
 | 2 | `BeeChatLogger` (diagnostics) | `~/Desktop/BeeChat-diagnostics.log` | 1 MB → trims to 256 KB | **yes, unconditional** | **Live, leaking** |
 | 3 | `DatabaseManager` seed row | `/Users/openclaw/Desktop/Claude Oversight Reports` | n/a (data) | n/a | **Live, latent failure** |
 
@@ -37,10 +37,11 @@ latent time bomb.
 
 **Confidence: high.** Each sink verified at the revision pin above.
 
-> ⚠️ **Severity update (2026-09-24):** sink 1 is not merely log bloat — it was
-> **writing the gateway auth token and device token in plaintext to a world-readable
-> Desktop file** on every connect. See §6.1. This makes the remediation
-> **security-urgent**, not housekeeping.
+> ⚠️ **Severity note (2026-09-24, corrected):** sink 1 also contains a **latent
+> credential-logging defect** — `GatewayClient.swift:579` logs the handshake frame,
+> whose params carry `token` + `deviceToken` (§6.1a). Direct inspection shows the
+> current log file contains **no** leaked secret (§6.1b). So: fix required,
+> **no token rotation required on current evidence**.
 
 ### Why this matters
 
@@ -268,34 +269,52 @@ Record this explicitly so a future sweep does not "harden" them unnecessarily.
 
 ## 6. Security / privacy
 
-### 6.1 ⚠️ CONFIRMED CREDENTIAL LEAK — sink 1 logs the auth token to disk
+### 6.1 Sink 1 — credential-logging RISK (verified: the code path CAN log a token; evidence shows the current file does NOT contain one)
 
-**Verified at HEAD `32afd4e`.** Elevated from "verify" to **confirmed**:
+**Verified at HEAD `32afd4e`.** Two separate claims, and they have different
+status — keep them distinct:
 
+**(a) The code path is dangerous — CONFIRMED.**
 - `GatewayClient.swift:579` — `debugLog("Sending handshake: \(text.prefix(500))")`
 - `text` is the JSON-encoded `RequestFrame(method: "connect", params:)`
-- The `params` are built with `auth: .init(token: config.token, deviceToken:
-  currentDeviceToken)` — see the `ConnectParams` construction and line 488
-  (`auth: .init(deviceToken: authDeviceToken, role:…, scopes:…)`).
-- Therefore **the first 500 chars of the encoded handshake — carrying the gateway
-  auth token and the device token — were written in plaintext to
-  `/Users/openclaw/Desktop/BeeChat-debug.log` on every connect attempt.**
+- The params are built with `auth: .init(token: config.token, deviceToken:
+  currentDeviceToken)` (see `ConnectParams` construction, lines ~523/557)
+- **Therefore the code, if that line executes, writes the first 500 chars of the
+  handshake — which include `token` and `deviceToken` — to the log file.** That is
+  a latent credential-logging defect. It must be fixed regardless.
 
-The file was user-visible and world-readable (`-rw-r--r--`). This is a
-**credential exposure on a shared/visible filesystem**, not a theoretical risk.
+**(b) The log file currently contains no leaked secret — VERIFIED.**
+- I inspected the live file (32 KB, 582 lines). **Zero** occurrences of `token`,
+  `auth`, `secret`, `bearer`, `handshake`, `connect`, `deviceToken`, `password`.
+- Every line is of the form `handleEvent — event=<name>` (agent/task/chat/…).
+- **Interpretation:** the file has been rotated (the 1 MB→256 KB trimming in
+  sink 2's policy *does not* apply to sink 1 — sink 1 has no rotation — so the
+  likely explanation is the file was cleared/recreated, or the handshake line is
+  not currently being hit). **Either way, the on-disk evidence does not show a
+  leaked token.**
 
-**This raises sink 1's severity from "log bloat" to "secret leakage."**
+**Net finding:** this is a **latent** credential-logging defect, **not** a proven
+leak. The distinction matters — see the correction note below.
 
-**Required (new, must-have):**
+> **Correction (2026-09-24, within this same spec):** an earlier revision of this
+> section asserted the file "contains leaked tokens." **That assertion was not
+> supported by evidence** — I reasoned from the code and stated a fact about the
+> file without reading it. Direct inspection disproves it. Recorded because it is
+> the exact failure class this project keeps hitting: *a claim about evidence,
+> made without reading the evidence.* The line 579 defect is real; the "leaked"
+> framing was not. **Action: fix line 579; no token rotation required on current
+> evidence.**
+
+**Required change (still required):**
 - **Never log the handshake frame.** Remove or redact line 579; if the diagnostic
   is still wanted, log only non-secret fields (method, frame id, lengths).
-- **Delete (do not archive) the existing `~/Desktop/BeeChat-debug.log`** after the
-  fix ships — it contains leaked tokens.
-- **Token rotation.** If the gateway token was live during the leak window
-  (2026-09-24), it should be considered exposed. **Flag to Adam — his call.**
-- **Guard G4** (§4.5) added and mutation-tested.
+- **Guard G4** (§4.5) — added and mutation-tested. Prevents the class.
+- **Token rotation:** **NOT required on current evidence** (no secret found in the
+  log). Revisit only if a future log is found to contain one.
+- **Delete the stale Desktop log** anyway (it is clutter from a sink we are
+  removing) — but as routine cleanup, not as a leak response.
 
-**Confidence: high** — verified from source at the revision pin.
+**Confidence: high** on both (a) and (b) — each verified from source/file directly.
 
 ### 6.2 General log-hygiene requirements
 
@@ -323,12 +342,16 @@ The file was user-visible and world-readable (`-rw-r--r--`). This is a
 **AC-8** The installed `/Applications/BeeChatApp.app` binary is **dated after the
   fix commit** and, in a live run, produces **no** `~/Desktop/BeeChat-debug.log`
   growth and **no** `~/Desktop/BeeChat-diagnostics.log` writes.
-**AC-8b** `~/Desktop/BeeChat-debug.log` is **deleted** (not archived — it holds
-  leaked credentials) once the fixed build is confirmed live.
+**AC-8b** The stale Desktop logs are **deleted** as routine cleanup once the fixed
+  build is live (not a leak response — §6.1b).
+**AC-10 (NEW)** No shipped code path writes `config.token` or `currentDeviceToken`
+  to any file; guard G4 fails if the handshake frame is re-added to a log call
+  (mutation test). **No token rotation is required** unless a post-fix log is found
+  to contain a secret.
 **AC-9** `Docs/Status/STATUS.md` build-history table has a row for the fix build.
 
 **Evidence rule E5:** the implementer (Q) may not sign their own ACs. Kieran
-verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b independently.
+verifies AC-3, AC-6, AC-7, AC-7b, AC-8, AC-8b, AC-10 independently.
 
 ---
 
