@@ -613,7 +613,7 @@ challenge **reversed my earlier "no rotation" conclusion**, and that the review
 
 ---
 
-## 11. Traceability
+## 14. Traceability
 
 | Item | Cite (HEAD `32afd4e`) |
 |---|---|
