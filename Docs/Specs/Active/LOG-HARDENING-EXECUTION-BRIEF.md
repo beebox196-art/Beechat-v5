@@ -3,9 +3,9 @@
 **Task:** T-BEECHAT-LOGGING-HARDENING
 **Spec:** `Docs/Specs/Active/LOG-HARDENING-SPEC.md` (repo `/Users/openclaw/projects/BeeChat-v5/`)
 **Tier:** Standard · **Routing:** MODE `graph` (gate integrity `8baf879b…`)
-**Status:** SPEC written, cites verified, **review rounds 1 & 2 reconciled** (claude + grok via AgentDrop `beechat-loghardening-review`). Rounds 1–2 both returned CORRECTIONS REQUIRED → **SOUND WITH FIXES** (§12, §12b). **Round 3 dispatched** with the spec **actually attached** (rounds 1–2 reviewed only the brief — a scope failure, now fixed).
+**Status:** SPEC written, cites verified, **review rounds 1–3 reconciled** (claude + grok, AgentDrop `beechat-loghardening-review`). All three returns were CORRECTIONS REQUIRED → **SOUND WITH FIXES** (§12, §12b, §12c, §12d, §12e). **Round 3 (both reviewers, spec attached)** found two defects my spec had wrong: a **second sink** (line 279 URL) and that **the fix still `print`s the token**. Two reviewers found the same second sink independently — strongest signal in the exercise.
 
-**Highest-impact outcome:** grok's evidence challenge **REVERSED** my "no token rotation" call. Settled by **hash-comparing raw bytes**: the live 48-char gateway token is on disk (**5 archived files, 44 occurrences**, 2026-09-18…09-24, `~/.openclaw/logs/beechat-debug-archive/`) — and grok's round-3 found a **second sink** (line 279 logs the connect URL's `?token=***, the dominant vector) plus that **the fix itself still `print`s the token**. Rotation **REQUIRED**.
+**Highest-impact outcome:** the live gateway token (and a device token) are **confirmed on disk** (hash-verified, §6.1b); **rotation + device re-pair REQUIRED**.
 
 **New ACs 14–20** (operational acceptance incl. the **archive dir**; merge guard; guard anti-theatre; sink inventory; targeted migration; archive purge; token rotation + device re-pair).
 
