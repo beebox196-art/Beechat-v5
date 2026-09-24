@@ -2,26 +2,36 @@ import os
 import Foundation
 
 public actor GatewayClient {
-    private let debugLogURL = URL(fileURLWithPath: "/Users/openclaw/Desktop/BeeChat-debug.log")
-    
+    // 2026-09-24: the hardcoded Desktop debug logger is DISABLED. It wrote every
+    // WS frame event to a fixed path with no bounding, which grew a loop bug on
+    // 2026-09-24 (~10 MB/hour). Its diagnostic job is done. To re-enable locally,
+    // set BEE_DEBUG_LOG=1 in the environment; even then it is bounded and only
+    // writes when that flag is present.
+    private let debugLogEnabled = ProcessInfo.processInfo.environment["BEE_DEBUG_LOG"] == "1"
+    private let debugLogURL = URL(fileURLWithPath:
+        ProcessInfo.processInfo.environment["BEE_DEBUG_LOG_PATH"]
+            ?? "\(NSHomeDirectory())/Library/Logs/BeeChat-debug.log")
+
     private func debugLog(_ message: String) {
+        print("[GW] \(message)")
+        guard debugLogEnabled else { return }
         let df = ISO8601DateFormatter()
         df.timeZone = TimeZone(identifier: "Europe/London")
         let timestamp = df.string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
-        if let data = line.data(using: .utf8) {
-            let fm = FileManager.default
-            if fm.fileExists(atPath: debugLogURL.path) {
-                if let handle = try? FileHandle(forWritingTo: debugLogURL) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    handle.closeFile()
-                }
-            } else {
-                try? data.write(to: debugLogURL)
+        guard let data = line.data(using: .utf8) else { return }
+        let fm = FileManager.default
+        try? fm.createDirectory(at: debugLogURL.deletingLastPathComponent(),
+                                withIntermediateDirectories: true)
+        if fm.fileExists(atPath: debugLogURL.path) {
+            if let handle = try? FileHandle(forWritingTo: debugLogURL) {
+                handle.seekToEndOfFile()
+                handle.write(data)
+                handle.closeFile()
             }
+        } else {
+            try? data.write(to: debugLogURL)
         }
-        print("[GW] \(message)")
     }
     
     public struct Configuration: Sendable {
