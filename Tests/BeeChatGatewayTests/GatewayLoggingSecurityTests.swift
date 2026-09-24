@@ -44,6 +44,7 @@ final class GatewayLoggingSecurityTests: XCTestCase {
         )
 
         try await client.connect()
+        transport.forceReconnect()
         for _ in 0..<500 where transport.sentMessages.count < 2 {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
@@ -79,6 +80,8 @@ private final class ReconnectingFakeTransport: GatewayTransport, @unchecked Send
     private var receiveIndex = 0
     private var _connectionCount = 0
     private var _sentMessages: [String] = []
+    private var reconnectRequested = false
+    private var reconnectContinuation: CheckedContinuation<Void, Never>?
     var onClose: ((Int, String?) -> Void)?
 
     var connectionCount: Int { lock.withLock { _connectionCount } }
@@ -94,6 +97,31 @@ private final class ReconnectingFakeTransport: GatewayTransport, @unchecked Send
 
     func close(code: URLSessionWebSocketTask.CloseCode, reason: Data?) {}
 
+    func forceReconnect() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            reconnectRequested = true
+            let pendingContinuation = reconnectContinuation
+            reconnectContinuation = nil
+            return pendingContinuation
+        }
+        continuation?.resume()
+    }
+
+    private func waitForReconnectRequest() async {
+        await withCheckedContinuation { continuation in
+            let resumeImmediately = lock.withLock { () -> Bool in
+                if reconnectRequested {
+                    return true
+                }
+                reconnectContinuation = continuation
+                return false
+            }
+            if resumeImmediately {
+                continuation.resume()
+            }
+        }
+    }
+
     func receive() async throws -> URLSessionWebSocketTask.Message {
         let index = lock.withLock { () -> Int in
             defer { receiveIndex += 1 }
@@ -105,6 +133,7 @@ private final class ReconnectingFakeTransport: GatewayTransport, @unchecked Send
         case 1, 4:
             return .string(#"{"type":"res","id":"handshake","ok":true,"payload":{"type":"hello-ok","protocol":4,"server":{"version":"test"},"features":{},"policy":{"maxPayload":1048576},"auth":{}}}"#)
         case 2:
+            await waitForReconnectRequest()
             throw NSError(domain: "ReconnectingFakeTransport", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "forced close"])
         default:
