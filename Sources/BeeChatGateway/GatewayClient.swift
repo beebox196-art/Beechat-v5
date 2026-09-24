@@ -1,27 +1,23 @@
 import os
 import Foundation
+import BeeChatLogging
 
 public actor GatewayClient {
-    private let debugLogURL = URL(fileURLWithPath: "/Users/openclaw/Desktop/BeeChat-debug.log")
-    
+    /// Mirrors diagnostics to unified logging and stdout. Optional file output is
+    /// default-off, home-relative (or BEE_DEBUG_LOG_PATH), mode 0600, and bounded
+    /// to one 1 MB file that trims in place to its last 256 KB.
+    private let diagnosticSinks: GatewayDiagnosticSinks
+
     private func debugLog(_ message: String) {
         let df = ISO8601DateFormatter()
         df.timeZone = TimeZone(identifier: "Europe/London")
         let timestamp = df.string(from: Date())
         let line = "[\(timestamp)] \(message)\n"
+        diagnosticSinks.print("[GW] \(message)")
+        diagnosticSinks.unifiedLog(message)
         if let data = line.data(using: .utf8) {
-            let fm = FileManager.default
-            if fm.fileExists(atPath: debugLogURL.path) {
-                if let handle = try? FileHandle(forWritingTo: debugLogURL) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    handle.closeFile()
-                }
-            } else {
-                try? data.write(to: debugLogURL)
-            }
+            diagnosticSinks.file(data)
         }
-        print("[GW] \(message)")
     }
     
     public struct Configuration: Sendable {
@@ -68,7 +64,7 @@ public actor GatewayClient {
     }
     
     private let config: Configuration
-    private let transport = WebSocketTransport()
+    private let transport: any GatewayTransport
     private let pendingRequests = PendingRequestMap()
     private let backoff: BackoffCalculator
     private var tokenStore: TokenStore
@@ -125,8 +121,24 @@ public actor GatewayClient {
 
 
     public init(config: Configuration, tokenStore: TokenStore = KeychainTokenStore()) {
+        self.init(
+            config: config,
+            tokenStore: tokenStore,
+            transport: WebSocketTransport(),
+            diagnosticSinks: .live()
+        )
+    }
+
+    init(
+        config: Configuration,
+        tokenStore: TokenStore,
+        transport: any GatewayTransport,
+        diagnosticSinks: GatewayDiagnosticSinks
+    ) {
         self.config = config
         self.tokenStore = tokenStore
+        self.transport = transport
+        self.diagnosticSinks = diagnosticSinks
         self.currentDeviceToken = config.deviceToken ?? (try? tokenStore.getDeviceToken())
         self.backoff = BackoffCalculator(baseDelay: config.baseRetryDelay, maxDelay: config.maxRetryDelay, maxRetries: config.maxRetries)
     }
@@ -251,7 +263,7 @@ public actor GatewayClient {
     
     private func performConnect() async {
         updateState(.connecting)
-        debugLog("performConnect — url=\(config.url) client=\(config.clientInfo.id) mode=\(config.clientInfo.mode)")
+        debugLog("performConnect — client=\(config.clientInfo.id) mode=\(config.clientInfo.mode)")
         
         guard let url = URL(string: "\(config.url)?token=\(config.token)") else {
             failHandshake("Invalid gateway URL")
@@ -266,7 +278,9 @@ public actor GatewayClient {
         }
         
         transport.connect(url: url, origin: origin)
-        debugLog("transport.connect called — url=\(url.absoluteString) origin=\(origin)")
+        let endpoint = "\(url.scheme ?? "unknown")://\(url.host ?? "unknown"):" +
+            (url.port.map(String.init) ?? "default")
+        debugLog("Opening transport — endpoint=\(endpoint)")
         
         transport.onClose = { [weak self] code, reason in
             Task { await self?.handleClose(code: code, reason: reason) }
@@ -566,7 +580,7 @@ public actor GatewayClient {
             guard let text = String(data: data, encoding: .utf8) else {
                 throw NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode handshake frame as UTF-8"])
             }
-            debugLog("Sending handshake: \(text.prefix(500))")
+            debugLog("Handshake frame encoded — method=connect id=handshake bytes=\(data.count)")
             try await transport.send(text)
             
             let timeoutSeconds = config.requestTimeout

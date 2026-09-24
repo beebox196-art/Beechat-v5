@@ -66,6 +66,12 @@ public class DatabaseManager {
     }
     
     private func migrate() throws {
+        let migrator = makeMigrator()
+        try migrator.migrate(dbPool!)
+    }
+
+    /// Internal so migration fixtures can exercise exact historical boundaries.
+    func makeMigrator() -> DatabaseMigrator {
         var migrator = DatabaseMigrator()
         
         migrator.registerMigration("Migration001_CreateSessions") { db in
@@ -407,23 +413,9 @@ public class DatabaseManager {
             }
         }
 
-        migrator.registerMigration("Migration014_SeedClaudeOversightBookmark") { db in
-            guard try db.tableExists("bookmarks") else { return }
-
-            try db.execute(sql: """
-                INSERT OR IGNORE INTO bookmarks
-                    (id, name, path, iconName, sortOrder, createdAt)
-                VALUES
-                    (?, ?, ?, ?, ?, ?)
-            """, arguments: [
-                UUID().uuidString,
-                "Claude Oversight Reports",
-                "/Users/openclaw/Desktop/Claude Oversight Reports",
-                "folder.badge.checkmark",
-                4,
-                Date()
-            ])
-        }
+        // Keep the historical identifier registered, but never seed a
+        // machine-specific folder into fresh databases.
+        migrator.registerMigration("Migration014_SeedClaudeOversightBookmark") { _ in }
 
         // Migration015: Drop the session_key_mapping table.
         //
@@ -447,6 +439,19 @@ public class DatabaseManager {
             )
         }
 
-        try migrator.migrate(dbPool!)
+        // Remove only the untouched historical seed. Any rename, icon change,
+        // or security bookmark makes the row user data and preserves it.
+        migrator.registerMigration("Migration016_RemovePristineOversightBookmark") { db in
+            guard try db.tableExists("bookmarks") else { return }
+            try db.execute(sql: """
+                DELETE FROM bookmarks
+                WHERE path = '/Users/openclaw/Desktop/Claude Oversight Reports'
+                  AND name = 'Claude Oversight Reports'
+                  AND iconName = 'folder.badge.checkmark'
+                  AND securityBookmark IS NULL
+                """)
+        }
+
+        return migrator
     }
 }

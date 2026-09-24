@@ -27,6 +27,11 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "BeeChatLogging",
+            path: "Sources/BeeChatLogging",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
+        .target(
             name: "BeeChatPersistence",
             dependencies: [
                 .product(name: "GRDB", package: "GRDB.swift")
@@ -36,6 +41,7 @@ let package = Package(
         ),
         .target(
             name: "BeeChatGateway",
+            dependencies: ["BeeChatLogging"],
             path: "Sources/BeeChatGateway",
             swiftSettings: [.swiftLanguageVersion(.v5)]
         ),
@@ -89,6 +95,7 @@ let package = Package(
         .executableTarget(
             name: "BeeChatApp",
             dependencies: [
+                .target(name: "BeeChatLogging"),
                 .target(name: "BeeChatPersistence"),
                 .target(name: "BeeChatGateway"),
                 .target(name: "BeeChatSyncBridge"),
@@ -105,6 +112,12 @@ let package = Package(
             name: "BeeChatAppTests",
             dependencies: ["BeeChatApp"],
             path: "Tests/BeeChatAppTests",
+            swiftSettings: [.swiftLanguageVersion(.v5)]
+        ),
+        .testTarget(
+            name: "BeeChatLoggingTests",
+            dependencies: ["BeeChatLogging"],
+            path: "Tests/BeeChatLoggingTests",
             swiftSettings: [.swiftLanguageVersion(.v5)]
         ),
     ]
