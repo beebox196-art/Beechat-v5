@@ -147,3 +147,47 @@ file appears in the diff, stop.
 | AC-15 cherry-pick → `feat/transcript-integration` | ⏳ Pending decision |
 | Scripts: `release.sh`, `build-and-install.sh` | ✅ Untouched |
 | New script `scripts/install-beechat-v5.sh` (branch `chore/beechat-v5-packaging`, commit `4477867`) | ⚠️ Reviewed (SOUND WITH FIXES, 0 blockers) but built off the WRONG base — do not use as-is; will be re-pointed |
+
+---
+
+## 9. PORT COMPLETE — LAUNCH-READY (2026-09-27 21:40 BST)
+
+**Route decided (3 externals, all Option A):** grok, claude, chatgpt all → port intent
+forward onto `937e18b`; cherry-pick (C) ruled out (test-module collision: `invalid
+redeclaration of 'InMemoryTokenStore'`). Scope lock: **compile-time disable at the sink**
+(claude's mechanism; Adam 2026-09-27 21:30). ChatGPT's DELETE-led rejected (42 call sites
+= riskier diff). Adam: diagnostics fallback = revert to current build.
+
+**Build:** `fix/log-hardening-v2` = single commit `3c4321a` on `937e18b`.
+- `BeeChatLogger.log` → `@autoclosure` + `#if DEBUG` no-op (write path, logURL, Desktop literal all gated out).
+- `GatewayClient.debugLog` + `debugLogURL` → `#if DEBUG` gated inline writer.
+- Handshake-frame log line DELETED outright (was logging gateway+device token).
+- `os.Logger` untouched. `DatabaseManager.swift:421` NOT touched (separate defect).
+
+**Independently verified by Bee (own commands):**
+- `git merge-base --is-ancestor 937e18b fix/log-hardening-v2` → 0 ✓
+- `git diff --name-only 937e18b..fix/log-hardening-v2` → EXACTLY the two logging files; 0 UI files ✓
+- Release binary: 0 hits for `BeeChat-debug.log` / `BeeChat-diagnostics.log` / `Sending handshake`; 0 helper symbols (debug control = 5) ✓
+- `swift test` (re-run by Bee): **465 pass, 1 skip, 0 fail** ✓
+- Falsifier grep: only the two helpers write logs — no bypassing writers ✓
+
+**Installed launch-ready:** `/Applications/BeeChat-V5.app`
+- Version `0.9.5l`, Build `2026.09.24a`, DisplayName BeeChat-V5, id `com.beebox.beechat` (unchanged).
+- Installed binary sha256 `f860692b02594bece4642706c71963b4b8d948cbb48ca2849f4f60fe1a03bf3b`.
+- Ad-hoc signed; codesign verify passed. AC-14 on installed binary: 0 log-path strings ✓
+- Rollback `/Applications/BeeChatApp.app` BYTE-UNCHANGED (sha256 pinned `b92602be...` re-verified post-install) ✓
+
+**KIERAN INDEPENDENT VERIFICATION — PASS / SOUND (2026-09-27 21:42).** All four gates green:
+(1) base ancestry — merge-base exit 0, VERSION 0.9.5l matches deployed line;
+(2) diff scope — exactly the two logging files, 0 UI/Rendering;
+(3) behavioural risk — all ~55 log call-site args are pure reads (no side effects), G4 reconnect/backoff
+path unaffected (removed handshake line was synchronous, no await change), no bypassing writer,
+no #if DEBUG force-on in release; (4) AC-14 — release+debug build clean, 465 pass/1 skip/0 fail,
+release binary (incl. dSYM) 0 log-path strings, 0 helper symbols, 0 `[GW]` prefix leak.
+Also confirmed: debug build compiles cleanly; `git diff --check` clean.
+Kieran found NO defects. Only remaining Desktop string = DatabaseManager:421 (out of scope, expected).
+
+**AWAITING:** Adam sequential smoke-test only — all gates passed. **Do NOT run both apps at once** — shared
+`~/Library/Application Support/BeeChat/BeeChat.sqlite`.
+
+**Launch:** `open /Applications/BeeChat-V5.app` · **Rollback:** quit V5 → `open /Applications/BeeChatApp.app`
