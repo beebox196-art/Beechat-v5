@@ -6,7 +6,30 @@ import Foundation
 ///
 /// All writes happen on a background serial queue to prevent blocking the main thread.
 /// If the file is iCloud-evicted or otherwise slow to materialize, the app stays responsive.
+///
+/// DEBUG-ONLY: the entire write path (file URL, formatter, queue, helpers) is compiled out
+/// of release builds so that no log file is created and no Desktop path string remains in
+/// the release binary. `log(_:)` becomes a compile-time no-op in release; the `@autoclosure`
+/// parameter ensures the message expression (including string interpolation) is never
+/// evaluated in release. `os.Logger` call sites elsewhere in the codebase are unaffected.
 enum BeeChatLogger {
+    /// No-op in release. In debug, writes `message` to the diagnostics log on a
+    /// background serial queue. The message is wrapped in `@autoclosure` so that
+    /// string interpolation at the call site is only evaluated when the write
+    /// path actually runs.
+    static func log(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        let timestamp = formatter.string(from: Date())
+        let line = "[\(timestamp)] \(message())\n"
+        guard let data = line.data(using: .utf8) else { return }
+
+        writeQueue.async {
+            Self.writeSynchronously(data)
+        }
+        #endif
+    }
+
+    #if DEBUG
     private static let logURL: URL = {
         let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
         return desktop.appendingPathComponent("BeeChat-diagnostics.log")
@@ -26,16 +49,6 @@ enum BeeChatLogger {
     /// When exceeded, the file is truncated to the last 256 KB.
     private static let maxLogBytes: Int = 1_048_576
     private static let truncateToBytes: Int = 262_144
-
-    static func log(_ message: String) {
-        let timestamp = formatter.string(from: Date())
-        let line = "[\(timestamp)] \(message)\n"
-        guard let data = line.data(using: .utf8) else { return }
-
-        writeQueue.async {
-            Self.writeSynchronously(data)
-        }
-    }
 
     /// Internal synchronous write, called only on writeQueue.
     private static func writeSynchronously(_ data: Data) {
@@ -72,4 +85,5 @@ enum BeeChatLogger {
         try? FileManager.default.removeItem(atPath: path)
         try? trimmed.write(to: logURL)
     }
+    #endif
 }

@@ -2,13 +2,20 @@ import os
 import Foundation
 
 public actor GatewayClient {
+    #if DEBUG
     private let debugLogURL = URL(fileURLWithPath: "/Users/openclaw/Desktop/BeeChat-debug.log")
-    
-    private func debugLog(_ message: String) {
+    #endif
+
+    /// DEBUG-only inline file writer. Compiled out in release so neither the Desktop
+    /// path nor the writer body survives into the release binary. The message is
+    /// `@autoclosure` so call-site string interpolation is only evaluated when the
+    /// write path actually runs.
+    private func debugLog(_ message: @autoclosure () -> String) {
+        #if DEBUG
         let df = ISO8601DateFormatter()
         df.timeZone = TimeZone(identifier: "Europe/London")
         let timestamp = df.string(from: Date())
-        let line = "[\(timestamp)] \(message)\n"
+        let line = "[\(timestamp)] \(message())\n"
         if let data = line.data(using: .utf8) {
             let fm = FileManager.default
             if fm.fileExists(atPath: debugLogURL.path) {
@@ -21,7 +28,8 @@ public actor GatewayClient {
                 try? data.write(to: debugLogURL)
             }
         }
-        print("[GW] \(message)")
+        print("[GW] \(message())")
+        #endif
     }
     
     public struct Configuration: Sendable {
@@ -566,7 +574,6 @@ public actor GatewayClient {
             guard let text = String(data: data, encoding: .utf8) else {
                 throw NSError(domain: "GatewayClient", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode handshake frame as UTF-8"])
             }
-            debugLog("Sending handshake: \(text.prefix(500))")
             try await transport.send(text)
             
             let timeoutSeconds = config.requestTimeout
